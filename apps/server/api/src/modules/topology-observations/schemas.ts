@@ -87,6 +87,7 @@ export const DisplaySettingsSchema = z
     operatorLayout: z.object({
       nodePositions: z.record(z.string(), z.object({ x: z.number(), y: z.number() })),
       portSides: z.record(z.string(), z.enum(['top', 'bottom', 'left', 'right'])),
+      portOrders: z.record(z.string(), z.number().int().nonnegative()),
       edgeRoutes: z.record(z.string(), z.array(z.object({ x: z.number(), y: z.number() }))),
     }),
   })

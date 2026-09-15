@@ -8,7 +8,7 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsView = {
   edgeStyle: 'orthogonal',
   splineMode: 'sloppy',
   hideDisconnected: false,
-  operatorLayout: { nodePositions: {}, portSides: {}, edgeRoutes: {} },
+  operatorLayout: { nodePositions: {}, portSides: {}, portOrders: {}, edgeRoutes: {} },
 }
 
 export function createTopologyObservationApplicationService(

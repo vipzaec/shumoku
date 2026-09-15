@@ -99,7 +99,7 @@
     oncontextmenu?: (id: string, type: string, screenX: number, screenY: number) => void
     onlayoutready?: (layout: ResolvedLayout, sheetId: string | null) => void
     ondragend?: (id: string, positions: Record<string, { x: number; y: number }>) => void
-    onportmove?: (nodeId: string, portId: string, side: 'top' | 'bottom' | 'left' | 'right') => void
+    onportmove?: (nodeId: string, portId: string, side: 'top' | 'bottom' | 'left' | 'right', order: number) => void
     onerror?: (err: Error) => void
 
     // --- Overlay slot ---
