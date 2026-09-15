@@ -83,6 +83,27 @@ describe('sortBlocksBySourcePort', () => {
     expect(sorted).toEqual(['c1', 'orphan'])
   })
 
+  test('sorts semantic node-to-node links without explicit ports', () => {
+    const nodesById = new Map([
+      ['p', node('p', undefined, [])],
+      ['a', node('a', 'sg1', [])],
+      ['b', node('b', 'sg2', [])],
+    ])
+    const blockMembers = new Map([
+      ['p', ['p']],
+      ['a', ['a']],
+      ['b', ['b']],
+    ])
+    const links = [
+      { from: { node: 'p' }, to: { node: 'a' } },
+      { from: { node: 'p' }, to: { node: 'b' } },
+    ] as Link[]
+
+    expect(sortBlocksBySourcePort(['b', 'a'], 'p', blockMembers, links, nodesById, noFlip)).toEqual(
+      ['a', 'b'],
+    )
+  })
+
   test('deterministic order for ties: same subgraph clusters first, then by id', () => {
     const parent = node('p', undefined, [
       ['p1', 'Gi1/0/1'],

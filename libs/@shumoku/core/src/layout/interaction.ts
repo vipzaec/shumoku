@@ -13,6 +13,7 @@
 import { newId } from '../ids.js'
 import type { Link, NetworkGraph, Node, NodePort, Subgraph } from '../models/types.js'
 import { createEngine, resolveNodeSize } from './engine/index.js'
+import { portLabelBox } from './port-geometry.js'
 import type { ResolvedEdge, ResolvedPort } from './resolved-types.js'
 import { routeEdges } from './route-edges.js'
 
@@ -231,17 +232,12 @@ export function rebalanceSubgraphs(
   opts: {
     subgraphPadding?: number
     subgraphLabelHeight?: number
-    /**
-     * Layout direction. Decides which side the subgraph label
-     * band sits on: TB → top, BT → bottom, LR → left, RL →
-     * right. Defaults to 'TB' (the manual-placement convention).
-     */
+    /** Layout direction retained for API compatibility. */
     direction?: 'TB' | 'BT' | 'LR' | 'RL'
   } = {},
 ): void {
   const padding = opts.subgraphPadding ?? SUBGRAPH_PADDING
   const labelHeight = opts.subgraphLabelHeight ?? SUBGRAPH_LABEL_HEIGHT
-  const direction = opts.direction ?? 'TB'
   // Build depth map
   const depthOf = (sgId: string, visited = new Set<string>()): number => {
     if (visited.has(sgId)) return 0
@@ -283,6 +279,17 @@ export function rebalanceSubgraphs(
         minY = Math.min(minY, n.position.y - hh)
         maxX = Math.max(maxX, n.position.x + hw)
         maxY = Math.max(maxY, n.position.y + hh)
+        // A port label belongs to the node and must remain inside the same
+        // container. Include its real rendered box in the hull calculation.
+        for (const port of ports.values()) {
+          if (port.nodeId !== n.id) continue
+          const box = portLabelBox(port)
+          if (!box) continue
+          minX = Math.min(minX, box.x)
+          minY = Math.min(minY, box.y)
+          maxX = Math.max(maxX, box.x + box.width)
+          maxY = Math.max(maxY, box.y + box.height)
+        }
       }
       for (const child of subgraphs.values()) {
         if (child.parent !== sgId) continue
@@ -296,41 +303,14 @@ export function rebalanceSubgraphs(
 
       if (!hasChildren) continue
 
-      // Direction decides which side gets the label-band offset.
-      // TB → above children; BT → below; LR → left; RL → right.
-      let bounds: { x: number; y: number; width: number; height: number }
-      switch (direction) {
-        case 'BT':
-          bounds = {
-            x: minX - padding,
-            y: minY - padding,
-            width: maxX - minX + padding * 2,
-            height: maxY - minY + padding * 2 + labelHeight,
-          }
-          break
-        case 'LR':
-          bounds = {
-            x: minX - padding - labelHeight,
-            y: minY - padding,
-            width: maxX - minX + padding * 2 + labelHeight,
-            height: maxY - minY + padding * 2,
-          }
-          break
-        case 'RL':
-          bounds = {
-            x: minX - padding,
-            y: minY - padding,
-            width: maxX - minX + padding * 2 + labelHeight,
-            height: maxY - minY + padding * 2,
-          }
-          break
-        default:
-          bounds = {
-            x: minX - padding,
-            y: minY - padding - labelHeight,
-            width: maxX - minX + padding * 2,
-            height: maxY - minY + padding * 2 + labelHeight,
-          }
+      // The SVG renderer always paints a subgraph title along the top edge,
+      // regardless of the child-flow direction. Reserve the title band there
+      // as well, otherwise LR/RL groups let their first child overlap it.
+      const bounds = {
+        x: minX - padding,
+        y: minY - padding - labelHeight,
+        width: maxX - minX + padding * 2,
+        height: maxY - minY + padding * 2 + labelHeight,
       }
       subgraphs.set(sgId, { ...sg, bounds })
     }

@@ -98,6 +98,7 @@
     onselect?: (id: string | null, type: string | null) => void
     oncontextmenu?: (id: string, type: string, screenX: number, screenY: number) => void
     onlayoutready?: (layout: ResolvedLayout, sheetId: string | null) => void
+    ondragend?: (id: string, positions: Record<string, { x: number; y: number }>) => void
     onerror?: (err: Error) => void
 
     // --- Overlay slot ---
@@ -118,6 +119,7 @@
     onselect,
     oncontextmenu,
     onlayoutready,
+    ondragend,
     onerror,
     children,
     subgraphOverlay,
@@ -138,6 +140,7 @@
 
   let layoutsBySheet: Record<string, ResolvedLayout> = {}
   let activeLayout = $state<ResolvedLayout | null>(null)
+  let renderer: ReturnType<typeof ShumokuRenderer> | undefined = $state()
   let cachedGraphRef: NetworkGraph | null = null
   let activeSheetKey: string | null = null
 
@@ -341,6 +344,14 @@
     return svgElement
   }
 
+  export function getNodePosition(nodeId: string): { x: number; y: number } | null {
+    return renderer?.getNodePosition(nodeId) ?? null
+  }
+
+  export function getPinnedPositions(elementId: string): Record<string, { x: number; y: number }> {
+    return renderer?.getPinnedPositions(elementId) ?? {}
+  }
+
   /** Snapshot the current camera transform so it can be restored later. */
   export function getCameraTransform(): { x: number; y: number; k: number } | null {
     return camera?.getTransform() ?? null
@@ -380,7 +391,9 @@
 >
   {#if activeLayout}
     <ShumokuRenderer
+      bind:this={renderer}
       layout={activeLayout}
+      {graph}
       {theme}
       mode={effectiveMode}
       {subgraphOverlay}
@@ -390,6 +403,7 @@
       bind:svgElement
       onselect={handleSelect}
       oncontextmenu={handleContextMenu}
+      ondragend={(id) => ondragend?.(id, getPinnedPositions(id))}
     />
     {#if ctx}
       {@render children?.(ctx)}

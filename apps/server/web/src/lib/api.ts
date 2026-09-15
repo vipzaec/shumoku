@@ -894,7 +894,12 @@ export const topologies = {
     },
     set: async (
       id: string,
-      body: { edgeStyle?: string; splineMode?: string; hideDisconnected?: boolean },
+      body: {
+        direction?: 'TB' | 'BT' | 'LR' | 'RL'
+        edgeStyle?: string
+        splineMode?: string
+        hideDisconnected?: boolean
+      },
     ) => {
       const { data, error, response } = await contractClient.PUT(
         '/topologies/{id}/display-settings',

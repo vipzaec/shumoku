@@ -437,7 +437,7 @@ function hullForGroup(
   nodes: Map<string, Node>,
   padding: number,
   labelHeight: number,
-  direction: string,
+  _direction: string,
 ): Bounds | undefined {
   let minX = Number.POSITIVE_INFINITY
   let minY = Number.POSITIVE_INFINITY
@@ -454,15 +454,11 @@ function hullForGroup(
     any = true
   }
   if (!any) return undefined
-  const labelTop = direction === 'TB' ? labelHeight : 0
-  const labelBottom = direction === 'BT' ? labelHeight : 0
-  const labelLeft = direction === 'LR' ? labelHeight : 0
-  const labelRight = direction === 'RL' ? labelHeight : 0
   return {
-    x: minX - padding - labelLeft,
-    y: minY - padding - labelTop,
-    width: maxX - minX + padding * 2 + labelLeft + labelRight,
-    height: maxY - minY + padding * 2 + labelTop + labelBottom,
+    x: minX - padding,
+    y: minY - padding - labelHeight,
+    width: maxX - minX + padding * 2,
+    height: maxY - minY + padding * 2 + labelHeight,
   }
 }
 

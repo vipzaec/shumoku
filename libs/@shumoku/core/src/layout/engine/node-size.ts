@@ -38,6 +38,7 @@ const PORT_LABEL_GAP = 12
 interface NodeLike {
   label?: string | string[]
   spec?: NodeSpec
+  size?: Size
 }
 
 /**
@@ -61,8 +62,8 @@ export function nodeBodySize(node: NodeLike, text: TextMeasurer): Size {
   const contentW = Math.max(iconW, labelW)
 
   return {
-    width: Math.max(MIN_NODE_WIDTH, contentW + NODE_HORIZONTAL_PADDING * 2),
-    height: Math.max(MIN_NODE_HEIGHT, contentH + NODE_VERTICAL_PADDING),
+    width: Math.max(node.size?.width ?? 0, MIN_NODE_WIDTH, contentW + NODE_HORIZONTAL_PADDING * 2),
+    height: Math.max(node.size?.height ?? 0, MIN_NODE_HEIGHT, contentH + NODE_VERTICAL_PADDING),
   }
 }
 

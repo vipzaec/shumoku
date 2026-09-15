@@ -197,6 +197,7 @@ export interface ObservationSummaryView {
 }
 
 export interface DisplaySettingsView {
+  direction: 'TB' | 'BT' | 'LR' | 'RL'
   edgeStyle: EdgeStyle
   splineMode: SplineMode
   hideDisconnected: boolean

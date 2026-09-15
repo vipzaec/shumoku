@@ -23,6 +23,7 @@ function service(): TopologyObservationApplicationService {
     })),
     resolved: vi.fn(async () => null),
     getDisplaySettings: vi.fn(() => ({
+      direction: 'TB' as const,
       edgeStyle: 'orthogonal' as const,
       splineMode: 'sloppy' as const,
       hideDisconnected: false,
@@ -74,5 +75,28 @@ describe('observation wire compatibility', () => {
     const error = ErrorSchema.parse(await response.json())
     expect(error).toMatchObject({ code: 'NOT_FOUND', message: 'not found', error: 'not found' })
     expect(response.headers.get('X-Request-ID')).toBe(error.requestId)
+  })
+})
+
+describe('topology display settings', () => {
+  it('returns the persisted layout direction', async () => {
+    const response = await app(service()).request('/topologies/topology-1/display-settings')
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ direction: 'TB' })
+  })
+
+  it('accepts a left-to-right layout direction', async () => {
+    const observations = service()
+    const response = await app(observations).request('/topologies/topology-1/display-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ direction: 'LR' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(observations.updateDisplaySettings).toHaveBeenCalledWith('topology-1', {
+      direction: 'LR',
+    })
   })
 })

@@ -145,18 +145,13 @@ export async function routeEdges(
       link,
     })
   }
-  // Bus routing and obstacle-aware polyline detour are
-  // disabled — every edge renders as the default port-anchored
-  // bezier. Bus produced visually-overlapping trunk lines that
-  // hid which source port maps to which target; the obstacle
-  // detour produced angular polyline shapes inconsistent with
-  // the otherwise smooth bezier look. Keep the helpers
-  // available for future re-enable if needed.
+  // Keep ordinary connections as smooth port-anchored beziers. Only curves
+  // that actually enter an unrelated node receive a rounded polyline detour.
+  // This preserves the clean default while ensuring a wire never disappears
+  // underneath a device after manual placement.
   void assignBusRoutes
-  void detourAroundObstacles
   assignLaneOffsets(edges)
-  void nodes
-  void subgraphs
+  detourAroundObstacles(edges, nodes, subgraphs ?? new Map())
   return edges
 }
 
@@ -200,12 +195,11 @@ function detourAroundObstacles(
     if (edge.route) continue // bus / lane / preassigned routes are explicit
     const fromSide = edge.fromPort.side
     const toSide = edge.toPort.side
-    // Only handle vertical-flow cases for now — they're where the
-    // transit-through-chain pattern shows up. Horizontal flow (LR
-    // direction) would need symmetric treatment along the x axis.
     const isVerticalFlow =
       (fromSide === 'bottom' && toSide === 'top') || (fromSide === 'top' && toSide === 'bottom')
-    if (!isVerticalFlow) continue
+    const isHorizontalFlow =
+      (fromSide === 'right' && toSide === 'left') || (fromSide === 'left' && toSide === 'right')
+    if (!isVerticalFlow && !isHorizontalFlow) continue
 
     // Only detour wires that go (mostly) straight down their
     // own column. Diagonal cross-row wires naturally curve
@@ -217,7 +211,8 @@ function detourAroundObstacles(
     // for has source.x almost equal to target.x.
     const src = edge.fromPort.absolutePosition
     const tgt = edge.toPort.absolutePosition
-    if (Math.abs(tgt.x - src.x) > DETOUR_MAX_LATERAL) continue
+    if (isVerticalFlow && Math.abs(tgt.x - src.x) > DETOUR_MAX_LATERAL) continue
+    if (isHorizontalFlow && Math.abs(tgt.y - src.y) > DETOUR_MAX_LATERAL) continue
 
     const blocker = findBezierObstacle(edge, nodes, subgraphs)
     if (!blocker) continue
@@ -228,25 +223,42 @@ function detourAroundObstacles(
     // detouring to the right would force a sharp reverse-jog at
     // the source. The source-side choice produces the most
     // visually continuous path.
-    const sourceNode = nodes.get(edge.fromNodeId)
-    const sourceNodeX = sourceNode?.position?.x ?? src.x
-    const portOffsetX = src.x - sourceNodeX
-    const blockerCentre = blocker.x + blocker.width / 2
-    const goLeft = portOffsetX !== 0 ? portOffsetX < 0 : tgt.x < blockerCentre
-    const corridorX = goLeft
-      ? blocker.x - DETOUR_CLEARANCE
-      : blocker.x + blocker.width + DETOUR_CLEARANCE
-    const sign = fromSide === 'bottom' ? 1 : -1
-    const stalkOutY = src.y + sign * DETOUR_STALK
-    const stalkInY = tgt.y - sign * DETOUR_STALK
-    const points = [
-      { x: src.x, y: src.y },
-      { x: src.x, y: stalkOutY },
-      { x: corridorX, y: stalkOutY },
-      { x: corridorX, y: stalkInY },
-      { x: tgt.x, y: stalkInY },
-      { x: tgt.x, y: tgt.y },
-    ]
+    let points: Array<{ x: number; y: number }>
+    if (isVerticalFlow) {
+      const sourceNode = nodes.get(edge.fromNodeId)
+      const sourceNodeX = sourceNode?.position?.x ?? src.x
+      const portOffsetX = src.x - sourceNodeX
+      const blockerCentre = blocker.x + blocker.width / 2
+      const goLeft = portOffsetX !== 0 ? portOffsetX < 0 : tgt.x < blockerCentre
+      const corridorX = goLeft
+        ? blocker.x - DETOUR_CLEARANCE
+        : blocker.x + blocker.width + DETOUR_CLEARANCE
+      const sign = fromSide === 'bottom' ? 1 : -1
+      const stalkOutY = src.y + sign * DETOUR_STALK
+      const stalkInY = tgt.y - sign * DETOUR_STALK
+      points = [
+        { x: src.x, y: src.y }, { x: src.x, y: stalkOutY },
+        { x: corridorX, y: stalkOutY }, { x: corridorX, y: stalkInY },
+        { x: tgt.x, y: stalkInY }, { x: tgt.x, y: tgt.y },
+      ]
+    } else {
+      const sourceNode = nodes.get(edge.fromNodeId)
+      const sourceNodeY = sourceNode?.position?.y ?? src.y
+      const portOffsetY = src.y - sourceNodeY
+      const blockerCentre = blocker.y + blocker.height / 2
+      const goAbove = portOffsetY !== 0 ? portOffsetY < 0 : tgt.y < blockerCentre
+      const corridorY = goAbove
+        ? blocker.y - DETOUR_CLEARANCE
+        : blocker.y + blocker.height + DETOUR_CLEARANCE
+      const sign = fromSide === 'right' ? 1 : -1
+      const stalkOutX = src.x + sign * DETOUR_STALK
+      const stalkInX = tgt.x - sign * DETOUR_STALK
+      points = [
+        { x: src.x, y: src.y }, { x: stalkOutX, y: src.y },
+        { x: stalkOutX, y: corridorY }, { x: stalkInX, y: corridorY },
+        { x: stalkInX, y: tgt.y }, { x: tgt.x, y: tgt.y },
+      ]
+    }
     edge.route = { kind: 'polyline', points }
     // Lane offsets are applied at the bezier port — they fight
     // the polyline corner shape, so clear them for this edge.

@@ -25,6 +25,7 @@
     routeEdges,
     specDeviceType,
   } from '@shumoku/core'
+  import { untrack } from 'svelte'
 
   /** Shared sizing engine for this renderer. */
   const engine = createEngine()
@@ -203,15 +204,21 @@
   // Legacy compat: sync from layout/graph props (WebComponent uses these)
   $effect(() => {
     if (layout) {
-      replaceMap(nodes, layout.nodes)
-      replaceMap(ports, layout.ports)
-      replaceMap(edges, layout.edges)
-      replaceMap(subgraphs, layout.subgraphs)
-      bounds = layout.bounds
+      // `replaceMap` reads the target maps while diffing. Without `untrack`,
+      // those reads make this effect subscribe to the renderer's mutable
+      // state, so every drag tick immediately restores the original layout.
+      // The layout prop is the only dependency that should trigger a sync.
+      untrack(() => {
+        replaceMap(nodes, layout.nodes)
+        replaceMap(ports, layout.ports)
+        replaceMap(edges, layout.edges)
+        replaceMap(subgraphs, layout.subgraphs)
+        bounds = layout.bounds
+      })
     }
   })
   $effect(() => {
-    if (graph?.links) links = [...graph.links]
+    if (graph?.links) untrack(() => (links = [...graph.links]))
   })
 
   // =========================================================================
@@ -253,6 +260,32 @@
   export function screenToSvg(screenX: number, screenY: number): { x: number; y: number } {
     if (!svgElement) return { x: screenX, y: screenY }
     return screenToWorldUtil(svgElement, screenX, screenY)
+  }
+
+  export function getNodePosition(nodeId: string): { x: number; y: number } | null {
+    const position = nodes.get(nodeId)?.position
+    return position ? { x: position.x, y: position.y } : null
+  }
+
+  /** Positions that must be pinned to reproduce a dragged node or compound block. */
+  export function getPinnedPositions(elementId: string): Record<string, { x: number; y: number }> {
+    const direct = nodes.get(elementId)?.position
+    if (direct) return { [elementId]: { x: direct.x, y: direct.y } }
+    if (!subgraphs.has(elementId)) return {}
+
+    const isInside = (node: Node): boolean => {
+      let parent = node.parent
+      while (parent) {
+        if (parent === elementId) return true
+        parent = subgraphs.get(parent)?.parent
+      }
+      return false
+    }
+    return Object.fromEntries(
+      [...nodes.values()]
+        .filter((node) => node.position && isInside(node))
+        .map((node) => [node.id, { x: node.position!.x, y: node.position!.y }]),
+    )
   }
 
   // =========================================================================

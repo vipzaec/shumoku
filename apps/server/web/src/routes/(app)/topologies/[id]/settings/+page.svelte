@@ -32,6 +32,7 @@
   const ctx = useTopologyCtx()
 
   let edgeStyle = $state('orthogonal')
+  let direction = $state<'TB' | 'BT' | 'LR' | 'RL'>('TB')
   let splineMode = $state('sloppy')
   let hideDisconnected = $state(false)
   let savingEdgeStyle = $state(false)
@@ -56,6 +57,7 @@
     if (!ctx.topology?.id) return
     try {
       const settings = await api.topologies.displaySettings.get(ctx.topology.id)
+      direction = settings.direction || 'TB'
       edgeStyle = settings.edgeStyle || 'orthogonal'
       splineMode = settings.splineMode || 'sloppy'
       hideDisconnected = settings.hideDisconnected ?? false
@@ -90,6 +92,16 @@
       console.error('Failed to update edge style:', e)
     } finally {
       savingEdgeStyle = false
+    }
+  }
+
+  async function updateDirection() {
+    if (!ctx.topology?.id) return
+    try {
+      await api.topologies.displaySettings.set(ctx.topology.id, { direction })
+      ctx.bumpRevision()
+    } catch (e) {
+      console.error('Failed to update layout direction:', e)
     }
   }
 
@@ -159,6 +171,21 @@
       <h2 class="font-medium text-theme-text-emphasis">Display</h2>
     </div>
     <div class="card-body space-y-4">
+      <div>
+        <label for="direction" class="text-sm text-theme-text block mb-1">Layout Direction</label>
+        <select
+          id="direction"
+          class="input w-full"
+          bind:value={direction}
+          onchange={updateDirection}
+        >
+          <option value="LR">Left to right</option>
+          <option value="TB">Top to bottom (default)</option>
+          <option value="RL">Right to left</option>
+          <option value="BT">Bottom to top</option>
+        </select>
+      </div>
+
       <div>
         <label for="edgeStyle" class="text-sm text-theme-text block mb-1">Edge Style</label>
         <select

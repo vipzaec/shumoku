@@ -58,13 +58,14 @@ export async function computeNetworkLayout(
   layout: LayoutResult
 }> {
   const direction = graph.settings?.direction ?? 'TB'
+  const fixed = new Set(graph.nodes.filter((node) => node.position).map((node) => node.id))
 
   // Composite zone layout (v3 engine, #429): zones from location
   // metadata, layered quotient placement, octilinear edge routing.
   // Explicit option wins; otherwise auto-enable for graphs with broad
   // zone metadata (discovered networks), where it reads far better than
   // flat-tree/compound. Hand-drawn diagrams rarely qualify.
-  const useComposite = options.composite ?? shouldUseComposite(graph)
+  const useComposite = options.composite ?? (fixed.size === 0 && shouldUseComposite(graph))
   if (useComposite) {
     // Place-and-route search (v3 突き合わせ loop): placement variants are
     // routed for real and the routed-geometry score arbitrates — gaps
@@ -110,11 +111,13 @@ export async function computeNetworkLayout(
   const nodeGap = Math.max(30, Math.round(maxLinkWidth) + 16)
   const layerGap = Math.max(80, Math.round(maxLinkWidth) + 24)
 
-  const layoutFn = options.compound ? layoutCompound : autoLayoutFlatTree
+  const layoutFn = options.compound && fixed.size === 0 ? layoutCompound : autoLayoutFlatTree
   const { nodes, ports, subgraphs, bounds } = layoutFn(graph, engine, {
     direction,
     nodeGap,
     layerGap,
+    subgraphPadding: graph.settings?.subgraphPadding,
+    fixed,
   })
   const edges = await routeEdges(nodes, ports, graph.links, subgraphs)
 

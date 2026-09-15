@@ -21,7 +21,7 @@ export const lightTheme: Theme = {
 
     // Text
     text: '#0f172a',
-    textSecondary: '#64748b',
+    textSecondary: '#334155',
     textDisabled: '#cbd5e1',
 
     // Primary (Blue)

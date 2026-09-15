@@ -655,12 +655,12 @@ export class SVGRenderer {
   .node-label { font-family: ${this.options.fontFamily}; font-size: 14px; font-weight: 600; fill: ${textColor}; }
   .node-label-bold { font-weight: 700; }
   /* Secondary/metadata labels: smaller, monospace for technical info */
-  .node-label-secondary { font-family: ${monoFont}; font-size: 10px; font-weight: 400; fill: ${textSecondary}; }
+  .node-label-secondary { font-family: ${monoFont}; font-size: 11px; font-weight: 500; fill: ${textSecondary}; }
   .node-icon { color: ${textSecondary}; }
   .subgraph-icon { opacity: 0.9; }
   /* Subgraph/zone labels: uppercase, letterspaced for modern look */
   .subgraph-label { font-family: ${this.options.fontFamily}; font-size: 11px; font-weight: 700; fill: ${subgraphLabel}; text-transform: uppercase; letter-spacing: 0.05em; }
-  .link-label { font-family: ${monoFont}; font-size: 10px; fill: ${textSecondary}; }
+  .link-label { font-family: ${monoFont}; font-size: 11px; font-weight: 600; fill: ${textColor}; paint-order: stroke; stroke: #ffffff; stroke-width: 3px; stroke-linejoin: round; }
   .endpoint-label { font-family: ${monoFont}; font-size: 9px; fill: ${textColor}; }
 </style>`
   }

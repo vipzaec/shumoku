@@ -75,7 +75,8 @@ let _defaultEngine: LayoutEngine | null = null
 
 /**
  * Resolve a node's display size — returns the node's own
- * `size` if set, otherwise asks the engine for its body size.
+ * at least its authored `size`, while still expanding it when labels need
+ * more room.
  *
  * Pass `engine` to share its TextMeasurer cache with other
  * queries. Without one, a process-wide default engine is
@@ -90,7 +91,6 @@ export function resolveNodeSize(
   },
   engine?: LayoutEngine,
 ): { width: number; height: number } {
-  if (node.size) return node.size
   let e = engine
   if (!e) {
     if (!_defaultEngine) _defaultEngine = createEngine()

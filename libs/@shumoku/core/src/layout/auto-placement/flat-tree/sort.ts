@@ -38,6 +38,10 @@ export function sortBlocksBySourcePort(
 ): BlockId[] {
   const parentMembers = new Set(blockMembers.get(parentBlockId) ?? [])
   const portLabelOf = (nodeId: string, portId: string): string => {
+    // Semantic diagrams may connect whole nodes without rendering physical
+    // ports. Treat that endpoint as an empty sort key instead of crashing
+    // while ordering sibling blocks.
+    if (!portId) return ''
     const port = nodesById.get(nodeId)?.ports?.find((p) => p.id === portId)
     return port?.label ?? portId
   }

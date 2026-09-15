@@ -4,6 +4,7 @@ import type { TopologyService } from '../services/topology.js'
 import type { DisplaySettingsView, TopologyObservationApplicationService } from './services.js'
 
 const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsView = {
+  direction: 'TB',
   edgeStyle: 'orthogonal',
   splineMode: 'sloppy',
   hideDisconnected: false,
@@ -56,6 +57,7 @@ export function createTopologyObservationApplicationService(
     getDisplaySettings(topologyId) {
       const settings = topologies.readProjectOverlay(topologyId)?.settings
       return {
+        direction: settings?.direction ?? DEFAULT_DISPLAY_SETTINGS.direction,
         edgeStyle:
           (settings?.edgeStyle as EdgeStyle | undefined) ?? DEFAULT_DISPLAY_SETTINGS.edgeStyle,
         splineMode:
@@ -70,6 +72,7 @@ export function createTopologyObservationApplicationService(
         links: [],
       }
       const settings = { ...(overlay.settings ?? {}) }
+      if (patch.direction !== undefined) settings.direction = patch.direction
       if (patch.edgeStyle !== undefined) settings.edgeStyle = patch.edgeStyle
       if (patch.edgeStyle === 'splines') settings.splineMode = patch.splineMode ?? 'sloppy'
       else if (patch.edgeStyle !== undefined) delete settings.splineMode

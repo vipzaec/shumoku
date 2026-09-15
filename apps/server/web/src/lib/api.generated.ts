@@ -2106,6 +2106,8 @@ export interface components {
         };
         TopologyDisplaySettings: {
             /** @enum {string} */
+            direction: "TB" | "BT" | "LR" | "RL";
+            /** @enum {string} */
             edgeStyle: "polyline" | "orthogonal" | "splines" | "straight";
             /** @enum {string} */
             splineMode: "sloppy" | "conservative" | "conservative_soft";
@@ -2116,6 +2118,8 @@ export interface components {
             ok: true;
         };
         UpdateTopologyDisplaySettings: {
+            /** @enum {string} */
+            direction?: "TB" | "BT" | "LR" | "RL";
             /** @enum {string} */
             edgeStyle?: "polyline" | "orthogonal" | "splines" | "straight";
             /** @enum {string} */

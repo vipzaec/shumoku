@@ -80,6 +80,7 @@ export const ResolvedTopologySchema = z
 
 export const DisplaySettingsSchema = z
   .object({
+    direction: z.enum(['TB', 'BT', 'LR', 'RL']),
     edgeStyle: z.enum(['polyline', 'orthogonal', 'splines', 'straight']),
     splineMode: z.enum(['sloppy', 'conservative', 'conservative_soft']),
     hideDisconnected: z.boolean(),

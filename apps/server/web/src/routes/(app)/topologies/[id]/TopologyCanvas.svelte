@@ -123,6 +123,7 @@
       <InteractiveSvgDiagram
         bind:this={diagramComponent}
         {topologyId}
+        allowLayoutEdit={!$readOnlyAccess}
         onSearchOpen={() => (searchPaletteOpen = true)}
         onNodeSelect={handleNodeSelect}
         onSubgraphSelect={handleSubgraphSelect}

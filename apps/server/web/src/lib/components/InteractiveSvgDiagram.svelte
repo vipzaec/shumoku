@@ -113,6 +113,7 @@
     onNodeSelect?: (event: NodeSelectEvent) => void
     onSubgraphSelect?: (event: SubgraphSelectEvent) => void
     onSheetChange?: (sheetId: string | null) => void
+    allowLayoutEdit?: boolean
     /**
      * Override how the underlying NetworkGraph is fetched. Detail page
      * uses `topologyId` and the default fetcher. Share page passes a
@@ -138,6 +139,7 @@
     onNodeSelect,
     onSubgraphSelect,
     onSheetChange,
+    allowLayoutEdit = false,
     graphLoader,
   }: Props = $props()
 
@@ -154,6 +156,26 @@
   // previous diagram exists we keep showing it; otherwise the loading state
   // says what's happening instead of a bare spinner.
   let building = $state(false)
+  let layoutEdit = $state(false)
+  let selectedLayoutNode = $state<string | null>(null)
+  let selectedLayoutPinIds = $state<string[]>([])
+  let pinnedPositions = $state<Record<string, { x: number; y: number }>>({})
+
+  const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
+
+  function readPins(): Record<string, { x: number; y: number }> {
+    if (typeof localStorage === 'undefined' || !topologyId) return {}
+    try {
+      return JSON.parse(localStorage.getItem(pinStorageKey) ?? '{}')
+    } catch {
+      return {}
+    }
+  }
+
+  function writePins(next: Record<string, { x: number; y: number }>) {
+    pinnedPositions = next
+    if (typeof localStorage !== 'undefined') localStorage.setItem(pinStorageKey, JSON.stringify(next))
+  }
 
   // Drill-down navigation stack. `currentSheetId === null` means root.
   let currentSheetId = $state<string | null>(null)
@@ -199,8 +221,14 @@
         return
       }
       if (res.graph) {
-        graph = res.graph
-        serverLayout = res.resolved
+        const pins = readPins()
+        pinnedPositions = pins
+        graph = Object.keys(pins).length
+          ? { ...res.graph, nodes: res.graph.nodes.map((node) => pins[node.id] ? { ...node, position: pins[node.id] } : node) }
+          : res.graph
+        // Pinned positions require a fresh client layout so ports and routes
+        // are recalculated around the operator's saved placement.
+        serverLayout = Object.keys(pins).length ? undefined : res.resolved
         hasGraph = true
       }
       building = res.stale === true
@@ -265,8 +293,46 @@
 
   function handleSelect(id: string | null, type: string | null) {
     if (!id || !type || !graph) return
+    if (layoutEdit) {
+      selectedLayoutNode = id
+      selectedLayoutPinIds = type === 'node'
+        ? (id && pinnedPositions[id] ? [id] : [])
+        : (id && type === 'subgraph' ? pinnedNodeIdsInSubgraph(id) : [])
+      return
+    }
     if (type === 'node') emitNodeSelect(id)
     else if (type === 'subgraph') emitSubgraphSelect(id)
+  }
+
+  function pinnedNodeIdsInSubgraph(subgraphId: string): string[] {
+    if (!graph) return []
+    const parents = new Map((graph.subgraphs ?? []).map((sg) => [sg.id, sg.parent]))
+    const isInside = (nodeId: string) => {
+      let parent = graph?.nodes.find((node) => node.id === nodeId)?.parent
+      while (parent) {
+        if (parent === subgraphId) return true
+        parent = parents.get(parent)
+      }
+      return false
+    }
+    return Object.keys(pinnedPositions).filter(isInside)
+  }
+
+  function handleLayoutDragEnd(id: string, positions: Record<string, { x: number; y: number }>) {
+    if (!layoutEdit || Object.keys(positions).length === 0) return
+    selectedLayoutNode = id
+    selectedLayoutPinIds = Object.keys(positions)
+    writePins({ ...pinnedPositions, ...positions })
+  }
+
+  function unpinSelected() {
+    if (!selectedLayoutNode) return
+    const next = { ...pinnedPositions }
+    for (const id of selectedLayoutPinIds) delete next[id]
+    writePins(next)
+    selectedLayoutNode = null
+    selectedLayoutPinIds = []
+    void loadGraph()
   }
 
   function emitNodeSelect(nodeId: string) {
@@ -464,9 +530,10 @@
       sheetId={currentSheetId}
       layout={currentSheetId ? undefined : serverLayout}
       theme={currentTheme}
-      mode="view"
+      mode={layoutEdit ? 'edit' : 'view'}
       sheetCacheStrategy="lazy"
       onselect={handleSelect}
+      ondragend={handleLayoutDragEnd}
     >
       {#snippet linkOverlay(edge, context)}
         <WeathermapLinkOverlay
@@ -499,6 +566,16 @@
       </button>
     </div>
     <div class="control-group">
+      {#if allowLayoutEdit && !readOnly}
+        <button
+          onclick={() => (layoutEdit = !layoutEdit)}
+          title={layoutEdit ? 'Finish layout editing' : 'Move and pin nodes'}
+          class:active={layoutEdit}
+        >{layoutEdit ? '✓' : '↔'}</button>
+        {#if layoutEdit && selectedLayoutNode && selectedLayoutPinIds.length > 0}
+          <button onclick={unpinSelected} title="Unpin selected node or block">×</button>
+        {/if}
+      {/if}
       <button onclick={() => viewer?.resetZoom()} title="Fit to View">
         <CornersOutIcon size={18} />
       </button>
