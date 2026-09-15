@@ -903,6 +903,7 @@ export const topologies = {
           nodePositions: Record<string, { x: number; y: number }>
           portSides: Record<string, 'top' | 'bottom' | 'left' | 'right'>
           portOrders: Record<string, number>
+          portOffsets: Record<string, number>
           edgeRoutes: Record<string, Array<{ x: number; y: number }>>
         }
       },

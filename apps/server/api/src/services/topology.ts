@@ -113,6 +113,7 @@ export interface OperatorLayoutState {
   nodePositions: Record<string, { x: number; y: number }>
   portSides: Record<string, 'top' | 'bottom' | 'left' | 'right'>
   portOrders: Record<string, number>
+  portOffsets: Record<string, number>
   edgeRoutes: Record<string, Array<{ x: number; y: number }>>
 }
 
@@ -486,17 +487,18 @@ export class TopologyService {
     const row = this.db
       .query('SELECT payload_json FROM topology_operator_layout WHERE topology_id = ?')
       .get(topologyId) as { payload_json: string } | null
-    if (!row) return { nodePositions: {}, portSides: {}, portOrders: {}, edgeRoutes: {} }
+    if (!row) return { nodePositions: {}, portSides: {}, portOrders: {}, portOffsets: {}, edgeRoutes: {} }
     try {
       const value = JSON.parse(row.payload_json) as Partial<OperatorLayoutState>
       return {
         nodePositions: value.nodePositions ?? {},
         portSides: value.portSides ?? {},
         portOrders: value.portOrders ?? {},
+        portOffsets: value.portOffsets ?? {},
         edgeRoutes: value.edgeRoutes ?? {},
       }
     } catch {
-      return { nodePositions: {}, portSides: {}, portOrders: {}, edgeRoutes: {} }
+      return { nodePositions: {}, portSides: {}, portOrders: {}, portOffsets: {}, edgeRoutes: {} }
     }
   }
 

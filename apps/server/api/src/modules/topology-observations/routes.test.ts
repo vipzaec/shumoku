@@ -106,6 +106,7 @@ describe('topology display settings', () => {
       nodePositions: { firewall: { x: 120, y: 240 } },
       portSides: { 'firewall:wan': 'left' as const },
       portOrders: { 'firewall:wan': 0 },
+      portOffsets: { 'firewall:wan': 0.5 },
       edgeRoutes: {},
     }
     const response = await app(observations).request('/topologies/topology-1/display-settings', {

@@ -134,7 +134,7 @@
      * the next layout pass keeps it there. `order` is currently not
      * computed by the renderer — order-within-side is a follow-up.
      */
-    onportmove?: (nodeId: string, portId: string, side: 'top' | 'bottom' | 'left' | 'right', order: number) => void
+    onportmove?: (nodeId: string, portId: string, side: 'top' | 'bottom' | 'left' | 'right', order: number, offset: number) => void
     /**
      * Per-element right-clicks call `preventDefault()` by default to
      * suppress the browser's native context menu. Set this to `false`
@@ -803,13 +803,17 @@
       .sort((a, b) => a.absolutePosition[axis] - b.absolutePosition[axis])
     const pointer = axis === 'x' ? x : y
     const newOrder = siblings.filter((candidate) => candidate.absolutePosition[axis] < pointer).length
+    const size = resolveNodeSize(node)
+    const start = axis === 'x' ? node.position.x - size.width / 2 : node.position.y - size.height / 2
+    const length = axis === 'x' ? size.width : size.height
+    const offset = Math.max(0.04, Math.min(0.96, (pointer - start) / length))
     // Bare port id used by external API — SvgPort sees the resolved
     // `nodeId:portId` form; strip the prefix back to the raw port id
     // that lives on `NodePort.id`.
     const rawPortId = portId.startsWith(`${port.nodeId}:`)
       ? portId.slice(port.nodeId.length + 1)
       : portId
-    onportmove(port.nodeId, rawPortId, newSide, newOrder)
+    onportmove(port.nodeId, rawPortId, newSide, newOrder, offset)
   }
 
   export async function appendLink(link: Link) {

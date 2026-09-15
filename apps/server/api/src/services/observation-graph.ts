@@ -234,6 +234,7 @@ const nodePortSchema = modelObject<NodePort>()({
     .looseObject({
       side: z.enum(['top', 'bottom', 'left', 'right']).optional(),
       order: z.number().optional(),
+      offset: z.number().min(0).max(1).optional(),
     })
     .optional(),
   provenance: provenanceSchema.optional(),

@@ -61,7 +61,7 @@ function getNodePortLabel(node: Node | undefined, portId: string): string {
 function getPortPlacement(
   node: Node | undefined,
   portId: string,
-): { side?: Side; order?: number } | undefined {
+): { side?: Side; order?: number; offset?: number } | undefined {
   return node?.ports?.find((p) => p.id === portId)?.placement
 }
 
@@ -431,7 +431,20 @@ export function placePorts(
     for (const [i, a] of ordered.entries()) {
       const portId = `${a.nodeId}:${a.portId}`
       const absolutePosition =
-        coords[i] ?? computePortPosition(positioned, a.side, i, ordered.length)
+        (() => {
+          const offset = getPortPlacement(node, a.portId)?.offset
+          if (typeof offset !== 'number') return coords[i] ?? computePortPosition(positioned, a.side, i, ordered.length)
+          const size = resolveNodeSize(positioned)
+          const ratio = Math.max(0.04, Math.min(0.96, offset))
+          if (a.side === 'top' || a.side === 'bottom') return {
+            x: positioned.position.x - size.width / 2 + size.width * ratio,
+            y: positioned.position.y + (a.side === 'top' ? -size.height / 2 : size.height / 2),
+          }
+          return {
+            x: positioned.position.x + (a.side === 'left' ? -size.width / 2 : size.width / 2),
+            y: positioned.position.y - size.height / 2 + size.height * ratio,
+          }
+        })()
       ports.set(portId, {
         id: portId,
         nodeId: a.nodeId,

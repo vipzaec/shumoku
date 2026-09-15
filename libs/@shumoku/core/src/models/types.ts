@@ -243,6 +243,8 @@ export interface NodePort {
   placement?: {
     side?: 'top' | 'bottom' | 'left' | 'right'
     order?: number
+    /** Normalized position along the selected side (0=start, 1=end). */
+    offset?: number
   }
   /**
    * Observation provenance (which source last asserted this port).

@@ -162,11 +162,13 @@
   let pinnedPositions = $state<Record<string, { x: number; y: number }>>({})
   let portSides = $state<Record<string, 'top' | 'bottom' | 'left' | 'right'>>({})
   let portOrders = $state<Record<string, number>>({})
+  let portOffsets = $state<Record<string, number>>({})
 
   type OperatorLayout = {
     nodePositions: Record<string, { x: number; y: number }>
     portSides: Record<string, 'top' | 'bottom' | 'left' | 'right'>
     portOrders: Record<string, number>
+    portOffsets: Record<string, number>
     edgeRoutes: Record<string, Array<{ x: number; y: number }>>
   }
 
@@ -185,7 +187,7 @@
   function writePins(next: Record<string, { x: number; y: number }>) {
     pinnedPositions = next
     if (typeof localStorage !== 'undefined') localStorage.setItem(pinStorageKey, JSON.stringify(next))
-    void persistOperatorLayout(next, portSides, portOrders)
+    void persistOperatorLayout(next, portSides, portOrders, portOffsets)
   }
 
   function readPortSides(): Record<string, 'top' | 'bottom' | 'left' | 'right'> {
@@ -200,17 +202,18 @@
   function writePortSides(next: Record<string, 'top' | 'bottom' | 'left' | 'right'>) {
     portSides = next
     if (typeof localStorage !== 'undefined') localStorage.setItem(portStorageKey, JSON.stringify(next))
-    void persistOperatorLayout(pinnedPositions, next, portOrders)
+    void persistOperatorLayout(pinnedPositions, next, portOrders, portOffsets)
   }
 
   async function persistOperatorLayout(
     nodePositions: Record<string, { x: number; y: number }>,
     sides: Record<string, 'top' | 'bottom' | 'left' | 'right'>,
     orders: Record<string, number>,
+    offsets: Record<string, number>,
   ) {
     if (!topologyId || readOnly) return
     await api.topologies.displaySettings.set(topologyId, {
-      operatorLayout: { nodePositions, portSides: sides, portOrders: orders, edgeRoutes: {} },
+      operatorLayout: { nodePositions, portSides: sides, portOrders: orders, portOffsets: offsets, edgeRoutes: {} },
     })
   }
 
@@ -219,6 +222,7 @@
     pins: Record<string, { x: number; y: number }>,
     sides: Record<string, 'top' | 'bottom' | 'left' | 'right'>,
     orders: Record<string, number> = portOrders,
+    offsets: Record<string, number> = portOffsets,
   ): NetworkGraph {
     if (Object.keys(pins).length === 0 && Object.keys(sides).length === 0) return source
     return {
@@ -231,8 +235,9 @@
               ports: node.ports.map((port) => {
                 const side = sides[`${node.id}:${port.id}`]
                 const order = orders[`${node.id}:${port.id}`]
-                return side || order !== undefined
-                  ? { ...port, placement: { ...port.placement, ...(side ? { side } : {}), ...(order !== undefined ? { order } : {}) } }
+                const offset = offsets[`${node.id}:${port.id}`]
+                return side || order !== undefined || offset !== undefined
+                  ? { ...port, placement: { ...port.placement, ...(side ? { side } : {}), ...(order !== undefined ? { order } : {}), ...(offset !== undefined ? { offset } : {}) } }
                   : port
               }),
             }
@@ -293,17 +298,19 @@
         const localSides = readPortSides()
         const serverHasLayout =
           saved &&
-          (Object.keys(saved.nodePositions).length > 0 || Object.keys(saved.portSides).length > 0 || Object.keys(saved.portOrders ?? {}).length > 0)
+          (Object.keys(saved.nodePositions).length > 0 || Object.keys(saved.portSides).length > 0 || Object.keys(saved.portOrders ?? {}).length > 0 || Object.keys(saved.portOffsets ?? {}).length > 0)
         const pins = serverHasLayout ? saved.nodePositions : localPins
         const sides = serverHasLayout ? saved.portSides : localSides
         const orders = serverHasLayout ? (saved.portOrders ?? {}) : {}
+        const offsets = serverHasLayout ? (saved.portOffsets ?? {}) : {}
         pinnedPositions = pins
         portSides = sides
         portOrders = orders
+        portOffsets = offsets
         if (!serverHasLayout && (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)) {
-          void persistOperatorLayout(localPins, localSides, {})
+          void persistOperatorLayout(localPins, localSides, {}, {})
         }
-        graph = applyLayoutOverrides(res.graph, pins, sides, orders)
+        graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets)
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
         serverLayout = Object.keys(pins).length || Object.keys(sides).length ? undefined : res.resolved
@@ -408,6 +415,7 @@
     portId: string,
     side: 'top' | 'bottom' | 'left' | 'right',
     order: number,
+    offset: number,
   ) {
     if (!layoutEdit || !graph) return
     const next = { ...portSides, [`${nodeId}:${portId}`]: side }
@@ -418,9 +426,11 @@
     const nextOrders = { ...portOrders }
     siblings.forEach((port, index) => (nextOrders[`${nodeId}:${port.id}`] = index))
     portOrders = nextOrders
+    const nextOffsets = { ...portOffsets, [`${nodeId}:${portId}`]: offset }
+    portOffsets = nextOffsets
     writePortSides(next)
-    void persistOperatorLayout(pinnedPositions, next, nextOrders)
-    graph = applyLayoutOverrides(graph, pinnedPositions, next, nextOrders)
+    void persistOperatorLayout(pinnedPositions, next, nextOrders, nextOffsets)
+    graph = applyLayoutOverrides(graph, pinnedPositions, next, nextOrders, nextOffsets)
     serverLayout = undefined
   }
 
@@ -436,6 +446,7 @@
 
   function resetOperatorLayout() {
     portOrders = {}
+    portOffsets = {}
     writePins({})
     writePortSides({})
     selectedLayoutNode = null
