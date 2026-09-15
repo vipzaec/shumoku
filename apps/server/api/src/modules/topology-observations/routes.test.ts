@@ -99,4 +99,23 @@ describe('topology display settings', () => {
       direction: 'LR',
     })
   })
+
+  it('accepts shared operator layout overrides', async () => {
+    const observations = service()
+    const operatorLayout = {
+      nodePositions: { firewall: { x: 120, y: 240 } },
+      portSides: { 'firewall:wan': 'left' as const },
+      edgeRoutes: {},
+    }
+    const response = await app(observations).request('/topologies/topology-1/display-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operatorLayout }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(observations.updateDisplaySettings).toHaveBeenCalledWith('topology-1', {
+      operatorLayout,
+    })
+  })
 })

@@ -84,6 +84,11 @@ export const DisplaySettingsSchema = z
     edgeStyle: z.enum(['polyline', 'orthogonal', 'splines', 'straight']),
     splineMode: z.enum(['sloppy', 'conservative', 'conservative_soft']),
     hideDisconnected: z.boolean(),
+    operatorLayout: z.object({
+      nodePositions: z.record(z.string(), z.object({ x: z.number(), y: z.number() })),
+      portSides: z.record(z.string(), z.enum(['top', 'bottom', 'left', 'right'])),
+      edgeRoutes: z.record(z.string(), z.array(z.object({ x: z.number(), y: z.number() }))),
+    }),
   })
   .openapi('TopologyDisplaySettings')
 

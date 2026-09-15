@@ -109,6 +109,12 @@ interface TopologyRow {
   updated_at: number
 }
 
+export interface OperatorLayoutState {
+  nodePositions: Record<string, { x: number; y: number }>
+  portSides: Record<string, 'top' | 'bottom' | 'left' | 'right'>
+  edgeRoutes: Record<string, Array<{ x: number; y: number }>>
+}
+
 function rowToTopology(row: TopologyRow): Topology {
   return {
     id: row.id,
@@ -473,6 +479,35 @@ export class TopologyService {
   constructor() {
     this.db = getDatabase()
     this.topologySources = new TopologySourcesService()
+  }
+
+  readOperatorLayout(topologyId: string): OperatorLayoutState {
+    const row = this.db
+      .query('SELECT payload_json FROM topology_operator_layout WHERE topology_id = ?')
+      .get(topologyId) as { payload_json: string } | null
+    if (!row) return { nodePositions: {}, portSides: {}, edgeRoutes: {} }
+    try {
+      const value = JSON.parse(row.payload_json) as Partial<OperatorLayoutState>
+      return {
+        nodePositions: value.nodePositions ?? {},
+        portSides: value.portSides ?? {},
+        edgeRoutes: value.edgeRoutes ?? {},
+      }
+    } catch {
+      return { nodePositions: {}, portSides: {}, edgeRoutes: {} }
+    }
+  }
+
+  writeOperatorLayout(topologyId: string, layout: OperatorLayoutState): void {
+    this.db
+      .query(
+        `INSERT INTO topology_operator_layout (topology_id, payload_json, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(topology_id) DO UPDATE SET
+           payload_json = excluded.payload_json,
+           updated_at = excluded.updated_at`,
+      )
+      .run(topologyId, JSON.stringify(layout), timestamp())
   }
 
   /**

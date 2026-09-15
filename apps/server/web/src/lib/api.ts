@@ -899,6 +899,11 @@ export const topologies = {
         edgeStyle?: string
         splineMode?: string
         hideDisconnected?: boolean
+        operatorLayout?: {
+          nodePositions: Record<string, { x: number; y: number }>
+          portSides: Record<string, 'top' | 'bottom' | 'left' | 'right'>
+          edgeRoutes: Record<string, Array<{ x: number; y: number }>>
+        }
       },
     ) => {
       const { data, error, response } = await contractClient.PUT(

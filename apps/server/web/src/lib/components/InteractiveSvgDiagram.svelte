@@ -162,6 +162,12 @@
   let pinnedPositions = $state<Record<string, { x: number; y: number }>>({})
   let portSides = $state<Record<string, 'top' | 'bottom' | 'left' | 'right'>>({})
 
+  type OperatorLayout = {
+    nodePositions: Record<string, { x: number; y: number }>
+    portSides: Record<string, 'top' | 'bottom' | 'left' | 'right'>
+    edgeRoutes: Record<string, Array<{ x: number; y: number }>>
+  }
+
   const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
   const portStorageKey = $derived(`shumoku-layout-port-sides:${topologyId}`)
 
@@ -177,6 +183,7 @@
   function writePins(next: Record<string, { x: number; y: number }>) {
     pinnedPositions = next
     if (typeof localStorage !== 'undefined') localStorage.setItem(pinStorageKey, JSON.stringify(next))
+    void persistOperatorLayout(next, portSides)
   }
 
   function readPortSides(): Record<string, 'top' | 'bottom' | 'left' | 'right'> {
@@ -191,6 +198,17 @@
   function writePortSides(next: Record<string, 'top' | 'bottom' | 'left' | 'right'>) {
     portSides = next
     if (typeof localStorage !== 'undefined') localStorage.setItem(portStorageKey, JSON.stringify(next))
+    void persistOperatorLayout(pinnedPositions, next)
+  }
+
+  async function persistOperatorLayout(
+    nodePositions: Record<string, { x: number; y: number }>,
+    sides: Record<string, 'top' | 'bottom' | 'left' | 'right'>,
+  ) {
+    if (!topologyId || readOnly) return
+    await api.topologies.displaySettings.set(topologyId, {
+      operatorLayout: { nodePositions, portSides: sides, edgeRoutes: {} },
+    })
   }
 
   function applyLayoutOverrides(
@@ -252,7 +270,10 @@
     error = ''
     try {
       const loader = graphLoader ?? (() => api.topologies.getView(topologyId))
-      const res = await loader()
+      const [res, display] = await Promise.all([
+        loader(),
+        readOnly || !topologyId ? Promise.resolve(null) : api.topologies.displaySettings.get(topologyId),
+      ])
       if (res.deriving) {
         building = true
         loading = !hasGraph
@@ -260,10 +281,19 @@
         return
       }
       if (res.graph) {
-        const pins = readPins()
-        const sides = readPortSides()
+        const saved = (display as { operatorLayout?: OperatorLayout } | null)?.operatorLayout
+        const localPins = readPins()
+        const localSides = readPortSides()
+        const serverHasLayout =
+          saved &&
+          (Object.keys(saved.nodePositions).length > 0 || Object.keys(saved.portSides).length > 0)
+        const pins = serverHasLayout ? saved.nodePositions : localPins
+        const sides = serverHasLayout ? saved.portSides : localSides
         pinnedPositions = pins
         portSides = sides
+        if (!serverHasLayout && (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)) {
+          void persistOperatorLayout(localPins, localSides)
+        }
         graph = applyLayoutOverrides(res.graph, pins, sides)
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
@@ -381,6 +411,14 @@
     const next = { ...pinnedPositions }
     for (const id of selectedLayoutPinIds) delete next[id]
     writePins(next)
+    selectedLayoutNode = null
+    selectedLayoutPinIds = []
+    void loadGraph()
+  }
+
+  function resetOperatorLayout() {
+    writePins({})
+    writePortSides({})
     selectedLayoutNode = null
     selectedLayoutPinIds = []
     void loadGraph()
@@ -626,6 +664,9 @@
         >{layoutEdit ? '✓' : '↔'}</button>
         {#if layoutEdit && selectedLayoutNode && selectedLayoutPinIds.length > 0}
           <button onclick={unpinSelected} title="Unpin selected node or block">×</button>
+        {/if}
+        {#if layoutEdit && (Object.keys(pinnedPositions).length > 0 || Object.keys(portSides).length > 0)}
+          <button onclick={resetOperatorLayout} title="Reset all saved layout">Reset</button>
         {/if}
       {/if}
       <button onclick={() => viewer?.resetZoom()} title="Fit to View">

@@ -8,6 +8,7 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsView = {
   edgeStyle: 'orthogonal',
   splineMode: 'sloppy',
   hideDisconnected: false,
+  operatorLayout: { nodePositions: {}, portSides: {}, edgeRoutes: {} },
 }
 
 export function createTopologyObservationApplicationService(
@@ -63,21 +64,32 @@ export function createTopologyObservationApplicationService(
         splineMode:
           (settings?.splineMode as SplineMode | undefined) ?? DEFAULT_DISPLAY_SETTINGS.splineMode,
         hideDisconnected: settings?.hideDisconnected ?? DEFAULT_DISPLAY_SETTINGS.hideDisconnected,
+        operatorLayout: topologies.readOperatorLayout(topologyId),
       }
     },
     async updateDisplaySettings(topologyId, patch) {
-      const overlay: NetworkGraph = topologies.readProjectOverlay(topologyId) ?? {
-        version: '1',
-        nodes: [],
-        links: [],
+      if (patch.operatorLayout !== undefined) {
+        topologies.writeOperatorLayout(topologyId, patch.operatorLayout)
       }
-      const settings = { ...(overlay.settings ?? {}) }
-      if (patch.direction !== undefined) settings.direction = patch.direction
-      if (patch.edgeStyle !== undefined) settings.edgeStyle = patch.edgeStyle
-      if (patch.edgeStyle === 'splines') settings.splineMode = patch.splineMode ?? 'sloppy'
-      else if (patch.edgeStyle !== undefined) delete settings.splineMode
-      if (patch.hideDisconnected !== undefined) settings.hideDisconnected = patch.hideDisconnected
-      await topologies.writeProjectOverlay(topologyId, { ...overlay, settings })
+      const updatesGraphSettings =
+        patch.direction !== undefined ||
+        patch.edgeStyle !== undefined ||
+        patch.splineMode !== undefined ||
+        patch.hideDisconnected !== undefined
+      if (updatesGraphSettings) {
+        const overlay: NetworkGraph = topologies.readProjectOverlay(topologyId) ?? {
+          version: '1',
+          nodes: [],
+          links: [],
+        }
+        const settings = { ...(overlay.settings ?? {}) }
+        if (patch.direction !== undefined) settings.direction = patch.direction
+        if (patch.edgeStyle !== undefined) settings.edgeStyle = patch.edgeStyle
+        if (patch.edgeStyle === 'splines') settings.splineMode = patch.splineMode ?? 'sloppy'
+        else if (patch.edgeStyle !== undefined) delete settings.splineMode
+        if (patch.hideDisconnected !== undefined) settings.hideDisconnected = patch.hideDisconnected
+        await topologies.writeProjectOverlay(topologyId, { ...overlay, settings })
+      }
       return { ok: true }
     },
   }
