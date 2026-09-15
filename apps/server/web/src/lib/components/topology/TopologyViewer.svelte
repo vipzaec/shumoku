@@ -99,6 +99,7 @@
     oncontextmenu?: (id: string, type: string, screenX: number, screenY: number) => void
     onlayoutready?: (layout: ResolvedLayout, sheetId: string | null) => void
     ondragend?: (id: string, positions: Record<string, { x: number; y: number }>) => void
+    onportmove?: (nodeId: string, portId: string, side: 'top' | 'bottom' | 'left' | 'right') => void
     onerror?: (err: Error) => void
 
     // --- Overlay slot ---
@@ -120,6 +121,7 @@
     oncontextmenu,
     onlayoutready,
     ondragend,
+    onportmove,
     onerror,
     children,
     subgraphOverlay,
@@ -404,6 +406,7 @@
       onselect={handleSelect}
       oncontextmenu={handleContextMenu}
       ondragend={(id) => ondragend?.(id, getPinnedPositions(id))}
+      {onportmove}
     />
     {#if ctx}
       {@render children?.(ctx)}

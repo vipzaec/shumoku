@@ -160,8 +160,10 @@
   let selectedLayoutNode = $state<string | null>(null)
   let selectedLayoutPinIds = $state<string[]>([])
   let pinnedPositions = $state<Record<string, { x: number; y: number }>>({})
+  let portSides = $state<Record<string, 'top' | 'bottom' | 'left' | 'right'>>({})
 
   const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
+  const portStorageKey = $derived(`shumoku-layout-port-sides:${topologyId}`)
 
   function readPins(): Record<string, { x: number; y: number }> {
     if (typeof localStorage === 'undefined' || !topologyId) return {}
@@ -175,6 +177,43 @@
   function writePins(next: Record<string, { x: number; y: number }>) {
     pinnedPositions = next
     if (typeof localStorage !== 'undefined') localStorage.setItem(pinStorageKey, JSON.stringify(next))
+  }
+
+  function readPortSides(): Record<string, 'top' | 'bottom' | 'left' | 'right'> {
+    if (typeof localStorage === 'undefined' || !topologyId) return {}
+    try {
+      return JSON.parse(localStorage.getItem(portStorageKey) ?? '{}')
+    } catch {
+      return {}
+    }
+  }
+
+  function writePortSides(next: Record<string, 'top' | 'bottom' | 'left' | 'right'>) {
+    portSides = next
+    if (typeof localStorage !== 'undefined') localStorage.setItem(portStorageKey, JSON.stringify(next))
+  }
+
+  function applyLayoutOverrides(
+    source: NetworkGraph,
+    pins: Record<string, { x: number; y: number }>,
+    sides: Record<string, 'top' | 'bottom' | 'left' | 'right'>,
+  ): NetworkGraph {
+    if (Object.keys(pins).length === 0 && Object.keys(sides).length === 0) return source
+    return {
+      ...source,
+      nodes: source.nodes.map((node) => ({
+        ...node,
+        ...(pins[node.id] ? { position: pins[node.id] } : {}),
+        ...(node.ports
+          ? {
+              ports: node.ports.map((port) => {
+                const side = sides[`${node.id}:${port.id}`]
+                return side ? { ...port, placement: { ...port.placement, side } } : port
+              }),
+            }
+          : {}),
+      })),
+    }
   }
 
   // Drill-down navigation stack. `currentSheetId === null` means root.
@@ -222,13 +261,13 @@
       }
       if (res.graph) {
         const pins = readPins()
+        const sides = readPortSides()
         pinnedPositions = pins
-        graph = Object.keys(pins).length
-          ? { ...res.graph, nodes: res.graph.nodes.map((node) => pins[node.id] ? { ...node, position: pins[node.id] } : node) }
-          : res.graph
+        portSides = sides
+        graph = applyLayoutOverrides(res.graph, pins, sides)
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
-        serverLayout = Object.keys(pins).length ? undefined : res.resolved
+        serverLayout = Object.keys(pins).length || Object.keys(sides).length ? undefined : res.resolved
         hasGraph = true
       }
       building = res.stale === true
@@ -323,6 +362,18 @@
     selectedLayoutNode = id
     selectedLayoutPinIds = Object.keys(positions)
     writePins({ ...pinnedPositions, ...positions })
+  }
+
+  function handlePortMove(
+    nodeId: string,
+    portId: string,
+    side: 'top' | 'bottom' | 'left' | 'right',
+  ) {
+    if (!layoutEdit || !graph) return
+    const next = { ...portSides, [`${nodeId}:${portId}`]: side }
+    writePortSides(next)
+    graph = applyLayoutOverrides(graph, pinnedPositions, next)
+    serverLayout = undefined
   }
 
   function unpinSelected() {
@@ -534,6 +585,7 @@
       sheetCacheStrategy="lazy"
       onselect={handleSelect}
       ondragend={handleLayoutDragEnd}
+      onportmove={handlePortMove}
     >
       {#snippet linkOverlay(edge, context)}
         <WeathermapLinkOverlay
