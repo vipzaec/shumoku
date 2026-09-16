@@ -158,6 +158,7 @@
   let building = $state(false)
   let layoutEdit = $state(false)
   let selectedLayoutNode = $state<string | null>(null)
+  let selectedLayoutLinkId = $state<string | null>(null)
   let selectedLayoutPinIds = $state<string[]>([])
   let pinnedPositions = $state<Record<string, { x: number; y: number }>>({})
   let portSides = $state<Record<string, 'top' | 'bottom' | 'left' | 'right'>>({})
@@ -187,7 +188,8 @@
 
   function writePins(next: Record<string, { x: number; y: number }>) {
     pinnedPositions = next
-    if (typeof localStorage !== 'undefined') localStorage.setItem(pinStorageKey, JSON.stringify(next))
+    if (typeof localStorage !== 'undefined')
+      localStorage.setItem(pinStorageKey, JSON.stringify(next))
     void persistOperatorLayout(next, portSides, portOrders, portOffsets, edgeRoutes)
   }
 
@@ -202,7 +204,8 @@
 
   function writePortSides(next: Record<string, 'top' | 'bottom' | 'left' | 'right'>) {
     portSides = next
-    if (typeof localStorage !== 'undefined') localStorage.setItem(portStorageKey, JSON.stringify(next))
+    if (typeof localStorage !== 'undefined')
+      localStorage.setItem(portStorageKey, JSON.stringify(next))
     void persistOperatorLayout(pinnedPositions, next, portOrders, portOffsets, edgeRoutes)
   }
 
@@ -215,7 +218,13 @@
   ) {
     if (!topologyId || readOnly) return
     await api.topologies.displaySettings.set(topologyId, {
-      operatorLayout: { nodePositions, portSides: sides, portOrders: orders, portOffsets: offsets, edgeRoutes: routes },
+      operatorLayout: {
+        nodePositions,
+        portSides: sides,
+        portOrders: orders,
+        portOffsets: offsets,
+        edgeRoutes: routes,
+      },
     })
   }
 
@@ -239,7 +248,15 @@
                 const order = orders[`${node.id}:${port.id}`]
                 const offset = offsets[`${node.id}:${port.id}`]
                 return side || order !== undefined || offset !== undefined
-                  ? { ...port, placement: { ...port.placement, ...(side ? { side } : {}), ...(order !== undefined ? { order } : {}), ...(offset !== undefined ? { offset } : {}) } }
+                  ? {
+                      ...port,
+                      placement: {
+                        ...port.placement,
+                        ...(side ? { side } : {}),
+                        ...(order !== undefined ? { order } : {}),
+                        ...(offset !== undefined ? { offset } : {}),
+                      },
+                    }
                   : port
               }),
             }
@@ -286,7 +303,9 @@
       const loader = graphLoader ?? (() => api.topologies.getView(topologyId))
       const [res, display] = await Promise.all([
         loader(),
-        readOnly || !topologyId ? Promise.resolve(null) : api.topologies.displaySettings.get(topologyId),
+        readOnly || !topologyId
+          ? Promise.resolve(null)
+          : api.topologies.displaySettings.get(topologyId),
       ])
       if (res.deriving) {
         building = true
@@ -300,7 +319,11 @@
         const localSides = readPortSides()
         const serverHasLayout =
           saved &&
-          (Object.keys(saved.nodePositions).length > 0 || Object.keys(saved.portSides).length > 0 || Object.keys(saved.portOrders ?? {}).length > 0 || Object.keys(saved.portOffsets ?? {}).length > 0 || Object.keys(saved.edgeRoutes ?? {}).length > 0)
+          (Object.keys(saved.nodePositions).length > 0 ||
+            Object.keys(saved.portSides).length > 0 ||
+            Object.keys(saved.portOrders ?? {}).length > 0 ||
+            Object.keys(saved.portOffsets ?? {}).length > 0 ||
+            Object.keys(saved.edgeRoutes ?? {}).length > 0)
         const pins = serverHasLayout ? saved.nodePositions : localPins
         const sides = serverHasLayout ? saved.portSides : localSides
         const orders = serverHasLayout ? (saved.portOrders ?? {}) : {}
@@ -310,13 +333,17 @@
         portSides = sides
         portOrders = orders
         portOffsets = offsets
-        if (!serverHasLayout && (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)) {
+        if (
+          !serverHasLayout &&
+          (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)
+        ) {
           void persistOperatorLayout(localPins, localSides, {}, {}, {})
         }
         graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets)
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
-        serverLayout = Object.keys(pins).length || Object.keys(sides).length ? undefined : res.resolved
+        serverLayout =
+          Object.keys(pins).length || Object.keys(sides).length ? undefined : res.resolved
         hasGraph = true
       }
       building = res.stale === true
@@ -380,14 +407,20 @@
   // --- Selection handling ---
 
   function handleSelect(id: string | null, type: string | null) {
-    if (!id || !type || !graph) return
     if (layoutEdit) {
+      selectedLayoutLinkId = type === 'edge' ? id : null
       selectedLayoutNode = id
-      selectedLayoutPinIds = type === 'node'
-        ? (id && pinnedPositions[id] ? [id] : [])
-        : (id && type === 'subgraph' ? pinnedNodeIdsInSubgraph(id) : [])
+      selectedLayoutPinIds =
+        type === 'node'
+          ? id && pinnedPositions[id]
+            ? [id]
+            : []
+          : id && type === 'subgraph'
+            ? pinnedNodeIdsInSubgraph(id)
+            : []
       return
     }
+    if (!id || !type || !graph) return
     if (type === 'node') emitNodeSelect(id)
     else if (type === 'subgraph') emitSubgraphSelect(id)
   }
@@ -423,11 +456,22 @@
     if (!layoutEdit || !graph) return
     const next = { ...portSides, [`${nodeId}:${portId}`]: side }
     const node = graph.nodes.find((candidate) => candidate.id === nodeId)
-    const siblings = (node?.ports ?? []).filter((port) => port.id !== portId && (next[`${nodeId}:${port.id}`] ?? port.placement?.side) === side)
-    siblings.sort((a, b) => (portOrders[`${nodeId}:${a.id}`] ?? a.placement?.order ?? 999) - (portOrders[`${nodeId}:${b.id}`] ?? b.placement?.order ?? 999))
-    siblings.splice(Math.min(order, siblings.length), 0, { id: portId } as (typeof siblings)[number])
+    const siblings = (node?.ports ?? []).filter(
+      (port) =>
+        port.id !== portId && (next[`${nodeId}:${port.id}`] ?? port.placement?.side) === side,
+    )
+    siblings.sort(
+      (a, b) =>
+        (portOrders[`${nodeId}:${a.id}`] ?? a.placement?.order ?? 999) -
+        (portOrders[`${nodeId}:${b.id}`] ?? b.placement?.order ?? 999),
+    )
+    siblings.splice(Math.min(order, siblings.length), 0, {
+      id: portId,
+    } as (typeof siblings)[number])
     const nextOrders = { ...portOrders }
-    siblings.forEach((port, index) => (nextOrders[`${nodeId}:${port.id}`] = index))
+    siblings.forEach((port, index) => {
+      nextOrders[`${nodeId}:${port.id}`] = index
+    })
     portOrders = nextOrders
     const nextOffsets = { ...portOffsets, [`${nodeId}:${portId}`]: offset }
     portOffsets = nextOffsets
@@ -454,13 +498,14 @@
     writePins({})
     writePortSides({})
     selectedLayoutNode = null
+    selectedLayoutLinkId = null
     selectedLayoutPinIds = []
     void loadGraph()
   }
 
-  function saveRoute(id: string, bends: Array<{ x: number; y: number }>) {
+  function saveRoute(id: string, bends: Array<{ x: number; y: number }> | null) {
     const next = { ...edgeRoutes }
-    if (bends.length) next[id] = bends
+    if (bends !== null) next[id] = bends
     else delete next[id]
     edgeRoutes = next
     void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, next)
@@ -474,12 +519,18 @@
   function moveRoutePoint(id: string, index: number, x: number, y: number) {
     const bends = edgeRoutes[id]
     if (!layoutEdit || !bends?.[index]) return
-    saveRoute(id, bends.map((point, i) => i === index ? { x, y } : point))
+    saveRoute(
+      id,
+      bends.map((point, i) => (i === index ? { x, y } : point)),
+    )
   }
   function removeRoutePoint(id: string, index: number) {
     const bends = edgeRoutes[id]
     if (!layoutEdit || !bends) return
-    saveRoute(id, bends.filter((_, i) => i !== index))
+    saveRoute(
+      id,
+      bends.filter((_, i) => i !== index),
+    )
   }
 
   function emitNodeSelect(nodeId: string) {
@@ -723,9 +774,30 @@
           onclick={() => (layoutEdit = !layoutEdit)}
           title={layoutEdit ? 'Finish layout editing; double-click a link to add a bend, drag the handle to move it, double-click the handle to remove it' : 'Move nodes and ports; edit link bends'}
           class:active={layoutEdit}
-        >{layoutEdit ? '✓' : '↔'}</button>
+        >
+          {layoutEdit ? '✓' : '↔'}
+        </button>
         {#if layoutEdit && selectedLayoutNode && selectedLayoutPinIds.length > 0}
           <button onclick={unpinSelected} title="Unpin selected node or block">×</button>
+        {/if}
+        {#if layoutEdit && selectedLayoutLinkId}
+          <button
+            onclick={() => selectedLayoutLinkId && saveRoute(selectedLayoutLinkId, null)}
+            class:active={!Object.hasOwn(edgeRoutes, selectedLayoutLinkId)}
+            title="Automatically route selected link around nodes"
+          >
+            Auto
+          </button>
+          <button
+            onclick={() => selectedLayoutLinkId && saveRoute(selectedLayoutLinkId, [])}
+            class:active={Object.hasOwn(edgeRoutes, selectedLayoutLinkId) && edgeRoutes[selectedLayoutLinkId]?.length === 0}
+            title="Draw selected link directly between its ports"
+          >
+            Straight
+          </button>
+          {#if (edgeRoutes[selectedLayoutLinkId]?.length ?? 0) > 0}
+            <span class="route-mode" title="Drag bends to adjust the manual route">Manual</span>
+          {/if}
         {/if}
         {#if layoutEdit && (Object.keys(pinnedPositions).length > 0 || Object.keys(portSides).length > 0 || Object.keys(edgeRoutes).length > 0)}
           <button onclick={resetOperatorLayout} title="Reset all saved layout">Reset</button>
