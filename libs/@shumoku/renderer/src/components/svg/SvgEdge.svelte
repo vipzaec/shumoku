@@ -17,6 +17,10 @@
     onselect,
     oncontextmenu: onctx,
     preventContextMenuDefault = true,
+    routeEdit = false,
+    onrouteadd,
+    onroutemove,
+    onrouteremove,
   }: {
     edge: ResolvedEdge
     colors: RenderColors
@@ -27,6 +31,10 @@
     onselect?: (edgeId: string, e?: MouseEvent) => void
     oncontextmenu?: (edgeId: string, e: MouseEvent) => void
     preventContextMenuDefault?: boolean
+    routeEdit?: boolean
+    onrouteadd?: (id: string, x: number, y: number) => void
+    onroutemove?: (id: string, index: number, x: number, y: number) => void
+    onrouteremove?: (id: string, index: number) => void
   } = $props()
 
   // Every edge renders as a cubic Bezier flowing out of the source
@@ -127,6 +135,19 @@
     onselect?.(edge.id, e)
     onctx?.(edge.id, e)
   }
+  function addPoint(e: MouseEvent) {
+    if (!routeEdit) return
+    e.preventDefault()
+    e.stopPropagation()
+    onrouteadd?.(edge.id, e.clientX, e.clientY)
+  }
+  let draggedPoint = $state<number | null>(null)
+  function finishPoint(e: PointerEvent) {
+    if (draggedPoint === null) return
+    e.stopPropagation()
+    onroutemove?.(edge.id, draggedPoint, e.clientX, e.clientY)
+    draggedPoint = null
+  }
 </script>
 
 <g class="link-group" data-link-id={edge.id} bind:this={groupElement}>
@@ -183,9 +204,22 @@
     stroke-width={Math.max(edge.width + 12, 16)}
     stroke-linecap="round"
     class="link-hit"
+    title={routeEdit ? 'Double-click to add a bend' : undefined}
     {onclick}
+    ondblclick={addPoint}
     oncontextmenu={handleContextMenu}
   />
+
+  {#if routeEdit && selected && edge.route?.kind === 'polyline'}
+    {#each edge.route.points.slice(1, -1) as point, index}
+      <circle cx={point.x} cy={point.y} r="8" fill="white" stroke={colors.selection}
+        stroke-width="2" style="cursor: grab; touch-action: none" title="Drag to move; double-click to remove"
+        onpointerdown={(e) => { e.stopPropagation(); draggedPoint = index; e.currentTarget.setPointerCapture(e.pointerId) }}
+        onpointerup={finishPoint}
+        ondblclick={(e) => { e.stopPropagation(); onrouteremove?.(edge.id, index) }}
+      />
+    {/each}
+  {/if}
 
   {#if midpoint()}
     {@const mp = midpoint()}

@@ -135,6 +135,9 @@
      * computed by the renderer — order-within-side is a follow-up.
      */
     onportmove?: (nodeId: string, portId: string, side: 'top' | 'bottom' | 'left' | 'right', order: number, offset: number) => void
+    onrouteadd?: (id: string, x: number, y: number, index: number) => void
+    onroutemove?: (id: string, index: number, x: number, y: number) => void
+    onrouteremove?: (id: string, index: number) => void
     /**
      * Per-element right-clicks call `preventDefault()` by default to
      * suppress the browser's native context menu. Set this to `false`
@@ -190,6 +193,9 @@
     hideNode,
     oncreatelink,
     onportmove,
+    onrouteadd,
+    onroutemove,
+    onrouteremove,
     subgraphOverlay,
     linkOverlay,
     nodeOverlay,
@@ -852,6 +858,25 @@
     onlinkend={handleLinkEnd}
     onportdragend={handlePortDragEnd}
     {onlabeledit}
+    onrouteadd={(id, x, y) => {
+      const p = screenToSvg(x, y)
+      const edge = layout.edges.get(id)
+      const points = edge?.route?.kind === 'polyline'
+        ? edge.route.points
+        : edge ? [edge.fromPort.absolutePosition, edge.toPort.absolutePosition] : []
+      let index = 0
+      let best = Infinity
+      for (let i = 0; i < points.length - 1; i++) {
+        const a = points[i]!, b = points[i + 1]!
+        const dx = b.x - a.x, dy = b.y - a.y
+        const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)))
+        const distance = Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy)
+        if (distance < best) { best = distance; index = i }
+      }
+      onrouteadd?.(id, p.x, p.y, index)
+    }}
+    onroutemove={(id, index, x, y) => { const p = screenToSvg(x, y); onroutemove?.(id, index, p.x, p.y) }}
+    {onrouteremove}
     oncontextmenu={handleContextMenu}
     onbackgroundclick={handleBackgroundClick}
     onmarquee={handleMarquee}

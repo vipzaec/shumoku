@@ -163,6 +163,7 @@
   let portSides = $state<Record<string, 'top' | 'bottom' | 'left' | 'right'>>({})
   let portOrders = $state<Record<string, number>>({})
   let portOffsets = $state<Record<string, number>>({})
+  let edgeRoutes = $state<Record<string, Array<{ x: number; y: number }>>>({})
 
   type OperatorLayout = {
     nodePositions: Record<string, { x: number; y: number }>
@@ -187,7 +188,7 @@
   function writePins(next: Record<string, { x: number; y: number }>) {
     pinnedPositions = next
     if (typeof localStorage !== 'undefined') localStorage.setItem(pinStorageKey, JSON.stringify(next))
-    void persistOperatorLayout(next, portSides, portOrders, portOffsets)
+    void persistOperatorLayout(next, portSides, portOrders, portOffsets, edgeRoutes)
   }
 
   function readPortSides(): Record<string, 'top' | 'bottom' | 'left' | 'right'> {
@@ -202,7 +203,7 @@
   function writePortSides(next: Record<string, 'top' | 'bottom' | 'left' | 'right'>) {
     portSides = next
     if (typeof localStorage !== 'undefined') localStorage.setItem(portStorageKey, JSON.stringify(next))
-    void persistOperatorLayout(pinnedPositions, next, portOrders, portOffsets)
+    void persistOperatorLayout(pinnedPositions, next, portOrders, portOffsets, edgeRoutes)
   }
 
   async function persistOperatorLayout(
@@ -210,10 +211,11 @@
     sides: Record<string, 'top' | 'bottom' | 'left' | 'right'>,
     orders: Record<string, number>,
     offsets: Record<string, number>,
+    routes: Record<string, Array<{ x: number; y: number }>>,
   ) {
     if (!topologyId || readOnly) return
     await api.topologies.displaySettings.set(topologyId, {
-      operatorLayout: { nodePositions, portSides: sides, portOrders: orders, portOffsets: offsets, edgeRoutes: {} },
+      operatorLayout: { nodePositions, portSides: sides, portOrders: orders, portOffsets: offsets, edgeRoutes: routes },
     })
   }
 
@@ -298,17 +300,18 @@
         const localSides = readPortSides()
         const serverHasLayout =
           saved &&
-          (Object.keys(saved.nodePositions).length > 0 || Object.keys(saved.portSides).length > 0 || Object.keys(saved.portOrders ?? {}).length > 0 || Object.keys(saved.portOffsets ?? {}).length > 0)
+          (Object.keys(saved.nodePositions).length > 0 || Object.keys(saved.portSides).length > 0 || Object.keys(saved.portOrders ?? {}).length > 0 || Object.keys(saved.portOffsets ?? {}).length > 0 || Object.keys(saved.edgeRoutes ?? {}).length > 0)
         const pins = serverHasLayout ? saved.nodePositions : localPins
         const sides = serverHasLayout ? saved.portSides : localSides
         const orders = serverHasLayout ? (saved.portOrders ?? {}) : {}
         const offsets = serverHasLayout ? (saved.portOffsets ?? {}) : {}
+        edgeRoutes = saved?.edgeRoutes ?? {}
         pinnedPositions = pins
         portSides = sides
         portOrders = orders
         portOffsets = offsets
         if (!serverHasLayout && (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)) {
-          void persistOperatorLayout(localPins, localSides, {}, {})
+          void persistOperatorLayout(localPins, localSides, {}, {}, {})
         }
         graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets)
         // Pinned positions require a fresh client layout so ports and routes
@@ -429,7 +432,7 @@
     const nextOffsets = { ...portOffsets, [`${nodeId}:${portId}`]: offset }
     portOffsets = nextOffsets
     writePortSides(next)
-    void persistOperatorLayout(pinnedPositions, next, nextOrders, nextOffsets)
+    void persistOperatorLayout(pinnedPositions, next, nextOrders, nextOffsets, edgeRoutes)
     graph = applyLayoutOverrides(graph, pinnedPositions, next, nextOrders, nextOffsets)
     serverLayout = undefined
   }
@@ -445,6 +448,7 @@
   }
 
   function resetOperatorLayout() {
+    edgeRoutes = {}
     portOrders = {}
     portOffsets = {}
     writePins({})
@@ -452,6 +456,30 @@
     selectedLayoutNode = null
     selectedLayoutPinIds = []
     void loadGraph()
+  }
+
+  function saveRoute(id: string, bends: Array<{ x: number; y: number }>) {
+    const next = { ...edgeRoutes }
+    if (bends.length) next[id] = bends
+    else delete next[id]
+    edgeRoutes = next
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, next)
+  }
+
+  function addRoutePoint(id: string, x: number, y: number, index: number) {
+    if (!layoutEdit || !graph) return
+    const bends = edgeRoutes[id] ?? []
+    saveRoute(id, [...bends.slice(0, index), { x, y }, ...bends.slice(index)])
+  }
+  function moveRoutePoint(id: string, index: number, x: number, y: number) {
+    const bends = edgeRoutes[id]
+    if (!layoutEdit || !bends?.[index]) return
+    saveRoute(id, bends.map((point, i) => i === index ? { x, y } : point))
+  }
+  function removeRoutePoint(id: string, index: number) {
+    const bends = edgeRoutes[id]
+    if (!layoutEdit || !bends) return
+    saveRoute(id, bends.filter((_, i) => i !== index))
   }
 
   function emitNodeSelect(nodeId: string) {
@@ -654,6 +682,10 @@
       onselect={handleSelect}
       ondragend={handleLayoutDragEnd}
       onportmove={handlePortMove}
+      routeOverrides={edgeRoutes}
+      onrouteadd={addRoutePoint}
+      onroutemove={moveRoutePoint}
+      onrouteremove={removeRoutePoint}
     >
       {#snippet linkOverlay(edge, context)}
         <WeathermapLinkOverlay
@@ -689,13 +721,13 @@
       {#if allowLayoutEdit && !readOnly}
         <button
           onclick={() => (layoutEdit = !layoutEdit)}
-          title={layoutEdit ? 'Finish layout editing' : 'Move and pin nodes'}
+          title={layoutEdit ? 'Finish layout editing; double-click a link to add a bend, drag the handle to move it, double-click the handle to remove it' : 'Move nodes and ports; edit link bends'}
           class:active={layoutEdit}
         >{layoutEdit ? '✓' : '↔'}</button>
         {#if layoutEdit && selectedLayoutNode && selectedLayoutPinIds.length > 0}
           <button onclick={unpinSelected} title="Unpin selected node or block">×</button>
         {/if}
-        {#if layoutEdit && (Object.keys(pinnedPositions).length > 0 || Object.keys(portSides).length > 0)}
+        {#if layoutEdit && (Object.keys(pinnedPositions).length > 0 || Object.keys(portSides).length > 0 || Object.keys(edgeRoutes).length > 0)}
           <button onclick={resetOperatorLayout} title="Reset all saved layout">Reset</button>
         {/if}
       {/if}

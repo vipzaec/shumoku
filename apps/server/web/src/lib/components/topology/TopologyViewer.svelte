@@ -64,6 +64,7 @@
      * pages that get layouts from the server).
      */
     layout?: ResolvedLayout
+    routeOverrides?: Record<string, Array<{ x: number; y: number }>>
     /**
      * 'lazy' computes each sheet on first access; 'eager' kicks off
      * layout for every top-level subgraph as soon as the graph loads.
@@ -100,6 +101,9 @@
     onlayoutready?: (layout: ResolvedLayout, sheetId: string | null) => void
     ondragend?: (id: string, positions: Record<string, { x: number; y: number }>) => void
     onportmove?: (nodeId: string, portId: string, side: 'top' | 'bottom' | 'left' | 'right', order: number, offset: number) => void
+    onrouteadd?: (id: string, x: number, y: number, index: number) => void
+    onroutemove?: (id: string, index: number, x: number, y: number) => void
+    onrouteremove?: (id: string, index: number) => void
     onerror?: (err: Error) => void
 
     // --- Overlay slot ---
@@ -110,6 +114,7 @@
     graph,
     sheetId = null,
     layout: layoutOverride = undefined,
+    routeOverrides = {},
     sheetCacheStrategy = 'lazy',
     theme,
     mode = 'view',
@@ -122,6 +127,9 @@
     onlayoutready,
     ondragend,
     onportmove,
+    onrouteadd,
+    onroutemove,
+    onrouteremove,
     onerror,
     children,
     subgraphOverlay,
@@ -142,6 +150,17 @@
 
   let layoutsBySheet: Record<string, ResolvedLayout> = {}
   let activeLayout = $state<ResolvedLayout | null>(null)
+  const routedLayout = $derived.by(() => {
+    if (!activeLayout || Object.keys(routeOverrides).length === 0) return activeLayout
+    const edges = new Map(activeLayout.edges)
+    for (const [id, bends] of Object.entries(routeOverrides)) {
+      const edge = edges.get(id)
+      if (!edge) continue
+      const points = [edge.fromPort.absolutePosition, ...bends, edge.toPort.absolutePosition]
+      edges.set(id, { ...edge, points, route: { kind: 'polyline', points }, labelAnchor: undefined })
+    }
+    return { ...activeLayout, edges }
+  })
   let renderer: ReturnType<typeof ShumokuRenderer> | undefined = $state()
   let cachedGraphRef: NetworkGraph | null = null
   let activeSheetKey: string | null = null
@@ -391,10 +410,10 @@
   class:hide-link-labels={!showLinkLabels}
   class:no-node-shadow={!showNodeShadow}
 >
-  {#if activeLayout}
+  {#if routedLayout}
     <ShumokuRenderer
       bind:this={renderer}
-      layout={activeLayout}
+      layout={routedLayout}
       {graph}
       {theme}
       mode={effectiveMode}
@@ -407,6 +426,7 @@
       oncontextmenu={handleContextMenu}
       ondragend={(id) => ondragend?.(id, getPinnedPositions(id))}
       {onportmove}
+      {onrouteadd} {onroutemove} {onrouteremove}
     />
     {#if ctx}
       {@render children?.(ctx)}

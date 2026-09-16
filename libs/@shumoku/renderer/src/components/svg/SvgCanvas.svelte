@@ -48,6 +48,9 @@
     onbackgroundclick,
     onmarquee,
     preventContextMenuDefault = true,
+    onrouteadd,
+    onroutemove,
+    onrouteremove,
   }: RendererOverlaySnippets & {
     nodes: Map<string, Node>
     ports: Map<string, ResolvedPort>
@@ -81,6 +84,9 @@
     onmarquee?: (rect: { x: number; y: number; w: number; h: number }, additive: boolean) => void
     /** Suppress browser native menu via `e.preventDefault()`. See ShumokuRenderer. */
     preventContextMenuDefault?: boolean
+    onrouteadd?: (id: string, x: number, y: number) => void
+    onroutemove?: (id: string, index: number, x: number, y: number) => void
+    onrouteremove?: (id: string, index: number) => void
   } = $props()
 
   const viewBox = $derived(
@@ -312,6 +318,8 @@
         {onselect}
         oncontextmenu={(id, e) => onctx?.(id, 'edge', e)}
         {preventContextMenuDefault}
+        routeEdit={interactive}
+        {onrouteadd} {onroutemove} {onrouteremove}
       />
     {/each}
 
