@@ -41,6 +41,51 @@ function makePorts(entries: Array<[string, ResolvedPort]>): Map<string, Resolved
 
 const NOOP_NODES = new Map<string, Node>()
 
+describe('routeEdges — obstacle avoidance', () => {
+  const ports = makePorts([
+    ['source:out', port('source:out', 'source', 0, 0, 'right')],
+    ['target:in', port('target:in', 'target', 400, 200, 'left')],
+  ])
+  const obstacle = (id: string, x: number, y: number): Node => ({
+    id,
+    label: id,
+    position: { x, y },
+    size: { width: 80, height: 80 },
+  })
+
+  test('detours a diagonal connection around a node', async () => {
+    const nodes = new Map([['middle', obstacle('middle', 200, 100)]])
+    const edges = await routeEdges(nodes, ports, [link('source:out', 'target:in')])
+    const points = [...edges.values()][0]?.route?.points
+    expect(points?.length).toBeGreaterThan(2)
+    for (const [i, a] of (points ?? []).entries()) {
+      const b = points?.[i + 1]
+      if (!b) continue
+      expect(a.x === b.x || a.y === b.y).toBe(true)
+      expect(
+        a.x === b.x &&
+          a.x > 160 &&
+          a.x < 240 &&
+          Math.max(a.y, b.y) > 60 &&
+          Math.min(a.y, b.y) < 140,
+      ).toBe(false)
+      expect(
+        a.y === b.y &&
+          a.y > 60 &&
+          a.y < 140 &&
+          Math.max(a.x, b.x) > 160 &&
+          Math.min(a.x, b.x) < 240,
+      ).toBe(false)
+    }
+  })
+
+  test('keeps the smooth route when no node blocks it', async () => {
+    const nodes = new Map([['far', obstacle('far', 600, 600)]])
+    const edges = await routeEdges(nodes, ports, [link('source:out', 'target:in')])
+    expect([...edges.values()][0]?.route).toBeUndefined()
+  })
+})
+
 describe('routeEdges — lane offset', () => {
   test('single edge per port has no lateral offset', async () => {
     const ports = makePorts([

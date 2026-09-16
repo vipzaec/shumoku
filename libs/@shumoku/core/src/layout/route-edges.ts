@@ -155,22 +155,14 @@ export async function routeEdges(
   return edges
 }
 
-/** Margin (in SVG units) between the detoured wire and the obstacle bbox. */
-const DETOUR_CLEARANCE = 24
-/** Length of the "stalk" between source/target port and the corridor segment. */
-const DETOUR_STALK = 36
+/** Margin (in SVG units) between an automatically routed wire and a node. */
+const DETOUR_CLEARANCE = 16
+/** The short segment leaving each port in its declared direction. */
+const DETOUR_STALK = 28
+/** A turn has a cost so equally short routes prefer fewer bends. */
+const DETOUR_TURN_COST = 24
 /** Number of bezier samples to use when checking for obstacle crossings. */
 const DETOUR_SAMPLES = 16
-/**
- * Max |target.x - source.x| (in SVG units) for which the
- * obstacle-aware detour runs. Wires that travel mostly straight
- * down their column (small lateral component) get detoured
- * around chains they pass through; diagonal cross-row wires
- * keep their bezier — the natural curve weaves between
- * subgraphs and any node it grazes is just an intermediate
- * column the wire passes alongside, not a real obstacle.
- */
-const DETOUR_MAX_LATERAL = 80
 
 /**
  * Replace each bezier whose path crosses a non-endpoint node or
@@ -193,78 +185,138 @@ function detourAroundObstacles(
 ): void {
   for (const edge of edges.values()) {
     if (edge.route) continue // bus / lane / preassigned routes are explicit
-    const fromSide = edge.fromPort.side
-    const toSide = edge.toPort.side
-    const isVerticalFlow =
-      (fromSide === 'bottom' && toSide === 'top') || (fromSide === 'top' && toSide === 'bottom')
-    const isHorizontalFlow =
-      (fromSide === 'right' && toSide === 'left') || (fromSide === 'left' && toSide === 'right')
-    if (!isVerticalFlow && !isHorizontalFlow) continue
-
-    // Only detour wires that go (mostly) straight down their
-    // own column. Diagonal cross-row wires naturally curve
-    // between subgraphs; treating any node body they graze on
-    // the way as a routing obstacle produces wildly long
-    // detours around the entire intermediate row, which looks
-    // worse than the original bezier passing close to a node.
-    // The transit-through-chain pattern this pass is designed
-    // for has source.x almost equal to target.x.
-    const src = edge.fromPort.absolutePosition
-    const tgt = edge.toPort.absolutePosition
-    if (isVerticalFlow && Math.abs(tgt.x - src.x) > DETOUR_MAX_LATERAL) continue
-    if (isHorizontalFlow && Math.abs(tgt.y - src.y) > DETOUR_MAX_LATERAL) continue
-
-    const blocker = findBezierObstacle(edge, nodes, subgraphs)
-    if (!blocker) continue
-
-    // Pick the side of the blocker that matches the source
-    // port's offset from its node centre. A port sitting on the
-    // left bottom of its node naturally emits the cable leftward;
-    // detouring to the right would force a sharp reverse-jog at
-    // the source. The source-side choice produces the most
-    // visually continuous path.
-    let points: Array<{ x: number; y: number }>
-    if (isVerticalFlow) {
-      const sourceNode = nodes.get(edge.fromNodeId)
-      const sourceNodeX = sourceNode?.position?.x ?? src.x
-      const portOffsetX = src.x - sourceNodeX
-      const blockerCentre = blocker.x + blocker.width / 2
-      const goLeft = portOffsetX !== 0 ? portOffsetX < 0 : tgt.x < blockerCentre
-      const corridorX = goLeft
-        ? blocker.x - DETOUR_CLEARANCE
-        : blocker.x + blocker.width + DETOUR_CLEARANCE
-      const sign = fromSide === 'bottom' ? 1 : -1
-      const stalkOutY = src.y + sign * DETOUR_STALK
-      const stalkInY = tgt.y - sign * DETOUR_STALK
-      points = [
-        { x: src.x, y: src.y }, { x: src.x, y: stalkOutY },
-        { x: corridorX, y: stalkOutY }, { x: corridorX, y: stalkInY },
-        { x: tgt.x, y: stalkInY }, { x: tgt.x, y: tgt.y },
-      ]
-    } else {
-      const sourceNode = nodes.get(edge.fromNodeId)
-      const sourceNodeY = sourceNode?.position?.y ?? src.y
-      const portOffsetY = src.y - sourceNodeY
-      const blockerCentre = blocker.y + blocker.height / 2
-      const goAbove = portOffsetY !== 0 ? portOffsetY < 0 : tgt.y < blockerCentre
-      const corridorY = goAbove
-        ? blocker.y - DETOUR_CLEARANCE
-        : blocker.y + blocker.height + DETOUR_CLEARANCE
-      const sign = fromSide === 'right' ? 1 : -1
-      const stalkOutX = src.x + sign * DETOUR_STALK
-      const stalkInX = tgt.x - sign * DETOUR_STALK
-      points = [
-        { x: src.x, y: src.y }, { x: stalkOutX, y: src.y },
-        { x: stalkOutX, y: corridorY }, { x: stalkInX, y: corridorY },
-        { x: stalkInX, y: tgt.y }, { x: tgt.x, y: tgt.y },
-      ]
-    }
+    if (!findBezierObstacle(edge, nodes, subgraphs)) continue
+    const points = routeViaGrid(edge, nodes)
+    if (!points) continue
     edge.route = { kind: 'polyline', points }
+    edge.points = points
     // Lane offsets are applied at the bezier port — they fight
     // the polyline corner shape, so clear them for this edge.
     edge.fromLateralOffset = undefined
     edge.toLateralOffset = undefined
   }
+}
+
+type RoutePoint = { x: number; y: number }
+type RouteRect = { x: number; y: number; width: number; height: number }
+
+function portNormal(side: ResolvedPort['side']): RoutePoint {
+  if (side === 'top') return { x: 0, y: -1 }
+  if (side === 'bottom') return { x: 0, y: 1 }
+  if (side === 'left') return { x: -1, y: 0 }
+  return { x: 1, y: 0 }
+}
+
+function segmentHitsRect(a: RoutePoint, b: RoutePoint, r: RouteRect): boolean {
+  const left = r.x,
+    right = r.x + r.width,
+    top = r.y,
+    bottom = r.y + r.height
+  if (a.x === b.x)
+    return a.x > left && a.x < right && Math.max(a.y, b.y) > top && Math.min(a.y, b.y) < bottom
+  if (a.y === b.y)
+    return a.y > top && a.y < bottom && Math.max(a.x, b.x) > left && Math.min(a.x, b.x) < right
+  return true
+}
+
+/** Find a short orthogonal path on the visibility grid around every unrelated node. */
+function routeViaGrid(edge: ResolvedEdge, nodes: Map<string, Node>): RoutePoint[] | null {
+  const src = edge.fromPort.absolutePosition
+  const tgt = edge.toPort.absolutePosition
+  const sn = portNormal(edge.fromPort.side)
+  const tn = portNormal(edge.toPort.side)
+  const start = { x: src.x + sn.x * DETOUR_STALK, y: src.y + sn.y * DETOUR_STALK }
+  const end = { x: tgt.x + tn.x * DETOUR_STALK, y: tgt.y + tn.y * DETOUR_STALK }
+  const obstacles: RouteRect[] = []
+  for (const [id, node] of nodes) {
+    if (id === edge.fromNodeId || id === edge.toNodeId) continue
+    const b = nodeBounds(node)
+    if (b)
+      obstacles.push({
+        x: b.x - DETOUR_CLEARANCE,
+        y: b.y - DETOUR_CLEARANCE,
+        width: b.width + 2 * DETOUR_CLEARANCE,
+        height: b.height + 2 * DETOUR_CLEARANCE,
+      })
+  }
+  const clear = (a: RoutePoint, b: RoutePoint) => obstacles.every((r) => !segmentHitsRect(a, b, r))
+  if (!clear(src, start) || !clear(end, tgt)) return null
+  const xs = [
+    ...new Set([src.x, start.x, end.x, tgt.x, ...obstacles.flatMap((r) => [r.x, r.x + r.width])]),
+  ].sort((a, b) => a - b)
+  const ys = [
+    ...new Set([src.y, start.y, end.y, tgt.y, ...obstacles.flatMap((r) => [r.y, r.y + r.height])]),
+  ].sort((a, b) => a - b)
+  const at = (ix: number, iy: number): RoutePoint => ({ x: xs[ix] ?? 0, y: ys[iy] ?? 0 })
+  const startX = xs.indexOf(start.x),
+    startY = ys.indexOf(start.y)
+  const endX = xs.indexOf(end.x),
+    endY = ys.indexOf(end.y)
+  type State = { ix: number; iy: number; axis: 'h' | 'v' | ''; cost: number; key: string }
+  const keyOf = (ix: number, iy: number, axis: State['axis']) => `${ix}:${iy}:${axis}`
+  const first: State = {
+    ix: startX,
+    iy: startY,
+    axis: sn.x ? 'h' : 'v',
+    cost: 0,
+    key: keyOf(startX, startY, sn.x ? 'h' : 'v'),
+  }
+  const queue: State[] = [first]
+  const costs = new Map([[first.key, 0]])
+  const previous = new Map<string, string>()
+  const states = new Map([[first.key, first]])
+  let found: State | undefined
+  while (queue.length) {
+    queue.sort((a, b) => a.cost - b.cost)
+    const state = queue.shift()
+    if (!state || state.cost !== costs.get(state.key)) continue
+    if (state.ix === endX && state.iy === endY) {
+      found = state
+      break
+    }
+    for (const [dx, dy, axis] of [
+      [1, 0, 'h'],
+      [-1, 0, 'h'],
+      [0, 1, 'v'],
+      [0, -1, 'v'],
+    ] as const) {
+      const ix = state.ix + dx,
+        iy = state.iy + dy
+      if (ix < 0 || iy < 0 || ix >= xs.length || iy >= ys.length) continue
+      const a = at(state.ix, state.iy),
+        b = at(ix, iy)
+      if (!clear(a, b)) continue
+      const cost =
+        state.cost +
+        Math.abs(b.x - a.x) +
+        Math.abs(b.y - a.y) +
+        (state.axis !== axis ? DETOUR_TURN_COST : 0)
+      const key = keyOf(ix, iy, axis)
+      if (cost >= (costs.get(key) ?? Infinity)) continue
+      const next: State = { ix, iy, axis, cost, key }
+      costs.set(key, cost)
+      previous.set(key, state.key)
+      states.set(key, next)
+      queue.push(next)
+    }
+  }
+  if (!found) return null
+  const gridPoints: RoutePoint[] = []
+  let key: string | undefined = found.key
+  while (key) {
+    const state = states.get(key)
+    if (!state) break
+    gridPoints.push(at(state.ix, state.iy))
+    key = previous.get(key)
+  }
+  gridPoints.reverse()
+  const points = [src, ...gridPoints, tgt]
+  return points.filter((p, i) => {
+    if (i === 0 || i === points.length - 1) return true
+    const a = points[i - 1],
+      b = points[i + 1]
+    return !a || !b || ((a.x !== p.x || p.x !== b.x) && (a.y !== p.y || p.y !== b.y))
+  })
 }
 
 /**
