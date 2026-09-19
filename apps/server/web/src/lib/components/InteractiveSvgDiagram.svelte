@@ -3,6 +3,14 @@
   export interface NodeInfo {
     id: string
     label: string
+    labels?: string[]
+    parent?: string
+    metadata?: Record<string, unknown>
+    ports?: Array<{
+      id: string
+      label?: string
+      side?: 'top' | 'bottom' | 'left' | 'right'
+    }>
     spec?: {
       type?: string
       vendor?: string
@@ -637,6 +645,14 @@
       node: {
         id: node.id,
         label: nodeLabel(node),
+        labels: Array.isArray(node.label) ? node.label : [node.label ?? node.id],
+        parent: node.parent,
+        metadata: node.metadata,
+        ports: node.ports?.map((port) => ({
+          id: port.id,
+          label: port.label,
+          side: port.placement?.side,
+        })),
         spec: node.spec
           ? {
               type: 'type' in node.spec ? node.spec.type : undefined,

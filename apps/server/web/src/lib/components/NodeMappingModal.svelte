@@ -93,6 +93,42 @@
   })
 
   let currentNodeMapping = $derived(nodeData && currentMapping?.nodes?.[nodeData.node.id])
+  let nodeMetadata = $derived(nodeData?.node.metadata ?? {})
+  let metadataSource = $derived(
+    typeof nodeMetadata.source === 'string' ? nodeMetadata.source : undefined,
+  )
+  let metadataRole = $derived(typeof nodeMetadata.role === 'string' ? nodeMetadata.role : undefined)
+  let metadataCluster = $derived(
+    typeof nodeMetadata.cluster === 'string' ? nodeMetadata.cluster : undefined,
+  )
+  let metadataTenant = $derived(
+    typeof nodeMetadata.tenant === 'string' ? nodeMetadata.tenant : undefined,
+  )
+  let metadataServices = $derived.by(() => {
+    if (!Array.isArray(nodeMetadata.services)) return []
+    return nodeMetadata.services
+      .map((service) => {
+        if (typeof service === 'string') return service
+        if (!service || typeof service !== 'object') return ''
+        const value = service as Record<string, unknown>
+        const name = String(value.name ?? value.description ?? 'service')
+        const protocol = String(value.protocol ?? '').toUpperCase()
+        const ports = Array.isArray(value.ports) ? value.ports.join(',') : String(value.ports ?? '')
+        return [name, protocol, ports].filter(Boolean).join(' · ')
+      })
+      .filter(Boolean)
+  })
+  let metadataVirtualMachines = $derived.by(() => {
+    if (!Array.isArray(nodeMetadata.virtualMachines)) return []
+    return nodeMetadata.virtualMachines.filter((value): value is Record<string, unknown> =>
+      Boolean(value && typeof value === 'object'),
+    )
+  })
+  let metadataDecisions = $derived.by(() => {
+    const decisions = nodeMetadata.decisions
+    if (!decisions || typeof decisions !== 'object' || Array.isArray(decisions)) return []
+    return Object.entries(decisions as Record<string, unknown>)
+  })
   let hasMetricsSource = $derived($metricsSources.length > 0)
   // Resolve provenance from the authoritative source-qualified mappings. Host
   // inventories are live plugin data loaded only by the Mapping picker; metric
@@ -122,9 +158,11 @@
 
   // NetBox device URL (search by name since we don't have device ID)
   let netboxDeviceUrl = $derived(
-    netboxBaseUrl && nodeData?.node.id
-      ? `${netboxBaseUrl}/dcim/devices/?name=${encodeURIComponent(nodeData.node.id)}`
-      : undefined,
+    netboxBaseUrl && typeof nodeMetadata.netboxVmId === 'number'
+      ? `${netboxBaseUrl}/virtualization/virtual-machines/${nodeMetadata.netboxVmId}/`
+      : netboxBaseUrl && nodeData?.node.id
+        ? `${netboxBaseUrl}/dcim/devices/?name=${encodeURIComponent(nodeData.node.id)}`
+        : undefined,
   )
 
   // Get current metrics for this node.
@@ -375,7 +413,12 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={(isOpen) => { if (!isOpen) handleClose() }}>
+<Dialog.Root
+  {open}
+  onOpenChange={(isOpen) => {
+    if (!isOpen) handleClose()
+  }}
+>
   <Dialog.Content class="sm:max-w-md">
     <Dialog.Header>
       <Dialog.Title class="flex items-center gap-2">
@@ -437,9 +480,7 @@
                   <div class="flex flex-col items-end gap-0.5">
                     <div class="flex items-center gap-2">
                       <span
-                        class="w-2.5 h-2.5 rounded-full {getMonitoringBgColor(
-                        nodeMetrics?.monitoring,
-                      )}"
+                        class="w-2.5 h-2.5 rounded-full {getMonitoringBgColor(nodeMetrics?.monitoring)}"
                       ></span>
                       <span
                         class="text-sm font-medium {getMonitoringTextColor(nodeMetrics?.monitoring)}"
@@ -488,9 +529,7 @@
                         </div>
                         <div class="flex items-center gap-1.5 shrink-0">
                           <span
-                            class="w-2 h-2 rounded-full {getMonitoringBgColor(
-                              observation.sample.monitoring,
-                            )}"
+                            class="w-2 h-2 rounded-full {getMonitoringBgColor(observation.sample.monitoring)}"
                           ></span>
                           <span class={getMonitoringTextColor(observation.sample.monitoring)}>
                             {getMonitoringLabel(observation.sample.monitoring)}
@@ -533,6 +572,104 @@
               {/if}
             </div>
 
+            <!-- Compact operational data from topology sources. Large raw API
+                 payloads stay in metadata but are intentionally summarized. -->
+            {#if metadataSource ||
+    metadataRole ||
+    metadataCluster ||
+    metadataTenant ||
+    metadataServices.length > 0 ||
+    metadataVirtualMachines.length > 0 ||
+    metadataDecisions.length > 0 ||
+    (nodeData.node.ports?.length ?? 0) > 0}
+              <div class="bg-muted/30 rounded-lg p-4 space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-xs uppercase tracking-wide text-muted-foreground"
+                    >Operational data</span
+                  >
+                  {#if metadataSource}
+                    <span class="text-xs font-medium text-primary">{metadataSource}</span>
+                  {/if}
+                </div>
+
+                <div class="grid grid-cols-[84px_1fr] gap-x-2 gap-y-1.5 text-xs">
+                  {#if metadataTenant}
+                    <span class="text-muted-foreground">tenant</span>
+                    <span>{metadataTenant}</span>
+                  {/if}
+                  {#if metadataRole}
+                    <span class="text-muted-foreground">role</span>
+                    <span>{metadataRole}</span>
+                  {/if}
+                  {#if metadataCluster}
+                    <span class="text-muted-foreground">placement</span>
+                    <span>{metadataCluster}</span>
+                  {/if}
+                  {#if nodeData.node.parent}
+                    <span class="text-muted-foreground">group</span>
+                    <span class="font-mono break-all">{nodeData.node.parent}</span>
+                  {/if}
+                </div>
+
+                {#if metadataServices.length > 0}
+                  <div class="pt-2 border-t border-border space-y-1">
+                    <div class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Services
+                    </div>
+                    {#each metadataServices as service}
+                      <div class="text-xs">{service}</div>
+                    {/each}
+                  </div>
+                {/if}
+
+                {#if metadataDecisions.length > 0}
+                  <div class="pt-2 border-t border-border space-y-1">
+                    <div class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Decisions
+                    </div>
+                    {#each metadataDecisions as [decision, count]}
+                      <div class="flex items-center justify-between gap-3 text-xs">
+                        <span>{decision}</span><span class="font-mono">{String(count)}</span>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+
+                {#if nodeData.node.ports && nodeData.node.ports.length > 0}
+                  <div class="pt-2 border-t border-border space-y-1">
+                    <div class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Interfaces
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">
+                      {#each nodeData.node.ports as port}
+                        <span class="bg-background px-2 py-1 rounded text-xs font-mono">
+                          {port.label?.trim() ? port.label : port.id}{port.side ? ` · ${port.side}` : ''}
+                        </span>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+
+                {#if metadataVirtualMachines.length > 0}
+                  <details class="pt-2 border-t border-border">
+                    <summary class="text-xs font-medium cursor-pointer">
+                      Virtual machines ({metadataVirtualMachines.length})
+                    </summary>
+                    <div class="mt-2 max-h-40 overflow-y-auto divide-y divide-border">
+                      {#each metadataVirtualMachines as vm}
+                        <div class="py-1.5 text-xs flex items-start justify-between gap-3">
+                          <span>{String(vm.name ?? 'VM')}</span>
+                          <span class="font-mono text-muted-foreground text-right">
+                            {String(vm.address ?? vm.role ?? '—')}
+                          </span>
+                        </div>
+                      {/each}
+                    </div>
+                  </details>
+                {/if}
+              </div>
+            {/if}
+
             <!-- Discovery (observation-model identity + provenance) -->
             {#if nodeData.node.identity || nodeData.node.provenance}
               <div class="bg-muted/30 rounded-lg p-4 space-y-2">
@@ -544,12 +681,12 @@
                     {@const state = nodeData.node.provenance.state}
                     <span
                       class="text-xs font-medium {state === 'confirmed'
-                      ? 'text-green-600 dark:text-green-400'
-                      : state === 'conflicting'
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : state === 'discovered-only'
-                          ? 'text-blue-500 dark:text-blue-400'
-                          : 'text-muted-foreground'}"
+    ? 'text-green-600 dark:text-green-400'
+    : state === 'conflicting'
+      ? 'text-amber-600 dark:text-amber-400'
+      : state === 'discovered-only'
+        ? 'text-blue-500 dark:text-blue-400'
+        : 'text-muted-foreground'}"
                     >
                       {state}
                     </span>
@@ -590,8 +727,8 @@
                       <span class="text-muted-foreground">vendorIds</span>
                       <span class="font-mono break-all">
                         {Object.entries(id.vendorIds)
-                        .map(([k, v]) => `${k}=${v}`)
-                        .join(' / ')}
+    .map(([k, v]) => `${k}=${v}`)
+    .join(' / ')}
                       </span>
                     {/if}
                   </div>
@@ -643,10 +780,10 @@
                             <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                               <div
                                 class="h-full rounded-full transition-all {metrics.utilization > 80
-                                ? 'bg-destructive'
-                                : metrics.utilization > 50
-                                  ? 'bg-warning'
-                                  : 'bg-success'}"
+    ? 'bg-destructive'
+    : metrics.utilization > 50
+      ? 'bg-warning'
+      : 'bg-success'}"
                                 style="width: {Math.min(metrics.utilization, 100)}%"
                               ></div>
                             </div>
