@@ -165,6 +165,10 @@
   let portOrders = $state<Record<string, number>>({})
   let portOffsets = $state<Record<string, number>>({})
   let edgeRoutes = $state<Record<string, Array<{ x: number; y: number }>>>({})
+  let layersOpen = $state(false)
+  let nodeDetailsVisible = $state(true)
+  let portLabelsVisible = $state(true)
+  let linkLabelsVisible = $state(true)
 
   type OperatorLayout = {
     nodePositions: Record<string, { x: number; y: number }>
@@ -176,6 +180,40 @@
 
   const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
   const portStorageKey = $derived(`shumoku-layout-port-sides:${topologyId}`)
+  const layerStorageKey = $derived(`shumoku-view-layers:${topologyId}`)
+
+  function loadLayerPreferences() {
+    if (typeof localStorage === 'undefined' || !topologyId) return
+    try {
+      const saved = JSON.parse(localStorage.getItem(layerStorageKey) ?? '{}')
+      nodeDetailsVisible = saved.nodeDetails ?? true
+      portLabelsVisible = saved.portLabels ?? true
+      linkLabelsVisible = saved.linkLabels ?? true
+    } catch {
+      nodeDetailsVisible = true
+      portLabelsVisible = true
+      linkLabelsVisible = true
+    }
+  }
+
+  function saveLayerPreferences() {
+    if (typeof localStorage === 'undefined' || !topologyId) return
+    localStorage.setItem(
+      layerStorageKey,
+      JSON.stringify({
+        nodeDetails: nodeDetailsVisible,
+        portLabels: portLabelsVisible,
+        linkLabels: linkLabelsVisible,
+      }),
+    )
+  }
+
+  function setLayer(layer: 'nodeDetails' | 'portLabels' | 'linkLabels', enabled: boolean) {
+    if (layer === 'nodeDetails') nodeDetailsVisible = enabled
+    if (layer === 'portLabels') portLabelsVisible = enabled
+    if (layer === 'linkLabels') linkLabelsVisible = enabled
+    saveLayerPreferences()
+  }
 
   function readPins(): Record<string, { x: number; y: number }> {
     if (typeof localStorage === 'undefined' || !topologyId) return {}
@@ -300,6 +338,7 @@
     loading = !hasGraph
     error = ''
     try {
+      loadLayerPreferences()
       const loader = graphLoader ?? (() => api.topologies.getView(topologyId))
       const [res, display] = await Promise.all([
         loader(),
@@ -737,16 +776,27 @@
       onrouteadd={addRoutePoint}
       onroutemove={moveRoutePoint}
       onrouteremove={removeRoutePoint}
+      detail={{
+    nodeDetails: nodeDetailsVisible,
+    portLabels: portLabelsVisible,
+    linkLabels: linkLabelsVisible,
+  }}
     >
-      {#snippet linkOverlay(edge, context)}
+      {#snippet linkOverlay(
+    edge,
+    context,
+  )}
         <WeathermapLinkOverlay
           {context}
           metrics={$metricsData?.links?.[edge.id] ??
-            (isLinkInstrumented($linkMapping?.[edge.id]) ? IDLE_LINK_METRICS : undefined)}
+    (isLinkInstrumented($linkMapping?.[edge.id]) ? IDLE_LINK_METRICS : undefined)}
           enabled={$liveUpdatesEnabled && $showTrafficFlow}
         />
       {/snippet}
-      {#snippet children({ svgElement, graph: activeGraph })}
+      {#snippet children({
+    svgElement,
+    graph: activeGraph,
+  })}
         <NodeStatusOverlay
           {svgElement}
           status={nodeStatusView}
@@ -772,7 +822,9 @@
       {#if allowLayoutEdit && !readOnly}
         <button
           onclick={() => (layoutEdit = !layoutEdit)}
-          title={layoutEdit ? 'Finish layout editing; double-click a link to add a bend, drag the handle to move it, double-click the handle to remove it' : 'Move nodes and ports; edit link bends'}
+          title={layoutEdit
+    ? 'Finish layout editing; double-click a link to add a bend, drag the handle to move it, double-click the handle to remove it'
+    : 'Move nodes and ports; edit link bends'}
           class:active={layoutEdit}
         >
           {layoutEdit ? '✓' : '↔'}
@@ -799,7 +851,10 @@
             <span class="route-mode" title="Drag bends to adjust the manual route">Manual</span>
           {/if}
         {/if}
-        {#if layoutEdit && (Object.keys(pinnedPositions).length > 0 || Object.keys(portSides).length > 0 || Object.keys(edgeRoutes).length > 0)}
+        {#if layoutEdit &&
+    (Object.keys(pinnedPositions).length > 0 ||
+      Object.keys(portSides).length > 0 ||
+      Object.keys(edgeRoutes).length > 0)}
           <button onclick={resetOperatorLayout} title="Reset all saved layout">Reset</button>
         {/if}
       {/if}
@@ -816,8 +871,45 @@
           <GearSixIcon size={18} />
         </button>
       {/if}
+      <button
+        onclick={() => (layersOpen = !layersOpen)}
+        title="Information layers"
+        class:active={layersOpen}
+      >
+        Layers
+      </button>
     </div>
   </div>
+
+  {#if layersOpen}
+    <div class="layers-panel">
+      <div class="layers-title">Information layers</div>
+      <label
+        ><input
+          type="checkbox"
+          checked={nodeDetailsVisible}
+          onchange={(e) => setLayer('nodeDetails', e.currentTarget.checked)}
+        >
+        Node details</label
+      >
+      <label
+        ><input
+          type="checkbox"
+          checked={portLabelsVisible}
+          onchange={(e) => setLayer('portLabels', e.currentTarget.checked)}
+        >
+        Port labels</label
+      >
+      <label
+        ><input
+          type="checkbox"
+          checked={linkLabelsVisible}
+          onchange={(e) => setLayer('linkLabels', e.currentTarget.checked)}
+        >
+        Link labels</label
+      >
+    </div>
+  {/if}
 
   <!-- Legend (only when traffic flow is on) -->
   {#if $liveUpdatesEnabled && $showTrafficFlow}
@@ -953,6 +1045,34 @@
     flex-direction: column;
     gap: 8px;
     z-index: 5;
+  }
+
+  .layers-panel {
+    position: absolute;
+    right: 64px;
+    bottom: 16px;
+    z-index: 6;
+    display: grid;
+    gap: 8px;
+    min-width: 180px;
+    padding: 12px;
+    color: var(--color-text, #111827);
+    background: var(--color-bg-elevated, #ffffff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+    font-size: 12px;
+  }
+
+  .layers-panel label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .layers-title {
+    font-weight: 600;
   }
 
   .control-group {

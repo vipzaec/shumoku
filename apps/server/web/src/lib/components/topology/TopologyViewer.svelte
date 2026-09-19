@@ -46,6 +46,8 @@
   }
 
   export interface DetailOptions {
+    /** Show secondary node label lines such as addresses and service details. */
+    nodeDetails?: boolean | 'auto'
     /** Show per-port labels. 'auto' hides them when viewport is small. */
     portLabels?: boolean | 'auto'
     /** Show link labels (bandwidth, VLAN, etc.). */
@@ -100,7 +102,13 @@
     oncontextmenu?: (id: string, type: string, screenX: number, screenY: number) => void
     onlayoutready?: (layout: ResolvedLayout, sheetId: string | null) => void
     ondragend?: (id: string, positions: Record<string, { x: number; y: number }>) => void
-    onportmove?: (nodeId: string, portId: string, side: 'top' | 'bottom' | 'left' | 'right', order: number, offset: number) => void
+    onportmove?: (
+      nodeId: string,
+      portId: string,
+      side: 'top' | 'bottom' | 'left' | 'right',
+      order: number,
+      offset: number,
+    ) => void
     onrouteadd?: (id: string, x: number, y: number, index: number) => void
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
@@ -157,7 +165,12 @@
       const edge = edges.get(id)
       if (!edge) continue
       const points = [edge.fromPort.absolutePosition, ...bends, edge.toPort.absolutePosition]
-      edges.set(id, { ...edge, points, route: { kind: 'polyline', points }, labelAnchor: undefined })
+      edges.set(id, {
+        ...edge,
+        points,
+        route: { kind: 'polyline', points },
+        labelAnchor: undefined,
+      })
     }
     return { ...activeLayout, edges }
   })
@@ -288,6 +301,11 @@
     if (setting === 'auto') return viewportSize.width >= 400 && viewportSize.height >= 300
     return setting
   })
+  const showNodeDetails = $derived.by(() => {
+    const setting = detail.nodeDetails ?? true
+    if (setting === 'auto') return viewportSize.width >= 500 && viewportSize.height >= 350
+    return setting
+  })
   const showLinkLabels = $derived.by(() => {
     const setting = detail.linkLabels ?? true
     if (setting === 'auto') return viewportSize.width >= 400
@@ -408,6 +426,7 @@
   class:no-keyboard={!keyboardEnabled}
   class:hide-port-labels={!showPortLabels}
   class:hide-link-labels={!showLinkLabels}
+  class:hide-node-details={!showNodeDetails}
   class:no-node-shadow={!showNodeShadow}
 >
   {#if routedLayout}
@@ -426,7 +445,9 @@
       oncontextmenu={handleContextMenu}
       ondragend={(id) => ondragend?.(id, getPinnedPositions(id))}
       {onportmove}
-      {onrouteadd} {onroutemove} {onrouteremove}
+      {onrouteadd}
+      {onroutemove}
+      {onrouteremove}
     />
     {#if ctx}
       {@render children?.(ctx)}
@@ -464,6 +485,9 @@
     display: none;
   }
   .topology-viewer.hide-link-labels :global(.link-label) {
+    display: none;
+  }
+  .topology-viewer.hide-node-details :global(.node-label-secondary) {
     display: none;
   }
   .topology-viewer.no-node-shadow :global(g.node[filter]) {
