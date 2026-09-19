@@ -129,6 +129,15 @@
     if (!decisions || typeof decisions !== 'object' || Array.isArray(decisions)) return []
     return Object.entries(decisions as Record<string, unknown>)
   })
+  let metadataComparisons = $derived.by(() => {
+    if (!Array.isArray(nodeMetadata.comparisons)) return []
+    return nodeMetadata.comparisons.filter((value): value is Record<string, unknown> =>
+      Boolean(value && typeof value === 'object'),
+    )
+  })
+  let consistency = $derived(
+    typeof nodeMetadata.consistency === 'string' ? nodeMetadata.consistency : undefined,
+  )
   let hasMetricsSource = $derived($metricsSources.length > 0)
   // Resolve provenance from the authoritative source-qualified mappings. Host
   // inventories are live plugin data loaded only by the Mapping picker; metric
@@ -581,6 +590,7 @@
     metadataServices.length > 0 ||
     metadataVirtualMachines.length > 0 ||
     metadataDecisions.length > 0 ||
+    metadataComparisons.length > 0 ||
     (nodeData.node.ports?.length ?? 0) > 0}
               <div class="bg-muted/30 rounded-lg p-4 space-y-3">
                 <div class="flex items-center justify-between gap-3">
@@ -591,6 +601,18 @@
                     <span class="text-xs font-medium text-primary">{metadataSource}</span>
                   {/if}
                 </div>
+
+                {#if consistency}
+                  <div class="flex items-center justify-between gap-3 rounded-md bg-background px-2.5 py-2 text-xs">
+                    <span class="text-muted-foreground">NetBox ↔ observed</span>
+                    <span
+                      class:text-success={consistency === 'confirmed'}
+                      class:text-danger={consistency === 'mismatch'}
+                      class:text-warning={consistency === 'unverified'}
+                      class="font-semibold uppercase"
+                    >{consistency}</span>
+                  </div>
+                {/if}
 
                 <div class="grid grid-cols-[84px_1fr] gap-x-2 gap-y-1.5 text-xs">
                   {#if metadataTenant}
@@ -630,6 +652,31 @@
                     {#each metadataDecisions as [decision, count]}
                       <div class="flex items-center justify-between gap-3 text-xs">
                         <span>{decision}</span><span class="font-mono">{String(count)}</span>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+
+                {#if metadataComparisons.length > 0}
+                  <div class="pt-2 border-t border-border space-y-2">
+                    <div class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Source comparison
+                    </div>
+                    {#each metadataComparisons as comparison}
+                      <div class="rounded-md bg-background px-2.5 py-2 text-xs space-y-1">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="font-medium">{String(comparison.field ?? 'value')}</span>
+                          <span
+                            class:text-success={comparison.status === 'match'}
+                            class:text-danger={comparison.status === 'mismatch'}
+                            class:text-warning={comparison.status === 'unknown'}
+                            class="font-semibold uppercase"
+                          >{String(comparison.status ?? 'unknown')}</span>
+                        </div>
+                        <div class="grid grid-cols-[72px_1fr] gap-x-2 text-muted-foreground">
+                          <span>NetBox</span><span>{String(comparison.netbox ?? '—')}</span>
+                          <span>Observed</span><span>{String(comparison.observed ?? '—')}</span>
+                        </div>
                       </div>
                     {/each}
                   </div>
