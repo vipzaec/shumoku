@@ -481,6 +481,7 @@
   /* LOD: toggleable ornament classes. Rules match @shumoku/renderer's
                                                output structure (see SvgPort.svelte, SvgEdge.svelte, etc.). */
   .topology-viewer.hide-port-labels :global(.port-label),
+  .topology-viewer.hide-port-labels :global(.port-label-text),
   .topology-viewer.hide-port-labels :global(.port-label-bg) {
     display: none;
   }
