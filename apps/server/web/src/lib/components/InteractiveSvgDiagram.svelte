@@ -89,6 +89,7 @@
     WeathermapLinkOverlay,
   } from '$lib/components/topology'
   import {
+    displaySettings,
     linkMapping,
     liveUpdatesEnabled,
     metricsData,
@@ -213,6 +214,45 @@
     if (layer === 'portLabels') portLabelsVisible = enabled
     if (layer === 'linkLabels') linkLabelsVisible = enabled
     saveLayerPreferences()
+  }
+
+  type ViewPreset = 'full' | 'overview' | 'troubleshooting'
+
+  const activeViewPreset = $derived.by<ViewPreset | null>(() => {
+    if (
+      nodeDetailsVisible &&
+      portLabelsVisible &&
+      linkLabelsVisible &&
+      $showTrafficFlow &&
+      $showNodeStatus
+    )
+      return 'full'
+    if (
+      !nodeDetailsVisible &&
+      !portLabelsVisible &&
+      linkLabelsVisible &&
+      !$showTrafficFlow &&
+      !$showNodeStatus
+    )
+      return 'overview'
+    if (
+      nodeDetailsVisible &&
+      portLabelsVisible &&
+      linkLabelsVisible &&
+      !$showTrafficFlow &&
+      $showNodeStatus
+    )
+      return 'troubleshooting'
+    return null
+  })
+
+  function applyViewPreset(preset: ViewPreset) {
+    nodeDetailsVisible = preset !== 'overview'
+    portLabelsVisible = preset !== 'overview'
+    linkLabelsVisible = true
+    saveLayerPreferences()
+    displaySettings.setShowTrafficFlow(preset === 'full')
+    displaySettings.setShowNodeStatus(preset !== 'overview')
   }
 
   function readPins(): Record<string, { x: number; y: number }> {
@@ -884,6 +924,23 @@
   {#if layersOpen}
     <div class="layers-panel">
       <div class="layers-title">Information layers</div>
+      <div class="view-presets" aria-label="View presets">
+        <button class:active={activeViewPreset === 'full'} onclick={() => applyViewPreset('full')}>
+          Full
+        </button>
+        <button
+          class:active={activeViewPreset === 'overview'}
+          onclick={() => applyViewPreset('overview')}
+        >
+          Overview
+        </button>
+        <button
+          class:active={activeViewPreset === 'troubleshooting'}
+          onclick={() => applyViewPreset('troubleshooting')}
+        >
+          Troubleshoot
+        </button>
+      </div>
       <label
         ><input
           type="checkbox"
@@ -907,6 +964,22 @@
           onchange={(e) => setLayer('linkLabels', e.currentTarget.checked)}
         >
         Link labels</label
+      >
+      <label
+        ><input
+          type="checkbox"
+          checked={$showNodeStatus}
+          onchange={(e) => displaySettings.setShowNodeStatus(e.currentTarget.checked)}
+        >
+        Health status</label
+      >
+      <label
+        ><input
+          type="checkbox"
+          checked={$showTrafficFlow}
+          onchange={(e) => displaySettings.setShowTrafficFlow(e.currentTarget.checked)}
+        >
+        Traffic utilization</label
       >
     </div>
   {/if}
@@ -1073,6 +1146,30 @@
 
   .layers-title {
     font-weight: 600;
+  }
+
+  .view-presets {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+  }
+
+  .view-presets button {
+    padding: 5px 6px;
+    color: var(--color-text-muted, #6b7280);
+    background: var(--color-bg, #f3f4f6);
+    border: 1px solid transparent;
+    border-radius: 5px;
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .view-presets button.active {
+    color: var(--primary, #2563eb);
+    border-color: var(--primary, #2563eb);
+    background: color-mix(in srgb, var(--primary, #2563eb) 8%, white);
   }
 
   .control-group {
