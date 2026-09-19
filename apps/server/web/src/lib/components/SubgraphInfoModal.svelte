@@ -11,6 +11,9 @@
   }
 
   let { open = $bindable(false), subgraphData = null, onDrillDown }: Props = $props()
+  let sources = $derived(
+    [...new Set(subgraphData?.subgraph.members.map((member) => member.source).filter(Boolean) ?? [])],
+  )
 
   function handleClose() {
     open = false
@@ -44,7 +47,33 @@
 
           <div class="text-theme-text-muted">Links</div>
           <div class="text-theme-text">{subgraphData.subgraph.linkCount}</div>
+
+          {#if subgraphData.subgraph.parent}
+            <div class="text-theme-text-muted">Parent</div>
+            <div class="text-theme-text font-mono text-xs break-all">{subgraphData.subgraph.parent}</div>
+          {/if}
+
+          {#if sources.length > 0}
+            <div class="text-theme-text-muted">Sources</div>
+            <div class="text-theme-text">{sources.join(', ')}</div>
+          {/if}
         </div>
+
+        {#if subgraphData.subgraph.members.length > 0}
+          <details class="pt-2 border-t border-theme-border">
+            <summary class="text-xs font-medium cursor-pointer">
+              Members ({subgraphData.subgraph.members.length})
+            </summary>
+            <div class="mt-2 max-h-48 overflow-y-auto divide-y divide-theme-border">
+              {#each subgraphData.subgraph.members as member}
+                <div class="py-1.5 flex items-start justify-between gap-3 text-xs">
+                  <span>{member.label}</span>
+                  <span class="text-theme-text-muted text-right">{member.role ?? member.source ?? ''}</span>
+                </div>
+              {/each}
+            </div>
+          </details>
+        {/if}
 
         {#if subgraphData.subgraph.canDrillDown}
           <div class="pt-2 border-t border-theme-border">

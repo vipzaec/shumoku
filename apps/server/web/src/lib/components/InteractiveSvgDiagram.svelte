@@ -53,12 +53,28 @@
     }>
   }
 
+  export interface LinkSelectEvent {
+    link: {
+      id: string
+      label?: string
+      labels?: string[]
+      from: ConnectedLinkEndpoint & { port?: string }
+      to: ConnectedLinkEndpoint & { port?: string }
+      metadata?: Record<string, unknown>
+      provenance?: NodeInfo['provenance']
+      vlan?: number[]
+      rateBps?: number
+    }
+  }
+
   export interface SubgraphInfo {
     id: string
     label: string
     nodeCount: number
     linkCount: number
     canDrillDown: boolean
+    parent?: string
+    members: Array<{ id: string; label: string; source?: string; role?: string }>
   }
 
   export interface SubgraphSelectEvent {
@@ -120,6 +136,7 @@
     onSearchOpen?: () => void
     settingsOpen?: boolean
     onNodeSelect?: (event: NodeSelectEvent) => void
+    onLinkSelect?: (event: LinkSelectEvent) => void
     onSubgraphSelect?: (event: SubgraphSelectEvent) => void
     onSheetChange?: (sheetId: string | null) => void
     allowLayoutEdit?: boolean
@@ -146,6 +163,7 @@
     onSearchOpen,
     settingsOpen = false,
     onNodeSelect,
+    onLinkSelect,
     onSubgraphSelect,
     onSheetChange,
     allowLayoutEdit = false,
@@ -509,6 +527,7 @@
     }
     if (!id || !type || !graph) return
     if (type === 'node') emitNodeSelect(id)
+    else if (type === 'edge') emitLinkSelect(id)
     else if (type === 'subgraph') emitSubgraphSelect(id)
   }
 
@@ -667,14 +686,51 @@
     })
   }
 
+  function emitLinkSelect(linkId: string) {
+    if (!graph || !onLinkSelect) return
+    const link = graph.links.find((candidate) => candidate.id === linkId)
+    if (!link) return
+    const fromId = link.from.node
+    const toId = link.to.node
+    const rawLabel = link.label
+    onLinkSelect({
+      link: {
+        id: link.id ?? `${fromId}->${toId}`,
+        label: Array.isArray(rawLabel) ? rawLabel.join(' ') : rawLabel,
+        labels: Array.isArray(rawLabel) ? rawLabel : rawLabel ? [rawLabel] : undefined,
+        from: {
+          id: fromId,
+          label: nodeLabelById(graph.nodes, fromId),
+          port: link.from.port,
+        },
+        to: {
+          id: toId,
+          label: nodeLabelById(graph.nodes, toId),
+          port: link.to.port,
+        },
+        metadata: link.metadata,
+        provenance: link.provenance,
+        vlan: link.vlan,
+        rateBps: link.rateBps,
+      },
+    })
+  }
+
   function emitSubgraphSelect(sgId: string) {
     if (!graph || !onSubgraphSelect) return
     const sg = graph.subgraphs?.find((s) => s.id === sgId)
     if (!sg) return
 
-    const memberNodes = graph.nodes.filter(
-      (n) => n.parent === sgId || n.parent?.startsWith(`${sgId}/`),
-    )
+    const parents = new Map((graph.subgraphs ?? []).map((candidate) => [candidate.id, candidate.parent]))
+    const belongsToSubgraph = (nodeParent?: string) => {
+      let parent = nodeParent
+      while (parent) {
+        if (parent === sgId) return true
+        parent = parents.get(parent)
+      }
+      return false
+    }
+    const memberNodes = graph.nodes.filter((node) => belongsToSubgraph(node.parent))
     const memberIds = new Set(memberNodes.map((n) => n.id))
     const linkCount = graph.links.filter((l) => {
       const from = typeof l.from === 'string' ? l.from : l.from.node
@@ -689,6 +745,13 @@
         nodeCount: memberNodes.length,
         linkCount,
         canDrillDown: sheetsAvailable.has(sgId),
+        parent: sg.parent,
+        members: memberNodes.map((node) => ({
+          id: node.id,
+          label: nodeLabel(node),
+          source: typeof node.metadata?.source === 'string' ? node.metadata.source : undefined,
+          role: typeof node.metadata?.role === 'string' ? node.metadata.role : undefined,
+        })),
       },
     })
   }

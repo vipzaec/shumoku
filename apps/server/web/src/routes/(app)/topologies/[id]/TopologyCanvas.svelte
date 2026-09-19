@@ -11,9 +11,11 @@
    */
   import type {
     NodeSelectEvent,
+    LinkSelectEvent,
     SubgraphSelectEvent,
   } from '$lib/components/InteractiveSvgDiagram.svelte'
   import InteractiveSvgDiagram from '$lib/components/InteractiveSvgDiagram.svelte'
+  import LinkInfoModal from '$lib/components/LinkInfoModal.svelte'
   import NodeMappingModal from '$lib/components/NodeMappingModal.svelte'
   import NodeSearchPalette from '$lib/components/NodeSearchPalette.svelte'
   import SubgraphInfoModal from '$lib/components/SubgraphInfoModal.svelte'
@@ -26,6 +28,8 @@
 
   let mappingModalOpen = $state(false)
   let selectedNodeData = $state<NodeSelectEvent | null>(null)
+  let linkModalOpen = $state(false)
+  let selectedLinkData = $state<LinkSelectEvent | null>(null)
   let netboxBaseUrl = $state<string | undefined>(undefined)
   let searchPaletteOpen = $state(false)
   let subgraphModalOpen = $state(false)
@@ -77,6 +81,11 @@
     mappingModalOpen = true
   }
 
+  function handleLinkSelect(event: LinkSelectEvent) {
+    selectedLinkData = event
+    linkModalOpen = true
+  }
+
   function handleSubgraphSelect(event: SubgraphSelectEvent) {
     selectedSubgraphData = event
     subgraphModalOpen = true
@@ -126,6 +135,7 @@
         allowLayoutEdit={!$readOnlyAccess}
         onSearchOpen={() => (searchPaletteOpen = true)}
         onNodeSelect={handleNodeSelect}
+        onLinkSelect={handleLinkSelect}
         onSubgraphSelect={handleSubgraphSelect}
         onSheetChange={(sheetId) => (ctx.currentSheetId = sheetId)}
       />
@@ -151,6 +161,8 @@
   subgraphData={selectedSubgraphData}
   onDrillDown={handleSubgraphDrillDown}
 />
+
+<LinkInfoModal bind:open={linkModalOpen} linkData={selectedLinkData} />
 
 <NodeSearchPalette
   bind:open={searchPaletteOpen}
