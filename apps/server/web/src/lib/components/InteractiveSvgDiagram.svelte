@@ -96,6 +96,7 @@
   import { darkTheme, lightTheme, type NetworkGraph, type ResolvedLayout } from '@shumoku/core'
   import {
     ArrowLeftIcon,
+    ArrowCounterClockwiseIcon,
     CornersOutIcon,
     DatabaseIcon,
     GearSixIcon,
@@ -1181,7 +1182,13 @@
     (Object.keys(pinnedPositions).length > 0 ||
       Object.keys(portSides).length > 0 ||
       Object.keys(edgeRoutes).length > 0)}
-          <button onclick={resetOperatorLayout} title="Reset all saved layout">Reset</button>
+          <button
+            onclick={resetOperatorLayout}
+            title="Reset all saved layout"
+            aria-label="Reset all saved layout"
+          >
+            <ArrowCounterClockwiseIcon size={18} />
+          </button>
         {/if}
       {/if}
       <button onclick={() => viewer?.resetZoom()} title="Fit to View">
