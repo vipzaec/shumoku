@@ -375,7 +375,14 @@
     return [...entries.entries()].map(([source, observedAt]) => ({ source, observedAt }))
   })
   const reconciliationIssues = $derived.by(() => {
-    const issues: Array<{ node: string; field: string; status: string; netbox: string; observed: string }> = []
+    const issues: Array<{
+      nodeId: string
+      node: string
+      field: string
+      status: string
+      netbox: string
+      observed: string
+    }> = []
     for (const node of graph?.nodes ?? []) {
       const metadata = (node as unknown as { metadata?: Record<string, unknown> }).metadata ?? {}
       if (!Array.isArray(metadata.comparisons)) continue
@@ -384,6 +391,7 @@
         const status = String(comparison.status ?? 'unknown')
         if (status === 'match' || status === 'confirmed') continue
         issues.push({
+          nodeId: node.id,
           node: nodeLabel(node),
           field: String(comparison.field ?? 'source data'),
           status,
@@ -394,6 +402,12 @@
     }
     return issues
   })
+
+  function inspectReconciliationIssue(nodeId: string) {
+    dataHealthOpen = false
+    viewer?.panToNode(nodeId)
+    handleSelect(nodeId, 'node')
+  }
 
   type OperatorLayout = {
     nodePositions: Record<string, { x: number; y: number }>
@@ -1311,12 +1325,16 @@
       {#if reconciliationIssues.length > 0}
         <div class="issue-list">
           {#each reconciliationIssues as issue}
-            <div class="issue-card">
+            <button
+              class="issue-card"
+              onclick={() => inspectReconciliationIssue(issue.nodeId)}
+              title={`Inspect ${issue.node}`}
+            >
               <strong>{issue.node}</strong>
               <span>{issue.field} · {issue.status.toUpperCase()}</span>
               <span>NetBox: {issue.netbox}</span>
               <span>Observed: {issue.observed}</span>
-            </div>
+            </button>
           {/each}
         </div>
       {/if}
@@ -1602,11 +1620,17 @@
   .issue-card {
     display: grid;
     gap: 2px;
+    width: 100%;
     padding: 8px;
+    color: inherit;
+    text-align: left;
     background: color-mix(in srgb, #f59e0b 8%, var(--color-bg, #ffffff));
+    border: 0;
     border-left: 3px solid #f59e0b;
     border-radius: 4px;
+    cursor: pointer;
   }
+  .issue-card:hover { background: color-mix(in srgb, #f59e0b 16%, var(--color-bg, #ffffff)); }
   .issue-card span { color: var(--color-text-muted, #64748b); }
 
   .path-panel label {
