@@ -197,6 +197,7 @@
   let portLabelsVisible = $state(true)
   let linkLabelsVisible = $state(true)
   let pathExplorerOpen = $state(false)
+  let dataHealthOpen = $state(false)
   let pathSourceId = $state('')
   let pathDestinationId = $state('')
   let pathFlowId = $state('')
@@ -354,6 +355,40 @@
       linkIds.add(String(item.id ?? ''))
     }
     return { nodeIds, linkIds }
+  })
+  const dataFreshness = $derived.by(() => {
+    const entries = new Map<string, number>()
+    for (const node of graph?.nodes ?? []) {
+      const metadata = (node as unknown as { metadata?: Record<string, unknown> }).metadata ?? {}
+      if (!Array.isArray(metadata.freshness)) continue
+      for (const raw of metadata.freshness) {
+        const item = raw as { source?: unknown; observedAt?: unknown }
+        const source = String(item.source ?? '')
+        const observedAt = Number(item.observedAt ?? 0)
+        if (source && observedAt && observedAt > (entries.get(source) ?? 0)) entries.set(source, observedAt)
+      }
+    }
+    return [...entries.entries()].map(([source, observedAt]) => ({ source, observedAt }))
+  })
+  const reconciliationIssues = $derived.by(() => {
+    const issues: Array<{ node: string; field: string; status: string; netbox: string; observed: string }> = []
+    for (const node of graph?.nodes ?? []) {
+      const metadata = (node as unknown as { metadata?: Record<string, unknown> }).metadata ?? {}
+      if (!Array.isArray(metadata.comparisons)) continue
+      for (const raw of metadata.comparisons) {
+        const comparison = raw as Record<string, unknown>
+        const status = String(comparison.status ?? 'unknown')
+        if (status === 'match' || status === 'confirmed') continue
+        issues.push({
+          node: nodeLabel(node),
+          field: String(comparison.field ?? 'source data'),
+          status,
+          netbox: String(comparison.netbox ?? '—'),
+          observed: String(comparison.observed ?? '—'),
+        })
+      }
+    }
+    return issues
   })
 
   type OperatorLayout = {
@@ -1160,18 +1195,25 @@
         </button>
       {/if}
       <button
-        onclick={() => (layersOpen = !layersOpen)}
+        onclick={() => { layersOpen = !layersOpen; dataHealthOpen = false }}
         title="Information layers"
         class:active={layersOpen}
       >
         Layers
       </button>
       <button
-        onclick={() => (pathExplorerOpen = !pathExplorerOpen)}
+        onclick={() => { pathExplorerOpen = !pathExplorerOpen; dataHealthOpen = false }}
         title="Trace traffic path"
         class:active={pathExplorerOpen}
       >
         Path
+      </button>
+      <button
+        onclick={() => { dataHealthOpen = !dataHealthOpen; layersOpen = false; pathExplorerOpen = false }}
+        title="Data freshness and reconciliation"
+        class:active={dataHealthOpen}
+      >
+        Data
       </button>
     </div>
   </div>
@@ -1236,6 +1278,35 @@
         >
         Traffic utilization</label
       >
+    </div>
+  {/if}
+
+  {#if dataHealthOpen}
+    <div class="data-health-panel">
+      <div class="layers-title">Data health</div>
+      <div class="data-health-summary">
+        <span class:healthy={reconciliationIssues.length === 0} class:warning={reconciliationIssues.length > 0}>
+          {reconciliationIssues.length === 0 ? 'Sources agree' : `${reconciliationIssues.length} discrepancies`}
+        </span>
+      </div>
+      {#each dataFreshness as item}
+        <div class="freshness-row">
+          <strong>{item.source}</strong>
+          <span>{new Date(item.observedAt).toLocaleString()}</span>
+        </div>
+      {/each}
+      {#if reconciliationIssues.length > 0}
+        <div class="issue-list">
+          {#each reconciliationIssues as issue}
+            <div class="issue-card">
+              <strong>{issue.node}</strong>
+              <span>{issue.field} · {issue.status.toUpperCase()}</span>
+              <span>NetBox: {issue.netbox}</span>
+              <span>Observed: {issue.observed}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -1484,6 +1555,46 @@
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
     z-index: 8;
   }
+
+  .data-health-panel {
+    position: absolute;
+    top: 72px;
+    right: 64px;
+    z-index: 8;
+    width: min(420px, calc(100% - 96px));
+    max-height: calc(100% - 96px);
+    overflow: auto;
+    padding: 12px;
+    color: var(--color-text, #0f172a);
+    background: color-mix(in srgb, var(--color-bg-elevated, #ffffff) 96%, transparent);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+    font-size: 11px;
+  }
+
+  .data-health-summary { margin: 8px 0; }
+  .data-health-summary span { font-weight: 700; }
+  .data-health-summary .healthy { color: #15803d; }
+  .data-health-summary .warning { color: #b45309; }
+  .freshness-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    border-top: 1px solid var(--border, #e5e7eb);
+  }
+  .freshness-row span { color: var(--color-text-muted, #64748b); }
+  .issue-list { display: grid; gap: 8px; margin-top: 10px; }
+  .issue-card {
+    display: grid;
+    gap: 2px;
+    padding: 8px;
+    background: color-mix(in srgb, #f59e0b 8%, var(--color-bg, #ffffff));
+    border-left: 3px solid #f59e0b;
+    border-radius: 4px;
+  }
+  .issue-card span { color: var(--color-text-muted, #64748b); }
 
   .path-panel label {
     display: grid;
