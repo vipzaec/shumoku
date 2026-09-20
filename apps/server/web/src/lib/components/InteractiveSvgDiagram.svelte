@@ -97,10 +97,13 @@
   import {
     ArrowLeftIcon,
     CornersOutIcon,
+    DatabaseIcon,
     GearSixIcon,
     MagnifyingGlassIcon,
     MagnifyingGlassMinusIcon,
     MagnifyingGlassPlusIcon,
+    PathIcon,
+    StackIcon,
   } from 'phosphor-svelte'
   import { onDestroy } from 'svelte'
   import { api } from '$lib/api'
@@ -1197,23 +1200,26 @@
       <button
         onclick={() => { layersOpen = !layersOpen; dataHealthOpen = false }}
         title="Information layers"
+        aria-label="Information layers"
         class:active={layersOpen}
       >
-        Layers
+        <StackIcon size={18} />
       </button>
       <button
         onclick={() => { pathExplorerOpen = !pathExplorerOpen; dataHealthOpen = false }}
         title="Trace traffic path"
+        aria-label="Trace traffic path"
         class:active={pathExplorerOpen}
       >
-        Path
+        <PathIcon size={18} />
       </button>
       <button
         onclick={() => { dataHealthOpen = !dataHealthOpen; layersOpen = false; pathExplorerOpen = false }}
         title="Data freshness and reconciliation"
+        aria-label="Data freshness and reconciliation"
         class:active={dataHealthOpen}
       >
-        Data
+        <DatabaseIcon size={18} />
       </button>
     </div>
   </div>
