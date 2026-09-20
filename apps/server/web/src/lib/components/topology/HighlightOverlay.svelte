@@ -20,12 +20,15 @@
     /** Reactive highlight state. Setting this re-applies. */
     highlightedIds?: ReadonlySet<string> | string[]
     highlightedLinkIds?: ReadonlySet<string> | string[]
+    secondaryHighlightedIds?: ReadonlySet<string> | string[]
+    secondaryHighlightedLinkIds?: ReadonlySet<string> | string[]
     /** Reactive attribute match — wins over `highlightedIds` if both set. */
     attributeMatch?: AttributeMatch
     /** Dim non-highlighted nodes + links when something is highlighted. */
     dimOthers?: boolean
     /** Color applied via `--highlight-color` CSS variable. */
     highlightColor?: string
+    secondaryHighlightColor?: string
     /** Pulse animation on matched nodes. Default: true. */
     pulseAnimation?: boolean
   }
@@ -34,9 +37,12 @@
     svgElement,
     highlightedIds,
     highlightedLinkIds,
+    secondaryHighlightedIds,
+    secondaryHighlightedLinkIds,
     attributeMatch,
     dimOthers = false,
     highlightColor,
+    secondaryHighlightColor = '#8b5cf6',
     pulseAnimation = true,
   }: Props = $props()
 
@@ -50,24 +56,34 @@
     for (const el of svg.querySelectorAll('.link-highlighted')) {
       el.classList.remove('link-highlighted')
     }
+    for (const el of svg.querySelectorAll('.node-secondary-highlighted')) {
+      el.classList.remove('node-secondary-highlighted')
+    }
+    for (const el of svg.querySelectorAll('.link-secondary-highlighted')) {
+      el.classList.remove('link-secondary-highlighted')
+    }
   }
 
   function applyPath(
     svg: SVGSVGElement,
     nodeIds: ReadonlySet<string>,
     linkIds: ReadonlySet<string>,
+    secondaryNodeIds: ReadonlySet<string>,
+    secondaryLinkIds: ReadonlySet<string>,
   ): void {
     clear(svg)
     if (nodeIds.size === 0 && linkIds.size === 0) return
     for (const node of svg.querySelectorAll('g.node[data-id]')) {
       const id = node.getAttribute('data-id')
       node.classList.toggle('node-highlighted', Boolean(id && nodeIds.has(id)))
-      if (dimOthers) node.classList.toggle('node-dimmed', !id || !nodeIds.has(id))
+      node.classList.toggle('node-secondary-highlighted', Boolean(id && !nodeIds.has(id) && secondaryNodeIds.has(id)))
+      if (dimOthers) node.classList.toggle('node-dimmed', !id || (!nodeIds.has(id) && !secondaryNodeIds.has(id)))
     }
     for (const link of svg.querySelectorAll('g.link-group[data-link-id]')) {
       const id = link.getAttribute('data-link-id')
       link.classList.toggle('link-highlighted', Boolean(id && linkIds.has(id)))
-      if (dimOthers) link.classList.toggle('node-dimmed', !id || !linkIds.has(id))
+      link.classList.toggle('link-secondary-highlighted', Boolean(id && !linkIds.has(id) && secondaryLinkIds.has(id)))
+      if (dimOthers) link.classList.toggle('node-dimmed', !id || (!linkIds.has(id) && !secondaryLinkIds.has(id)))
     }
   }
 
@@ -134,6 +150,7 @@
       svg.style.removeProperty('--highlight-color')
     }
     svg.style.setProperty('--highlight-pulse', pulseAnimation ? 'node-pulse' : 'none')
+    svg.style.setProperty('--secondary-highlight-color', secondaryHighlightColor)
 
     if (attributeMatch) {
       applyAttribute(svg, attributeMatch.key, attributeMatch.value)
@@ -145,7 +162,15 @@
         highlightedLinkIds instanceof Set
           ? highlightedLinkIds
           : new Set(highlightedLinkIds ?? [])
-      applyPath(svg, set, linkSet)
+      const secondarySet =
+        secondaryHighlightedIds instanceof Set
+          ? secondaryHighlightedIds
+          : new Set(secondaryHighlightedIds ?? [])
+      const secondaryLinkSet =
+        secondaryHighlightedLinkIds instanceof Set
+          ? secondaryHighlightedLinkIds
+          : new Set(secondaryHighlightedLinkIds ?? [])
+      applyPath(svg, set, linkSet, secondarySet, secondaryLinkSet)
       return
     }
     clear(svg)
@@ -184,6 +209,20 @@
       stroke-width: 5px !important;
       opacity: 1 !important;
       filter: drop-shadow(0 0 5px color-mix(in srgb, var(--highlight-color, #f59e0b) 55%, transparent));
+    }
+    g.node.node-secondary-highlighted rect,
+    g.node.node-secondary-highlighted circle,
+    g.node.node-secondary-highlighted path {
+      stroke: var(--secondary-highlight-color, #8b5cf6) !important;
+      stroke-width: 3px !important;
+      filter: drop-shadow(0 0 8px color-mix(in srgb, var(--secondary-highlight-color, #8b5cf6) 60%, transparent));
+    }
+    g.link-group.link-secondary-highlighted path:not(.edge-hit-area) {
+      stroke: var(--secondary-highlight-color, #8b5cf6) !important;
+      stroke-width: 4px !important;
+      stroke-dasharray: 8 6 !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 4px color-mix(in srgb, var(--secondary-highlight-color, #8b5cf6) 50%, transparent));
     }
     g.node.node-dimmed,
     g.link-group.node-dimmed {

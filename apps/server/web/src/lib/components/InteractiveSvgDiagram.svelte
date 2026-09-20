@@ -338,6 +338,23 @@
 
   const highlightedPathNodes = $derived(new Set(trafficPath?.nodeIds ?? []))
   const highlightedPathLinks = $derived(new Set(trafficPath?.hops.map((hop) => hop.linkId) ?? []))
+  const controlPlanePath = $derived.by(() => {
+    const nodeIds = new Set<string>()
+    const linkIds = new Set<string>()
+    const sourceLabel = nodeLabel(graph?.nodes.find((node) => node.id === pathSourceId)).toLowerCase()
+    if (!graph || !sourceLabel.includes('netbird'))
+      return { nodeIds, linkIds }
+    for (const rawLink of graph.links) {
+      const item = rawLink as unknown as Record<string, unknown>
+      if (String(item.label ?? '').trim().toLowerCase() !== 'control') continue
+      const from = String((item.from as { node?: string })?.node ?? '')
+      const to = String((item.to as { node?: string })?.node ?? '')
+      if (from) nodeIds.add(from)
+      if (to) nodeIds.add(to)
+      linkIds.add(String(item.id ?? ''))
+    }
+    return { nodeIds, linkIds }
+  })
 
   type OperatorLayout = {
     nodePositions: Record<string, { x: number; y: number }>
@@ -1067,8 +1084,11 @@
           {svgElement}
           highlightedIds={highlightedPathNodes}
           highlightedLinkIds={highlightedPathLinks}
+          secondaryHighlightedIds={controlPlanePath.nodeIds}
+          secondaryHighlightedLinkIds={controlPlanePath.linkIds}
           dimOthers={pathExplorerOpen && highlightedPathNodes.size > 0}
           highlightColor="#2563eb"
+          secondaryHighlightColor="#8b5cf6"
           pulseAnimation={false}
         />
         <TooltipOverlay {svgElement} graph={activeGraph} contentBuilder={buildTooltip} />
@@ -1250,6 +1270,12 @@
                 {#if index < trafficPath.hops.length - 1}<span class="path-arrow">→</span>{/if}
               </div>
             {/each}
+            {#if controlPlanePath.linkIds.size > 0}
+              <div class="path-hop control-plane-hop">
+                <span class="decision control">CONTROL</span>
+                <span>NetBird management / signaling</span>
+              </div>
+            {/if}
           </div>
         {:else}
           <div class="path-empty">UNKNOWN · no matching path</div>
@@ -1509,6 +1535,7 @@
   .decision.block { background: #dc2626; }
   .decision.nat { background: #ea580c; }
   .decision.vpn { background: #7c3aed; }
+  .decision.control { background: #8b5cf6; }
   .decision.unknown { background: #64748b; }
   .path-arrow { color: var(--color-text-muted, #64748b); }
   .path-empty {
