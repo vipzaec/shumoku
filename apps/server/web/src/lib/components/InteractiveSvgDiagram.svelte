@@ -196,6 +196,95 @@
   let nodeDetailsVisible = $state(true)
   let portLabelsVisible = $state(true)
   let linkLabelsVisible = $state(true)
+  let pathExplorerOpen = $state(false)
+  let pathSourceId = $state('')
+  let pathDestinationId = $state('')
+  let pathService = $state('any')
+
+  type PathHop = { linkId: string; label: string; decision: string }
+  type TrafficPath = { nodeIds: string[]; hops: PathHop[] }
+
+  const pathNodes = $derived.by(() =>
+    [...(graph?.nodes ?? [])]
+      .map((node) => ({ id: node.id, label: nodeLabel(node) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  )
+
+  const pathServices = $derived.by(() => {
+    const values = new Set<string>()
+    for (const item of graph?.links ?? []) {
+      const label = String(item.label ?? '').trim()
+      if (label) values.add(label)
+    }
+    return [...values].sort((a, b) => a.localeCompare(b))
+  })
+
+  function trafficDecision(link: Record<string, unknown>): string {
+    const metadata = (link.metadata ?? {}) as Record<string, unknown>
+    const explicit = String(metadata.decision ?? '').toUpperCase()
+    if (['ALLOW', 'BLOCK', 'NAT', 'VPN', 'UNKNOWN'].includes(explicit)) return explicit
+    const label = String(link.label ?? '').toLowerCase()
+    if (/block|deny|reject/.test(label)) return 'BLOCK'
+    if (/dnat|snat|nat/.test(label)) return 'NAT'
+    if (/ipsec|vpn|wireguard/.test(label)) return 'VPN'
+    if (/allow|routing|uplink|control/.test(label)) return 'ALLOW'
+    return 'UNKNOWN'
+  }
+
+  const trafficPath = $derived.by<TrafficPath | null>(() => {
+    if (!graph || !pathSourceId || !pathDestinationId || pathSourceId === pathDestinationId)
+      return null
+    const sourceLabel = nodeLabel(graph.nodes.find((node) => node.id === pathSourceId)).toLowerCase()
+    const kerioAccessPath = sourceLabel.includes('remote vpn users') || sourceLabel.includes('kerio')
+    const adjacency = new Map<string, Array<{ nodeId: string; link: Record<string, unknown> }>>()
+    for (const rawLink of graph.links) {
+      const item = rawLink as unknown as Record<string, unknown>
+      const from = String((item.from as { node?: string })?.node ?? '')
+      const to = String((item.to as { node?: string })?.node ?? '')
+      if (!from || !to) continue
+      const label = String(item.label ?? '')
+      if (pathService !== 'any' && label !== pathService) continue
+      // A road-warrior session terminates on Kerio after OPNsense DNAT. The
+      // generic OPNsense → LAN routing edge is physically shorter, but it is
+      // not the path taken by these clients and must not hide the VPN gateway.
+      if (kerioAccessPath && /^(local|lan) routing$/i.test(label)) continue
+      const arrow = String(item.arrow ?? 'both')
+      if (arrow !== 'reverse') adjacency.set(from, [...(adjacency.get(from) ?? []), { nodeId: to, link: item }])
+      if (arrow !== 'forward') adjacency.set(to, [...(adjacency.get(to) ?? []), { nodeId: from, link: item }])
+    }
+    const queue = [pathSourceId]
+    const previous = new Map<string, { nodeId: string; link: Record<string, unknown> }>()
+    const visited = new Set([pathSourceId])
+    while (queue.length) {
+      const current = queue.shift()!
+      if (current === pathDestinationId) break
+      for (const next of adjacency.get(current) ?? []) {
+        if (visited.has(next.nodeId)) continue
+        visited.add(next.nodeId)
+        previous.set(next.nodeId, { nodeId: current, link: next.link })
+        queue.push(next.nodeId)
+      }
+    }
+    if (!visited.has(pathDestinationId)) return null
+    const nodeIds = [pathDestinationId]
+    const hops: PathHop[] = []
+    let cursor = pathDestinationId
+    while (cursor !== pathSourceId) {
+      const step = previous.get(cursor)
+      if (!step) return null
+      hops.unshift({
+        linkId: String(step.link.id ?? ''),
+        label: String(step.link.label ?? 'unlabelled connection'),
+        decision: trafficDecision(step.link),
+      })
+      cursor = step.nodeId
+      nodeIds.unshift(cursor)
+    }
+    return { nodeIds, hops }
+  })
+
+  const highlightedPathNodes = $derived(new Set(trafficPath?.nodeIds ?? []))
+  const highlightedPathLinks = $derived(new Set(trafficPath?.hops.map((hop) => hop.linkId) ?? []))
 
   type OperatorLayout = {
     nodePositions: Record<string, { x: number; y: number }>
@@ -921,7 +1010,14 @@
           status={nodeStatusView}
           enabled={$liveUpdatesEnabled && $showNodeStatus}
         />
-        <HighlightOverlay {svgElement} />
+        <HighlightOverlay
+          {svgElement}
+          highlightedIds={highlightedPathNodes}
+          highlightedLinkIds={highlightedPathLinks}
+          dimOthers={pathExplorerOpen && highlightedPathNodes.size > 0}
+          highlightColor="#2563eb"
+          pulseAnimation={false}
+        />
         <TooltipOverlay {svgElement} graph={activeGraph} contentBuilder={buildTooltip} />
       {/snippet}
     </TopologyViewer>
@@ -997,6 +1093,13 @@
       >
         Layers
       </button>
+      <button
+        onclick={() => (pathExplorerOpen = !pathExplorerOpen)}
+        title="Trace traffic path"
+        class:active={pathExplorerOpen}
+      >
+        Path
+      </button>
     </div>
   </div>
 
@@ -1060,6 +1163,45 @@
         >
         Traffic utilization</label
       >
+    </div>
+  {/if}
+
+  {#if pathExplorerOpen}
+    <div class="path-panel">
+      <div class="layers-title">Traffic path</div>
+      <label>Source
+        <select bind:value={pathSourceId}>
+          <option value="">Select source</option>
+          {#each pathNodes as item}<option value={item.id}>{item.label}</option>{/each}
+        </select>
+      </label>
+      <label>Destination
+        <select bind:value={pathDestinationId}>
+          <option value="">Select destination</option>
+          {#each pathNodes as item}<option value={item.id}>{item.label}</option>{/each}
+        </select>
+      </label>
+      <label>Service / connection
+        <select bind:value={pathService}>
+          <option value="any">Any</option>
+          {#each pathServices as service}<option value={service}>{service}</option>{/each}
+        </select>
+      </label>
+      {#if pathSourceId && pathDestinationId}
+        {#if trafficPath}
+          <div class="path-result">
+            {#each trafficPath.hops as hop, index}
+              <div class="path-hop">
+                <span class="decision {hop.decision.toLowerCase()}">{hop.decision}</span>
+                <span>{hop.label}</span>
+                {#if index < trafficPath.hops.length - 1}<span class="path-arrow">→</span>{/if}
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="path-empty">UNKNOWN · no matching path</div>
+        {/if}
+      {/if}
     </div>
   {/if}
 
@@ -1249,6 +1391,80 @@
     color: var(--primary, #2563eb);
     border-color: var(--primary, #2563eb);
     background: color-mix(in srgb, var(--primary, #2563eb) 8%, white);
+  }
+
+  .path-panel {
+    position: absolute;
+    top: 72px;
+    right: 64px;
+    width: min(420px, calc(100% - 96px));
+    padding: 12px;
+    background: color-mix(in srgb, var(--color-bg-elevated, #ffffff) 96%, transparent);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+    z-index: 8;
+  }
+
+  .path-panel label {
+    display: grid;
+    grid-template-columns: 116px 1fr;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    color: var(--color-text-muted, #475569);
+    font-size: 11px;
+  }
+
+  .path-panel select {
+    min-width: 0;
+    padding: 6px 8px;
+    color: var(--color-text, #0f172a);
+    background: var(--color-bg, #ffffff);
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 5px;
+    font-size: 11px;
+  }
+
+  .path-result {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border, #e5e7eb);
+  }
+
+  .path-hop {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+  }
+
+  .decision {
+    padding: 2px 5px;
+    color: #ffffff;
+    background: #64748b;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  .decision.allow { background: #16a34a; }
+  .decision.block { background: #dc2626; }
+  .decision.nat { background: #ea580c; }
+  .decision.vpn { background: #7c3aed; }
+  .decision.unknown { background: #64748b; }
+  .path-arrow { color: var(--color-text-muted, #64748b); }
+  .path-empty {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border, #e5e7eb);
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
   }
 
   .control-group {

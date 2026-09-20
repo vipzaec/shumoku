@@ -19,6 +19,7 @@
     svgElement: SVGSVGElement | null
     /** Reactive highlight state. Setting this re-applies. */
     highlightedIds?: ReadonlySet<string> | string[]
+    highlightedLinkIds?: ReadonlySet<string> | string[]
     /** Reactive attribute match — wins over `highlightedIds` if both set. */
     attributeMatch?: AttributeMatch
     /** Dim non-highlighted nodes + links when something is highlighted. */
@@ -32,6 +33,7 @@
   let {
     svgElement,
     highlightedIds,
+    highlightedLinkIds,
     attributeMatch,
     dimOthers = false,
     highlightColor,
@@ -44,6 +46,28 @@
     }
     for (const el of svg.querySelectorAll('.node-dimmed')) {
       el.classList.remove('node-dimmed')
+    }
+    for (const el of svg.querySelectorAll('.link-highlighted')) {
+      el.classList.remove('link-highlighted')
+    }
+  }
+
+  function applyPath(
+    svg: SVGSVGElement,
+    nodeIds: ReadonlySet<string>,
+    linkIds: ReadonlySet<string>,
+  ): void {
+    clear(svg)
+    if (nodeIds.size === 0 && linkIds.size === 0) return
+    for (const node of svg.querySelectorAll('g.node[data-id]')) {
+      const id = node.getAttribute('data-id')
+      node.classList.toggle('node-highlighted', Boolean(id && nodeIds.has(id)))
+      if (dimOthers) node.classList.toggle('node-dimmed', !id || !nodeIds.has(id))
+    }
+    for (const link of svg.querySelectorAll('g.link-group[data-link-id]')) {
+      const id = link.getAttribute('data-link-id')
+      link.classList.toggle('link-highlighted', Boolean(id && linkIds.has(id)))
+      if (dimOthers) link.classList.toggle('node-dimmed', !id || !linkIds.has(id))
     }
   }
 
@@ -115,9 +139,13 @@
       applyAttribute(svg, attributeMatch.key, attributeMatch.value)
       return
     }
-    if (highlightedIds) {
-      const set = highlightedIds instanceof Set ? highlightedIds : new Set(highlightedIds)
-      applyIds(svg, set)
+    if (highlightedIds || highlightedLinkIds) {
+      const set = highlightedIds instanceof Set ? highlightedIds : new Set(highlightedIds ?? [])
+      const linkSet =
+        highlightedLinkIds instanceof Set
+          ? highlightedLinkIds
+          : new Set(highlightedLinkIds ?? [])
+      applyPath(svg, set, linkSet)
       return
     }
     clear(svg)
@@ -150,6 +178,12 @@
       stroke: var(--highlight-color, #f59e0b) !important;
       stroke-width: 3px !important;
       filter: drop-shadow(0 0 8px color-mix(in srgb, var(--highlight-color, #f59e0b) 60%, transparent));
+    }
+    g.link-group.link-highlighted path:not(.edge-hit-area) {
+      stroke: var(--highlight-color, #f59e0b) !important;
+      stroke-width: 5px !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 5px color-mix(in srgb, var(--highlight-color, #f59e0b) 55%, transparent));
     }
     g.node.node-dimmed,
     g.link-group.node-dimmed {
