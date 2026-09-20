@@ -676,6 +676,14 @@
                         <div class="grid grid-cols-[72px_1fr] gap-x-2 text-muted-foreground">
                           <span>NetBox</span><span>{String(comparison.netbox ?? '—')}</span>
                           <span>Observed</span><span>{String(comparison.observed ?? '—')}</span>
+                          {#if comparison.onlyInNetBox}
+                            <span class="text-warning">Only in NetBox</span>
+                            <span class="text-warning">{String(comparison.onlyInNetBox)}</span>
+                          {/if}
+                          {#if comparison.onlyInObserved}
+                            <span class="text-danger">Only in OPNsense</span>
+                            <span class="text-danger">{String(comparison.onlyInObserved)}</span>
+                          {/if}
                         </div>
                       </div>
                     {/each}
