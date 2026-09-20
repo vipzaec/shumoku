@@ -199,10 +199,11 @@
   let pathExplorerOpen = $state(false)
   let pathSourceId = $state('')
   let pathDestinationId = $state('')
-  let pathService = $state('any')
+  let pathFlowId = $state('')
 
   type PathHop = { linkId: string; label: string; decision: string }
   type TrafficPath = { nodeIds: string[]; hops: PathHop[] }
+  type TrafficFlowProfile = { id: string; label: string; source: string; destination: string }
 
   const pathNodes = $derived.by(() =>
     [...(graph?.nodes ?? [])]
@@ -289,23 +290,58 @@
     return { nodeIds, hops }
   }
 
-  const baseTrafficPath = $derived.by<TrafficPath | null>(() => findTrafficPath())
-  const pathServices = $derived.by(() => {
-    const values = new Set(
-      (baseTrafficPath?.hops ?? [])
-        .map((hop) => hop.label.trim())
-        .filter((label) => label.length > 0),
+  const trafficFlowProfiles = $derived.by<TrafficFlowProfile[]>(() => {
+    const metadata = (graph as unknown as { metadata?: { trafficFlows?: unknown[] } })?.metadata
+    const resolvedIds = new Map(
+      (graph?.nodes ?? []).map((node) => [
+        String((node as unknown as { metadata?: { logicalId?: string } }).metadata?.logicalId ?? node.id),
+        node.id,
+      ]),
     )
-    return [...values]
+    const nodeFlows = (graph?.nodes ?? []).flatMap((node) => {
+      const nodeMetadata = (node as unknown as { metadata?: { trafficFlows?: unknown[] } }).metadata
+      return (nodeMetadata?.trafficFlows ?? []).map((item) => {
+        const flow = item as TrafficFlowProfile
+        return {
+          ...flow,
+          source: resolvedIds.get(flow.source) ?? node.id,
+          destination: resolvedIds.get(flow.destination) ?? flow.destination,
+        }
+      })
+    })
+    const profiles = [...(metadata?.trafficFlows ?? []), ...nodeFlows].filter((item): item is TrafficFlowProfile => {
+      const flow = item as Partial<TrafficFlowProfile>
+      return Boolean(flow.id && flow.label && flow.source && flow.destination)
+    })
+    return [...new Map(profiles.map((flow) => [flow.id, flow])).values()]
   })
+  const availableTrafficFlows = $derived.by(() =>
+    trafficFlowProfiles.filter((flow) => {
+      if (pathSourceId && flow.source !== pathSourceId) return false
+      if (pathDestinationId && flow.destination !== pathDestinationId) return false
+      return true
+    }),
+  )
 
   $effect(() => {
-    if (pathService !== 'any' && !pathServices.includes(pathService)) pathService = 'any'
+    if (!pathFlowId) return
+    const selected = trafficFlowProfiles.find((flow) => flow.id === pathFlowId)
+    if (!selected || selected.source !== pathSourceId || selected.destination !== pathDestinationId)
+      pathFlowId = ''
   })
 
-  const trafficPath = $derived.by<TrafficPath | null>(() =>
-    pathService === 'any' ? baseTrafficPath : findTrafficPath(pathService),
-  )
+  function selectTrafficFlow(flowId: string) {
+    const selected = trafficFlowProfiles.find((flow) => flow.id === flowId)
+    if (!selected) {
+      pathFlowId = ''
+      return
+    }
+    pathSourceId = selected.source
+    pathDestinationId = selected.destination
+    pathFlowId = flowId
+  }
+
+  const trafficPath = $derived.by<TrafficPath | null>(() => findTrafficPath())
 
   const highlightedPathNodes = $derived(new Set(trafficPath?.nodeIds ?? []))
   const highlightedPathLinks = $derived(new Set(trafficPath?.hops.map((hop) => hop.linkId) ?? []))
@@ -1206,9 +1242,9 @@
         </select>
       </label>
       <label>Service / connection
-        <select bind:value={pathService}>
-          <option value="any">Any</option>
-          {#each pathServices as service}<option value={service}>{service}</option>{/each}
+        <select value={pathFlowId} onchange={(event) => selectTrafficFlow(event.currentTarget.value)}>
+          <option value="">{pathSourceId || pathDestinationId ? 'Any matching path' : 'Select operational flow'}</option>
+          {#each availableTrafficFlows as flow}<option value={flow.id}>{flow.label}</option>{/each}
         </select>
       </label>
       {#if pathSourceId && pathDestinationId}
