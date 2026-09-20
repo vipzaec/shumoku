@@ -210,15 +210,6 @@
       .sort((a, b) => a.label.localeCompare(b.label)),
   )
 
-  const pathServices = $derived.by(() => {
-    const values = new Set<string>()
-    for (const item of graph?.links ?? []) {
-      const label = String(item.label ?? '').trim()
-      if (label) values.add(label)
-    }
-    return [...values].sort((a, b) => a.localeCompare(b))
-  })
-
   function trafficDecision(link: Record<string, unknown>): string {
     const metadata = (link.metadata ?? {}) as Record<string, unknown>
     const explicit = String(metadata.decision ?? '').toUpperCase()
@@ -227,11 +218,11 @@
     if (/block|deny|reject/.test(label)) return 'BLOCK'
     if (/dnat|snat|nat/.test(label)) return 'NAT'
     if (/ipsec|vpn|wireguard/.test(label)) return 'VPN'
-    if (/allow|routing|uplink|control/.test(label)) return 'ALLOW'
+    if (/allow|routing|uplink|control|overlay/.test(label)) return 'ALLOW'
     return 'UNKNOWN'
   }
 
-  const trafficPath = $derived.by<TrafficPath | null>(() => {
+  function findTrafficPath(requiredService = 'any'): TrafficPath | null {
     if (!graph || !pathSourceId || !pathDestinationId || pathSourceId === pathDestinationId)
       return null
     const sourceLabel = nodeLabel(graph.nodes.find((node) => node.id === pathSourceId)).toLowerCase()
@@ -243,7 +234,6 @@
       const to = String((item.to as { node?: string })?.node ?? '')
       if (!from || !to) continue
       const label = String(item.label ?? '')
-      if (pathService !== 'any' && label !== pathService) continue
       // A road-warrior session terminates on Kerio after OPNsense DNAT. The
       // generic OPNsense → LAN routing edge is physically shorter, but it is
       // not the path taken by these clients and must not hide the VPN gateway.
@@ -252,36 +242,70 @@
       if (arrow !== 'reverse') adjacency.set(from, [...(adjacency.get(from) ?? []), { nodeId: to, link: item }])
       if (arrow !== 'forward') adjacency.set(to, [...(adjacency.get(to) ?? []), { nodeId: from, link: item }])
     }
-    const queue = [pathSourceId]
-    const previous = new Map<string, { nodeId: string; link: Record<string, unknown> }>()
-    const visited = new Set([pathSourceId])
+    const startKey = `${pathSourceId}|${requiredService === 'any' ? 1 : 0}`
+    const queue = [{ nodeId: pathSourceId, matched: requiredService === 'any' }]
+    const previous = new Map<
+      string,
+      { key: string; nodeId: string; matched: boolean; link: Record<string, unknown> }
+    >()
+    const visited = new Set([startKey])
+    let goalKey = ''
     while (queue.length) {
       const current = queue.shift()!
-      if (current === pathDestinationId) break
-      for (const next of adjacency.get(current) ?? []) {
-        if (visited.has(next.nodeId)) continue
-        visited.add(next.nodeId)
-        previous.set(next.nodeId, { nodeId: current, link: next.link })
-        queue.push(next.nodeId)
+      const currentKey = `${current.nodeId}|${current.matched ? 1 : 0}`
+      if (current.nodeId === pathDestinationId && current.matched) {
+        goalKey = currentKey
+        break
+      }
+      for (const next of adjacency.get(current.nodeId) ?? []) {
+        const matched = current.matched || String(next.link.label ?? '') === requiredService
+        const nextKey = `${next.nodeId}|${matched ? 1 : 0}`
+        if (visited.has(nextKey)) continue
+        visited.add(nextKey)
+        previous.set(nextKey, {
+          key: currentKey,
+          nodeId: current.nodeId,
+          matched: current.matched,
+          link: next.link,
+        })
+        queue.push({ nodeId: next.nodeId, matched })
       }
     }
-    if (!visited.has(pathDestinationId)) return null
+    if (!goalKey) return null
     const nodeIds = [pathDestinationId]
     const hops: PathHop[] = []
-    let cursor = pathDestinationId
-    while (cursor !== pathSourceId) {
-      const step = previous.get(cursor)
+    let cursorKey = goalKey
+    while (cursorKey !== startKey) {
+      const step = previous.get(cursorKey)
       if (!step) return null
       hops.unshift({
         linkId: String(step.link.id ?? ''),
         label: String(step.link.label ?? 'unlabelled connection'),
         decision: trafficDecision(step.link),
       })
-      cursor = step.nodeId
-      nodeIds.unshift(cursor)
+      nodeIds.unshift(step.nodeId)
+      cursorKey = step.key
     }
     return { nodeIds, hops }
+  }
+
+  const baseTrafficPath = $derived.by<TrafficPath | null>(() => findTrafficPath())
+  const pathServices = $derived.by(() => {
+    const values = new Set(
+      (baseTrafficPath?.hops ?? [])
+        .map((hop) => hop.label.trim())
+        .filter((label) => label.length > 0),
+    )
+    return [...values]
   })
+
+  $effect(() => {
+    if (pathService !== 'any' && !pathServices.includes(pathService)) pathService = 'any'
+  })
+
+  const trafficPath = $derived.by<TrafficPath | null>(() =>
+    pathService === 'any' ? baseTrafficPath : findTrafficPath(pathService),
+  )
 
   const highlightedPathNodes = $derived(new Set(trafficPath?.nodeIds ?? []))
   const highlightedPathLinks = $derived(new Set(trafficPath?.hops.map((hop) => hop.linkId) ?? []))
