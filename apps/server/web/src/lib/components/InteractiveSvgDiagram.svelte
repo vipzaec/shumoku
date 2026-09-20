@@ -315,19 +315,12 @@
     })
     return [...new Map(profiles.map((flow) => [flow.id, flow])).values()]
   })
-  const availableTrafficFlows = $derived.by(() =>
-    trafficFlowProfiles.filter((flow) => {
-      if (pathSourceId && flow.source !== pathSourceId) return false
-      if (pathDestinationId && flow.destination !== pathDestinationId) return false
-      return true
-    }),
-  )
+  const availableTrafficFlows = $derived(trafficFlowProfiles)
 
   $effect(() => {
     if (!pathFlowId) return
     const selected = trafficFlowProfiles.find((flow) => flow.id === pathFlowId)
-    if (!selected || selected.source !== pathSourceId || selected.destination !== pathDestinationId)
-      pathFlowId = ''
+    if (!selected) pathFlowId = ''
   })
 
   function selectTrafficFlow(flowId: string) {
@@ -1241,9 +1234,9 @@
           {#each pathNodes as item}<option value={item.id}>{item.label}</option>{/each}
         </select>
       </label>
-      <label>Service / connection
+      <label>Traffic flow
         <select value={pathFlowId} onchange={(event) => selectTrafficFlow(event.currentTarget.value)}>
-          <option value="">{pathSourceId || pathDestinationId ? 'Any matching path' : 'Select operational flow'}</option>
+          <option value="">Select operational flow</option>
           {#each availableTrafficFlows as flow}<option value={flow.id}>{flow.label}</option>{/each}
         </select>
       </label>
