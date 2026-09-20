@@ -138,6 +138,12 @@
   let consistency = $derived(
     typeof nodeMetadata.consistency === 'string' ? nodeMetadata.consistency : undefined,
   )
+  let sourceLinks = $derived.by(() => {
+    if (!Array.isArray(nodeMetadata.sourceLinks)) return []
+    return nodeMetadata.sourceLinks.filter((value): value is Record<string, unknown> =>
+      Boolean(value && typeof value === 'object' && typeof value.url === 'string'),
+    )
+  })
   let hasMetricsSource = $derived($metricsSources.length > 0)
   // Resolve provenance from the authoritative source-qualified mappings. Host
   // inventories are live plugin data loaded only by the Mapping picker; metric
@@ -611,6 +617,22 @@
                       class:text-warning={consistency === 'unverified'}
                       class="font-semibold uppercase"
                     >{consistency}</span>
+                  </div>
+                {/if}
+
+                {#if sourceLinks.length > 0}
+                  <div class="flex flex-wrap gap-2">
+                    {#each sourceLinks as sourceLink}
+                      <a
+                        href={String(sourceLink.url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-primary hover:bg-muted"
+                      >
+                        {String(sourceLink.label ?? 'Source')}
+                        <ArrowSquareOutIcon size={10} />
+                      </a>
+                    {/each}
                   </div>
                 {/if}
 
