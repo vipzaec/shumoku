@@ -759,6 +759,7 @@ export function applyOctilinearRoutes(
   }
   const combRoutes: CombRoute[] = []
   const combEdgeIds = new Set<string>()
+  const directFanouts: CombMember[][] = []
   // corridors already claimed by earlier combs — two hubs' harnesses
   // must not run the same column (214px of two combs side-on was real)
   const claimedCorridors: { x1: number; x2: number; y1: number; y2: number }[] = []
@@ -792,6 +793,23 @@ export function applyOctilinearRoutes(
         })
       }
       if (members.length < 2) continue
+      // A single ordered child row needs no synthetic trunk or bus. When
+      // parent ports and child ports have the same left-to-right order,
+      // direct branches are pairwise non-crossing by construction. This is
+      // the common firewall -> rules, switch -> hosts and patch-panel case.
+      const oneRow =
+        Math.max(...members.map((member) => member.cy)) -
+          Math.min(...members.map((member) => member.cy)) <
+        60
+      const byParent = [...members].sort((a, b) => a.px - b.px || (a.edgeId < b.edgeId ? -1 : 1))
+      const childOrderIsMonotone = byParent.every(
+        (member, index) => index === 0 || member.cx >= (byParent[index - 1]?.cx ?? member.cx),
+      )
+      if (oneRow && childOrderIsMonotone) {
+        directFanouts.push(members)
+        for (const member of members) combEdgeIds.add(member.edgeId)
+        continue
+      }
       // One bus PER CHILD ROW (shared trunk): a single bus above the
       // topmost child sends risers straight through every intermediate
       // row — the dominant pierce source. Per-row buses keep each riser
@@ -1252,6 +1270,14 @@ export function applyOctilinearRoutes(
       chamfer,
     )
     routed++
+  }
+  for (const fanout of directFanouts) {
+    for (const member of fanout) {
+      const edge = edges.get(member.edgeId)
+      if (!edge) continue
+      emitRoute(edge, member.start, [], chamfer)
+      routed++
+    }
   }
   for (const comb of combRoutes) {
     const n = comb.members.length
