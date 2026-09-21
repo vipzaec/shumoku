@@ -1313,7 +1313,11 @@
       <div class="layers-title">Data health</div>
       <div class="data-health-summary">
         <span class:healthy={reconciliationIssues.length === 0} class:warning={reconciliationIssues.length > 0}>
-          {reconciliationIssues.length === 0 ? 'Sources agree' : `${reconciliationIssues.length} discrepancies`}
+          {reconciliationIssues.length === 0
+            ? 'Sources agree'
+            : reconciliationIssues.length === 1
+              ? '1 discrepancy'
+              : `${reconciliationIssues.length} discrepancies`}
         </span>
       </div>
       {#each dataFreshness as item}
@@ -1327,6 +1331,8 @@
           {#each reconciliationIssues as issue}
             <button
               class="issue-card"
+              class:mismatch={issue.status === 'mismatch'}
+              class:unverified={issue.status === 'unknown' || issue.status === 'unverified'}
               onclick={() => inspectReconciliationIssue(issue.nodeId)}
               title={`Inspect ${issue.node}`}
             >
@@ -1631,6 +1637,9 @@
     cursor: pointer;
   }
   .issue-card:hover { background: color-mix(in srgb, #f59e0b 16%, var(--color-bg, #ffffff)); }
+  .issue-card.mismatch { border-left-color: #dc2626; }
+  .issue-card.mismatch:hover { background: color-mix(in srgb, #dc2626 12%, var(--color-bg, #ffffff)); }
+  .issue-card.unverified { border-left-color: #d97706; }
   .issue-card span { color: var(--color-text-muted, #64748b); }
 
   .path-panel label {
