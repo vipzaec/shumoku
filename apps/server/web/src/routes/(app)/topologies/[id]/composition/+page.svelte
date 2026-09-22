@@ -74,11 +74,13 @@
     id: string
     label: string
     action: 'added' | 'removed' | 'changed'
+    details?: string
   }
   let selectedObservationIds = $state<string[]>([])
   let revisionChanges = $state<RevisionChange[]>([])
   let comparisonLoading = $state(false)
   let comparisonError = $state<string | null>(null)
+  let comparisonComplete = $state(false)
   let discoveryLoading = $state(false)
   let policyView = $state<{
     topologyDefault: Attachment[] | null
@@ -145,6 +147,28 @@
     return String(label ?? item.id ?? 'Unnamed')
   }
 
+  function changedPaths(before: unknown, after: unknown, prefix = ''): string[] {
+    if (JSON.stringify(stableValue(before)) === JSON.stringify(stableValue(after))) return []
+    if (
+      before &&
+      after &&
+      typeof before === 'object' &&
+      typeof after === 'object' &&
+      !Array.isArray(before) &&
+      !Array.isArray(after)
+    ) {
+      const left = before as Record<string, unknown>
+      const right = after as Record<string, unknown>
+      const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])]
+        .filter((key) => !['position', 'observedAt', 'sourceFreshness', 'lastSync'].includes(key))
+        .sort()
+      return keys.flatMap((key) =>
+        changedPaths(left[key], right[key], prefix ? `${prefix}.${key}` : key),
+      )
+    }
+    return [prefix || 'value']
+  }
+
   function diffCollection(
     before: Record<string, unknown>[],
     after: Record<string, unknown>[],
@@ -166,7 +190,14 @@
         newItem &&
         JSON.stringify(stableValue(oldItem)) !== JSON.stringify(stableValue(newItem))
       ) {
-        changes.push({ kind, id, label: objectLabel(newItem), action: 'changed' })
+        const paths = changedPaths(oldItem, newItem)
+        changes.push({
+          kind,
+          id,
+          label: objectLabel(newItem),
+          action: 'changed',
+          details: paths.slice(0, 5).join(', ') + (paths.length > 5 ? ` +${paths.length - 5}` : ''),
+        })
       }
     }
     return changes
@@ -176,6 +207,7 @@
     if (!ctx.topologyId || selectedObservationIds.length !== 2) return
     comparisonLoading = true
     comparisonError = null
+    comparisonComplete = false
     try {
       const selected = selectedObservationIds
         .map((id) => recentObservations.find((item) => item.id === id))
@@ -194,6 +226,7 @@
         ...diffCollection(before.graph?.nodes ?? [], after.graph?.nodes ?? [], 'node'),
         ...diffCollection(before.graph?.links ?? [], after.graph?.links ?? [], 'link'),
       ]
+      comparisonComplete = true
     } catch (error) {
       revisionChanges = []
       comparisonError = error instanceof Error ? error.message : 'Comparison failed.'
@@ -208,6 +241,7 @@
       : [...selectedObservationIds.slice(-1), id]
     revisionChanges = []
     comparisonError = null
+    comparisonComplete = false
   }
 
   // Refresh whenever the layout has finished loading (so we have a
@@ -843,7 +877,7 @@
             >
               {comparisonError}
             </div>
-          {:else if selectedObservationIds.length === 2 && !comparisonLoading}
+          {:else if comparisonComplete && !comparisonLoading}
             <div
               class="mb-3 rounded border border-theme-border bg-theme-surface-subtle px-3 py-2 text-xs"
             >
@@ -866,6 +900,9 @@
                       </span>
                       <span class="ml-1 uppercase text-theme-text-muted">{change.kind}</span>
                       <span class="ml-1">{change.label}</span>
+                      {#if change.details}
+                        <span class="ml-1 text-theme-text-muted">({change.details})</span>
+                      {/if}
                     </div>
                   {/each}
                 </div>
