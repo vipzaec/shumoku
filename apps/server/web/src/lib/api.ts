@@ -611,6 +611,18 @@ export const topologies = {
     return data as typeof data & { graph: NetworkGraph | null }
   },
 
+  restoreObservationLayout: async (id: string, obsId: string): Promise<{ ok: true }> => {
+    const response = await fetch(
+      `${BASE_URL}/topologies/${encodeURIComponent(id)}/observations/${encodeURIComponent(obsId)}/restore-layout`,
+      { method: 'POST' },
+    )
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string }
+      throw new ApiError(body.error ?? `HTTP error ${response.status}`, response.status)
+    }
+    return (await response.json()) as { ok: true }
+  },
+
   getContext: async (id: string, _theme?: 'light' | 'dark'): Promise<TopologyContext> => {
     if (shareDashboardToken) {
       const { data, error, response } = await contractClient.GET(

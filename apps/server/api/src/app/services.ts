@@ -108,6 +108,7 @@ export interface TopologyObservationView {
   portCount: number
   createdAt: number
   contributionChanged?: boolean
+  operatorLayout?: DisplaySettingsView['operatorLayout']
 }
 
 export interface TopologyCrudService {
@@ -194,6 +195,7 @@ export interface ObservationSummaryView {
   linkCount: number
   portCount: number
   createdAt: number
+  hasOperatorLayout: boolean
 }
 
 export interface DisplaySettingsView {
@@ -226,6 +228,7 @@ export interface TopologyObservationApplicationService {
     topologyId: string,
     patch: Partial<DisplaySettingsView>,
   ): Promise<{ ok: true }>
+  restoreOperatorLayout(topologyId: string, observationId: string): Promise<{ ok: true }>
 }
 
 export type TopologySourceMutationResult<T> =

@@ -63,6 +63,22 @@ const getRoute = createRoute({
     404: notFoundResponse,
   },
 })
+const restoreLayoutRoute = createRoute({
+  method: 'post',
+  path: '/{id}/observations/{obsId}/restore-layout',
+  tags: ['Topology Observations'],
+  summary: 'Restore the operator layout saved with an observation',
+  security: protectedRouteSecurity,
+  request: { params: ObservationParamsSchema },
+  responses: {
+    200: {
+      description: 'Operator layout restored',
+      content: { 'application/json': { schema: OkResultSchema } },
+    },
+    404: notFoundResponse,
+    500: internalErrorResponse,
+  },
+})
 const latestRoute = createRoute({
   method: 'get',
   path: '/{topologyId}/sources/{sourceId}/latest-snapshot',
@@ -166,6 +182,18 @@ export function createTopologyObservationApi(
     return observation
       ? c.json(observation, 200)
       : c.json(apiErrorPayload(c, 'not found', 404), 404)
+  })
+  app.openapi(restoreLayoutRoute, async (c) => {
+    try {
+      const { id, obsId } = c.req.valid('param')
+      return c.json(await service.restoreOperatorLayout(id, obsId), 200)
+    } catch (error) {
+      const message = errorMessage(error)
+      const status = message.includes('not found') ? 404 : 500
+      return status === 404
+        ? c.json(apiErrorPayload(c, message, 404), 404)
+        : c.json(apiErrorPayload(c, message, 500), 500)
+    }
   })
   app.openapi(latestRoute, (c) => {
     const { topologyId, sourceId } = c.req.valid('param')

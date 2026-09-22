@@ -38,6 +38,14 @@ export const TopologySourceParamsSchema = z.object({
 
 export const ObservationStatusSchema = z.enum(['ok', 'partial', 'failed', 'empty'])
 
+export const OperatorLayoutSchema = z.object({
+  nodePositions: z.record(z.string(), z.object({ x: z.number(), y: z.number() })),
+  portSides: z.record(z.string(), z.enum(['top', 'bottom', 'left', 'right'])),
+  portOrders: z.record(z.string(), z.number().int().nonnegative()),
+  portOffsets: z.record(z.string(), z.number().min(0).max(1)),
+  edgeRoutes: z.record(z.string(), z.array(z.object({ x: z.number(), y: z.number() }))),
+})
+
 export const ObservationSummarySchema = z.object({
   id: z.string(),
   topologyId: z.string(),
@@ -49,11 +57,13 @@ export const ObservationSummarySchema = z.object({
   linkCount: z.number().int(),
   portCount: z.number().int(),
   createdAt: z.number().int(),
+  hasOperatorLayout: z.boolean().optional(),
 })
 
 export const ObservationSchema = ObservationSummarySchema.extend({
   graph: NetworkGraphSchema.nullable(),
   contributionChanged: z.boolean().optional(),
+  operatorLayout: OperatorLayoutSchema.optional(),
 }).openapi('TopologyObservation')
 
 export const ObservationListQuerySchema = z.object({
@@ -84,13 +94,7 @@ export const DisplaySettingsSchema = z
     edgeStyle: z.enum(['polyline', 'orthogonal', 'splines', 'straight']),
     splineMode: z.enum(['sloppy', 'conservative', 'conservative_soft']),
     hideDisconnected: z.boolean(),
-    operatorLayout: z.object({
-      nodePositions: z.record(z.string(), z.object({ x: z.number(), y: z.number() })),
-      portSides: z.record(z.string(), z.enum(['top', 'bottom', 'left', 'right'])),
-      portOrders: z.record(z.string(), z.number().int().nonnegative()),
-      portOffsets: z.record(z.string(), z.number().min(0).max(1)),
-      edgeRoutes: z.record(z.string(), z.array(z.object({ x: z.number(), y: z.number() }))),
-    }),
+    operatorLayout: OperatorLayoutSchema,
   })
   .openapi('TopologyDisplaySettings')
 

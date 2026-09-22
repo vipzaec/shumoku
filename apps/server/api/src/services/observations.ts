@@ -31,6 +31,7 @@ import {
   type ObservationGraphInput,
   observationGraphInputSchema,
 } from './observation-graph.js'
+import type { OperatorLayoutState } from './topology.js'
 
 /**
  * Hash of a contribution's STRUCTURAL content: volatile per-scan fields
@@ -81,6 +82,7 @@ export interface TopologyObservation {
    * nothing the diagram shows has changed.
    */
   contributionChanged?: boolean
+  operatorLayout?: OperatorLayoutState
 }
 
 export interface RecordObservationInput {
@@ -104,6 +106,7 @@ interface ObservationRow {
   link_count: number
   port_count: number
   created_at: number
+  operator_layout_json: string | null
 }
 
 function rowToObservation(row: ObservationRow): TopologyObservation {
@@ -121,6 +124,9 @@ function rowToObservation(row: ObservationRow): TopologyObservation {
     linkCount: row.link_count,
     portCount: row.port_count,
     createdAt: row.created_at,
+    operatorLayout: row.operator_layout_json
+      ? (JSON.parse(row.operator_layout_json) as OperatorLayoutState)
+      : undefined,
   }
 }
 
@@ -148,6 +154,12 @@ export class ObservationsService {
 
   constructor() {
     this.db = getDatabase()
+  }
+
+  snapshotOperatorLayout(id: string, layout: OperatorLayoutState): void {
+    this.db
+      .query('UPDATE topology_observations SET operator_layout_json = ? WHERE id = ?')
+      .run(JSON.stringify(layout), id)
   }
 
   /**

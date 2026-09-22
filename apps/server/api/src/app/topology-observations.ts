@@ -8,7 +8,13 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsView = {
   edgeStyle: 'orthogonal',
   splineMode: 'sloppy',
   hideDisconnected: false,
-  operatorLayout: { nodePositions: {}, portSides: {}, portOrders: {}, portOffsets: {}, edgeRoutes: {} },
+  operatorLayout: {
+    nodePositions: {},
+    portSides: {},
+    portOrders: {},
+    portOffsets: {},
+    edgeRoutes: {},
+  },
 }
 
 export function createTopologyObservationApplicationService(
@@ -28,6 +34,7 @@ export function createTopologyObservationApplicationService(
         linkCount: observation.linkCount,
         portCount: observation.portCount,
         createdAt: observation.createdAt,
+        hasOperatorLayout: observation.operatorLayout !== undefined,
       }))
     },
     get: (observationId) => observations.get(observationId),
@@ -41,6 +48,9 @@ export function createTopologyObservationApplicationService(
         status,
         graph,
       })
+      const operatorLayout = topologies.readOperatorLayout(topologyId)
+      observations.snapshotOperatorLayout(observation.id, operatorLayout)
+      observation.operatorLayout = operatorLayout
       if (observation.contributionChanged) {
         topologies.clearCacheEntry(topologyId)
         topologies.precompute(topologyId)
@@ -90,6 +100,17 @@ export function createTopologyObservationApplicationService(
         if (patch.hideDisconnected !== undefined) settings.hideDisconnected = patch.hideDisconnected
         await topologies.writeProjectOverlay(topologyId, { ...overlay, settings })
       }
+      return { ok: true }
+    },
+    async restoreOperatorLayout(topologyId, observationId) {
+      const observation = observations.get(observationId)
+      if (!observation || observation.topologyId !== topologyId) {
+        throw new Error('Observation not found for this topology')
+      }
+      if (!observation.operatorLayout) throw new Error('This revision has no saved operator layout')
+      topologies.writeOperatorLayout(topologyId, observation.operatorLayout)
+      topologies.clearCacheEntry(topologyId)
+      await topologies.precompute(topologyId)
       return { ok: true }
     },
   }

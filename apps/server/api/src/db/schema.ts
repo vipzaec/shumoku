@@ -39,6 +39,7 @@ import migration031 from './migrations/031_discovery_config.sql'
 import migration032 from './migrations/032_deep_read_rename.sql'
 import migration033 from './migrations/033_auth_principals.sql'
 import migration034 from './migrations/034_topology_operator_layout.sql'
+import migration035 from './migrations/035_observation_operator_layout.sql'
 
 /** Ordered list of all migrations */
 const MIGRATIONS: { name: string; sql: string }[] = [
@@ -74,6 +75,7 @@ const MIGRATIONS: { name: string; sql: string }[] = [
   { name: '032_deep_read_rename.sql', sql: migration032 },
   { name: '033_auth_principals.sql', sql: migration033 },
   { name: '034_topology_operator_layout.sql', sql: migration034 },
+  { name: '035_observation_operator_layout.sql', sql: migration035 },
 ]
 
 interface MigrationRecord {

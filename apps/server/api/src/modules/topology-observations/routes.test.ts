@@ -29,6 +29,7 @@ function service(): TopologyObservationApplicationService {
       hideDisconnected: false,
     })),
     updateDisplaySettings: vi.fn(async () => ({ ok: true as const })),
+    restoreOperatorLayout: vi.fn(async () => ({ ok: true as const })),
   }
 }
 
@@ -79,6 +80,17 @@ describe('observation wire compatibility', () => {
 })
 
 describe('topology display settings', () => {
+  it('restores only the operator layout from a selected observation', async () => {
+    const observations = service()
+    const response = await app(observations).request(
+      '/topologies/topology-1/observations/observation-1/restore-layout',
+      { method: 'POST' },
+    )
+
+    expect(response.status).toBe(200)
+    expect(observations.restoreOperatorLayout).toHaveBeenCalledWith('topology-1', 'observation-1')
+  })
+
   it('returns the persisted layout direction', async () => {
     const response = await app(service()).request('/topologies/topology-1/display-settings')
 

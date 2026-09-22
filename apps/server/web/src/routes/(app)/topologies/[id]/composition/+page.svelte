@@ -67,6 +67,7 @@
       nodeCount: number
       linkCount: number
       portCount: number
+      hasOperatorLayout?: boolean
     }>
   >([])
   type RevisionChange = {
@@ -81,6 +82,7 @@
   let comparisonLoading = $state(false)
   let comparisonError = $state<string | null>(null)
   let comparisonComplete = $state(false)
+  let layoutRestoreLoading = $state(false)
   let discoveryLoading = $state(false)
   let policyView = $state<{
     topologyDefault: Attachment[] | null
@@ -242,6 +244,21 @@
     revisionChanges = []
     comparisonError = null
     comparisonComplete = false
+  }
+
+  async function restoreSelectedLayout(): Promise<void> {
+    if (!ctx.topologyId || selectedObservationIds.length !== 1) return
+    const observation = recentObservations.find((item) => item.id === selectedObservationIds[0])
+    if (!observation?.hasOperatorLayout) return
+    layoutRestoreLoading = true
+    comparisonError = null
+    try {
+      await api.topologies.restoreObservationLayout(ctx.topologyId, observation.id)
+      window.location.reload()
+    } catch (error) {
+      comparisonError = error instanceof Error ? error.message : 'Layout restore failed.'
+      layoutRestoreLoading = false
+    }
   }
 
   // Refresh whenever the layout has finished loading (so we have a
@@ -862,6 +879,17 @@
             onclick={compareSelected}
           >
             {comparisonLoading ? 'Comparing…' : 'Compare revisions'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={selectedObservationIds.length !== 1 ||
+              !recentObservations.find((item) => item.id === selectedObservationIds[0])
+                ?.hasOperatorLayout ||
+              layoutRestoreLoading}
+            onclick={restoreSelectedLayout}
+          >
+            {layoutRestoreLoading ? 'Restoring…' : 'Restore layout'}
           </Button>
         </div>
       </div>
