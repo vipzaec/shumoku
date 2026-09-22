@@ -69,6 +69,16 @@
       portCount: number
     }>
   >([])
+  type RevisionChange = {
+    kind: 'node' | 'link'
+    id: string
+    label: string
+    action: 'added' | 'removed' | 'changed'
+  }
+  let selectedObservationIds = $state<string[]>([])
+  let revisionChanges = $state<RevisionChange[]>([])
+  let comparisonLoading = $state(false)
+  let comparisonError = $state<string | null>(null)
   let discoveryLoading = $state(false)
   let policyView = $state<{
     topologyDefault: Attachment[] | null
@@ -113,6 +123,92 @@
     }
     return out
   })
+
+  function stableValue(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(stableValue)
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !['position', 'observedAt', 'sourceFreshness', 'lastSync'].includes(key))
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, item]) => [key, stableValue(item)]),
+    )
+  }
+
+  function objectLabel(item: Record<string, unknown>): string {
+    const label = item.label
+    if (Array.isArray(label))
+      return label
+        .map(String)
+        .join(' · ')
+        .replace(/<[^>]+>/g, '')
+    return String(label ?? item.id ?? 'Unnamed')
+  }
+
+  function diffCollection(
+    before: Record<string, unknown>[],
+    after: Record<string, unknown>[],
+    kind: 'node' | 'link',
+  ): RevisionChange[] {
+    const left = new Map(before.map((item) => [String(item.id), item]))
+    const right = new Map(after.map((item) => [String(item.id), item]))
+    const ids = [...new Set([...left.keys(), ...right.keys()])].sort()
+    const changes: RevisionChange[] = []
+    for (const id of ids) {
+      const oldItem = left.get(id)
+      const newItem = right.get(id)
+      if (!oldItem && newItem) {
+        changes.push({ kind, id, label: objectLabel(newItem), action: 'added' })
+      } else if (oldItem && !newItem) {
+        changes.push({ kind, id, label: objectLabel(oldItem), action: 'removed' })
+      } else if (
+        oldItem &&
+        newItem &&
+        JSON.stringify(stableValue(oldItem)) !== JSON.stringify(stableValue(newItem))
+      ) {
+        changes.push({ kind, id, label: objectLabel(newItem), action: 'changed' })
+      }
+    }
+    return changes
+  }
+
+  async function compareSelected(): Promise<void> {
+    if (!ctx.topologyId || selectedObservationIds.length !== 2) return
+    comparisonLoading = true
+    comparisonError = null
+    try {
+      const selected = selectedObservationIds
+        .map((id) => recentObservations.find((item) => item.id === id))
+        .filter((item) => item !== undefined)
+        .sort((a, b) => a.capturedAt - b.capturedAt)
+      if (selected.length !== 2 || selected[0]?.sourceId !== selected[1]?.sourceId) {
+        revisionChanges = []
+        comparisonError = 'Choose two revisions from the same source.'
+        return
+      }
+      const [before, after] = await Promise.all([
+        api.topologies.getObservation(ctx.topologyId, selected[0].id),
+        api.topologies.getObservation(ctx.topologyId, selected[1].id),
+      ])
+      revisionChanges = [
+        ...diffCollection(before.graph?.nodes ?? [], after.graph?.nodes ?? [], 'node'),
+        ...diffCollection(before.graph?.links ?? [], after.graph?.links ?? [], 'link'),
+      ]
+    } catch (error) {
+      revisionChanges = []
+      comparisonError = error instanceof Error ? error.message : 'Comparison failed.'
+    } finally {
+      comparisonLoading = false
+    }
+  }
+
+  function toggleObservation(id: string): void {
+    selectedObservationIds = selectedObservationIds.includes(id)
+      ? selectedObservationIds.filter((item) => item !== id)
+      : [...selectedObservationIds.slice(-1), id]
+    revisionChanges = []
+    comparisonError = null
+  }
 
   // Refresh whenever the layout has finished loading (so we have a
   // topology id) and on subsequent topology switches.
@@ -718,8 +814,22 @@
     <!-- Observation history -->
     <div class="card">
       <div class="card-header">
-        <h2 class="font-medium text-theme-text-emphasis">Recent observations</h2>
-        <p class="text-xs text-theme-text-muted mt-0.5">Last 20 snapshots across all sources.</p>
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h2 class="font-medium text-theme-text-emphasis">Revision history</h2>
+            <p class="text-xs text-theme-text-muted mt-0.5">
+              Select two snapshots from the same source to review topology changes.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={selectedObservationIds.length !== 2 || comparisonLoading}
+            onclick={compareSelected}
+          >
+            {comparisonLoading ? 'Comparing…' : 'Compare revisions'}
+          </Button>
+        </div>
       </div>
       <div class="card-body">
         {#if recentObservations.length === 0}
@@ -727,10 +837,46 @@
             No observations yet. Sync a source above to record one.
           </p>
         {:else}
+          {#if comparisonError}
+            <div
+              class="mb-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+            >
+              {comparisonError}
+            </div>
+          {:else if selectedObservationIds.length === 2 && !comparisonLoading}
+            <div
+              class="mb-3 rounded border border-theme-border bg-theme-surface-subtle px-3 py-2 text-xs"
+            >
+              {#if revisionChanges.length === 0}
+                <span class="text-theme-text-muted"
+                  >No topology changes between these revisions.</span
+                >
+              {:else}
+                <div class="mb-2 font-medium text-theme-text-emphasis">
+                  {revisionChanges.length}
+                  topology change{revisionChanges.length === 1 ? '' : 's'}
+                </div>
+                <div class="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                  {#each revisionChanges as change (`${change.kind}:${change.id}:${change.action}`)}
+                    <div class="truncate" title={change.label}>
+                      <span
+                        class={change.action === 'added' ? 'text-green-600' : change.action === 'removed' ? 'text-red-600' : 'text-amber-600'}
+                      >
+                        {change.action === 'added' ? '+' : change.action === 'removed' ? '−' : '∆'}
+                      </span>
+                      <span class="ml-1 uppercase text-theme-text-muted">{change.kind}</span>
+                      <span class="ml-1">{change.label}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
           <div class="overflow-x-auto">
             <table class="w-full text-xs">
               <thead>
                 <tr class="border-b border-theme-border text-left text-theme-text-muted">
+                  <th class="w-16 py-1.5 font-medium">Compare</th>
                   <th class="py-1.5 font-medium">When</th>
                   <th class="py-1.5 font-medium">Source</th>
                   <th class="py-1.5 font-medium">Status</th>
@@ -743,6 +889,14 @@
                 {#each recentObservations as o (o.id)}
                   {@const ds = ctx.getDataSource(o.sourceId)}
                   <tr class="border-b border-theme-border last:border-0">
+                    <td class="py-1.5">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select revision ${formatAgo(o.capturedAt)}`}
+                        checked={selectedObservationIds.includes(o.id)}
+                        onchange={() => toggleObservation(o.id)}
+                      >
+                    </td>
                     <td class="py-1.5">{formatAgo(o.capturedAt)}</td>
                     <td class="py-1.5 font-mono text-theme-text-muted">
                       {ds?.name ?? (o.sourceId === 'deep-read' ? 'Deep read (SNMP)' : o.sourceId)}
