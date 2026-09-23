@@ -205,10 +205,98 @@
   let pathSourceId = $state('')
   let pathDestinationId = $state('')
   let pathFlowId = $state('')
+  let flowEditorOpen = $state(false)
+  let customTrafficFlows = $state<TrafficFlowProfile[]>([])
+  let flowDraft = $state<TrafficFlowProfile | null>(null)
 
   type PathHop = { linkId: string; label: string; decision: string }
   type TrafficPath = { nodeIds: string[]; hops: PathHop[] }
-  type TrafficFlowProfile = { id: string; label: string; source: string; destination: string }
+  type TrafficFlowProfile = {
+    id: string
+    label: string
+    source: string
+    destination: string
+    enabled?: boolean
+    primaryColor?: string
+    controlColor?: string
+    controlLinkIds?: string[]
+  }
+
+  const flowSettingsKey = $derived(`topology-flow-profiles-${topologyId}`)
+
+  async function loadCustomTrafficFlows() {
+    if (!topologyId || readOnly) return
+    try {
+      const saved = await api.settings.getValue(flowSettingsKey)
+      const parsed = JSON.parse(saved.value)
+      customTrafficFlows = Array.isArray(parsed) ? parsed : []
+    } catch {
+      customTrafficFlows = []
+    }
+  }
+
+  async function saveCustomTrafficFlows(next: TrafficFlowProfile[]) {
+    customTrafficFlows = next
+    if (topologyId && !readOnly)
+      await api.settings.setValue(flowSettingsKey, JSON.stringify(next))
+  }
+
+  function newFlowDraft() {
+    flowDraft = {
+      id: `flow-${Date.now()}`,
+      label: 'New traffic flow',
+      source: pathSourceId,
+      destination: pathDestinationId,
+      enabled: true,
+      primaryColor: '#2563eb',
+      controlColor: '#8b5cf6',
+      controlLinkIds: [],
+    }
+  }
+
+  function editFlowDraft(flow: TrafficFlowProfile) {
+    flowDraft = { ...flow, controlLinkIds: [...(flow.controlLinkIds ?? [])] }
+  }
+
+  async function commitFlowDraft() {
+    if (!flowDraft?.label.trim() || !flowDraft.source || !flowDraft.destination) return
+    const next = [...customTrafficFlows]
+    const index = next.findIndex((flow) => flow.id === flowDraft?.id)
+    if (index >= 0) next[index] = { ...flowDraft, label: flowDraft.label.trim() }
+    else next.push({ ...flowDraft, label: flowDraft.label.trim() })
+    await saveCustomTrafficFlows(next)
+    pathFlowId = flowDraft.id
+    selectTrafficFlow(flowDraft.id)
+    flowDraft = null
+  }
+
+  async function deleteCustomFlow(id: string) {
+    await saveCustomTrafficFlows(customTrafficFlows.filter((flow) => flow.id !== id))
+    if (pathFlowId === id) pathFlowId = ''
+    if (flowDraft?.id === id) flowDraft = null
+  }
+
+  async function moveCustomFlow(id: string, delta: number) {
+    const next = [...customTrafficFlows]
+    const index = next.findIndex((flow) => flow.id === id)
+    const target = index + delta
+    if (index < 0 || target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target], next[index]]
+    await saveCustomTrafficFlows(next)
+  }
+
+  async function toggleCustomFlow(flow: TrafficFlowProfile) {
+    await saveCustomTrafficFlows(
+      customTrafficFlows.map((item) => item.id === flow.id ? { ...item, enabled: item.enabled === false } : item),
+    )
+  }
+
+  async function duplicateCustomFlow(flow: TrafficFlowProfile) {
+    await saveCustomTrafficFlows([
+      ...customTrafficFlows,
+      { ...flow, id: `flow-${Date.now()}`, label: `${flow.label} copy` },
+    ])
+  }
 
   const pathNodes = $derived.by(() =>
     [...(graph?.nodes ?? [])]
@@ -320,16 +408,23 @@
     })
     return [...new Map(profiles.map((flow) => [flow.id, flow])).values()]
   })
-  const availableTrafficFlows = $derived(trafficFlowProfiles)
+  const editableTrafficFlows = $derived.by(() => {
+    const customIds = new Set(customTrafficFlows.map((flow) => flow.id))
+    return [
+      ...customTrafficFlows,
+      ...trafficFlowProfiles.filter((flow) => !customIds.has(flow.id)),
+    ]
+  })
+  const availableTrafficFlows = $derived(editableTrafficFlows.filter((flow) => flow.enabled !== false))
 
   $effect(() => {
     if (!pathFlowId) return
-    const selected = trafficFlowProfiles.find((flow) => flow.id === pathFlowId)
+    const selected = availableTrafficFlows.find((flow) => flow.id === pathFlowId)
     if (!selected) pathFlowId = ''
   })
 
   function selectTrafficFlow(flowId: string) {
-    const selected = trafficFlowProfiles.find((flow) => flow.id === flowId)
+    const selected = availableTrafficFlows.find((flow) => flow.id === flowId)
     if (!selected) {
       pathFlowId = ''
       return
@@ -343,9 +438,20 @@
 
   const highlightedPathNodes = $derived(new Set(trafficPath?.nodeIds ?? []))
   const highlightedPathLinks = $derived(new Set(trafficPath?.hops.map((hop) => hop.linkId) ?? []))
+  const selectedTrafficFlow = $derived(availableTrafficFlows.find((flow) => flow.id === pathFlowId))
   const controlPlanePath = $derived.by(() => {
     const nodeIds = new Set<string>()
     const linkIds = new Set<string>()
+    if (selectedTrafficFlow?.controlLinkIds?.length) {
+      for (const id of selectedTrafficFlow.controlLinkIds) {
+        const link = graph?.links.find((item) => item.id === id)
+        if (!link) continue
+        linkIds.add(id)
+        nodeIds.add(link.from.node)
+        nodeIds.add(link.to.node)
+      }
+      return { nodeIds, linkIds }
+    }
     const sourceLabel = nodeLabel(graph?.nodes.find((node) => node.id === pathSourceId)).toLowerCase()
     if (!graph || !sourceLabel.includes('netbird'))
       return { nodeIds, linkIds }
@@ -624,6 +730,7 @@
           ? Promise.resolve(null)
           : api.topologies.displaySettings.get(topologyId),
       ])
+      await loadCustomTrafficFlows()
       if (res.deriving) {
         building = true
         loading = !hasGraph
@@ -1140,8 +1247,8 @@
           secondaryHighlightedIds={controlPlanePath.nodeIds}
           secondaryHighlightedLinkIds={controlPlanePath.linkIds}
           dimOthers={pathExplorerOpen && highlightedPathNodes.size > 0}
-          highlightColor="#2563eb"
-          secondaryHighlightColor="#8b5cf6"
+          highlightColor={selectedTrafficFlow?.primaryColor ?? '#2563eb'}
+          secondaryHighlightColor={selectedTrafficFlow?.controlColor ?? '#8b5cf6'}
           pulseAnimation={false}
         />
         <TooltipOverlay {svgElement} graph={activeGraph} contentBuilder={buildTooltip} />
@@ -1368,6 +1475,79 @@
           {#each availableTrafficFlows as flow}<option value={flow.id}>{flow.label}</option>{/each}
         </select>
       </label>
+      {#if !readOnly}
+        <button class="flow-editor-toggle" onclick={() => (flowEditorOpen = !flowEditorOpen)}>
+          {flowEditorOpen ? 'Close flow editor' : 'Edit flows'}
+        </button>
+      {/if}
+      {#if flowEditorOpen && !readOnly}
+        <div class="flow-editor">
+          <div class="flow-editor-actions">
+            <strong>Saved flows</strong>
+            <button onclick={newFlowDraft}>New</button>
+          </div>
+          {#each editableTrafficFlows as flow}
+            <div class="flow-editor-row">
+              <button class="flow-name" onclick={() => editFlowDraft(flow)}>{flow.label}</button>
+              {#if customTrafficFlows.some((item) => item.id === flow.id)}
+                <button title="Move up" onclick={() => moveCustomFlow(flow.id, -1)}>↑</button>
+                <button title="Move down" onclick={() => moveCustomFlow(flow.id, 1)}>↓</button>
+                <button title={flow.enabled === false ? 'Enable' : 'Disable'} onclick={() => toggleCustomFlow(flow)}>
+                  {flow.enabled === false ? '○' : '●'}
+                </button>
+                <button title="Duplicate" onclick={() => duplicateCustomFlow(flow)}>⧉</button>
+                <button title="Delete" onclick={() => deleteCustomFlow(flow.id)}>×</button>
+              {:else}
+                <button title="Create an editable copy" onclick={() => editFlowDraft(flow)}>Import</button>
+              {/if}
+            </div>
+          {/each}
+          {#if flowDraft}
+            <div class="flow-draft">
+              <label>Name <input bind:value={flowDraft.label}></label>
+              <label>Source
+                <select bind:value={flowDraft.source}>
+                  <option value="">Select source</option>
+                  {#each pathNodes as item}<option value={item.id}>{item.label}</option>{/each}
+                </select>
+              </label>
+              <label>Destination
+                <select bind:value={flowDraft.destination}>
+                  <option value="">Select destination</option>
+                  {#each pathNodes as item}<option value={item.id}>{item.label}</option>{/each}
+                </select>
+              </label>
+              <div class="flow-colors">
+                <label>Data <input type="color" bind:value={flowDraft.primaryColor}></label>
+                <label>Control <input type="color" bind:value={flowDraft.controlColor}></label>
+              </div>
+              <fieldset>
+                <legend>Supporting control-plane links</legend>
+                {#each graph.links as link}
+                  <label class="flow-link-option">
+                    <input
+                      type="checkbox"
+                      checked={flowDraft.controlLinkIds?.includes(link.id)}
+                      onchange={(event) => {
+                        const current = flowDraft?.controlLinkIds ?? []
+                        if (!flowDraft) return
+                        flowDraft.controlLinkIds = event.currentTarget.checked
+                          ? [...current, link.id]
+                          : current.filter((id) => id !== link.id)
+                      }}
+                    >
+                    {link.label || link.id}
+                  </label>
+                {/each}
+              </fieldset>
+              <div class="flow-editor-actions">
+                <button onclick={() => (flowDraft = null)}>Cancel</button>
+                <button class="primary" onclick={commitFlowDraft}>Save and preview</button>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
       {#if pathSourceId && pathDestinationId}
         {#if trafficPath}
           <div class="path-result">
@@ -1591,7 +1771,39 @@
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
     z-index: 8;
+    max-height: calc(100% - 96px);
+    overflow: auto;
   }
+
+  .flow-editor-toggle {
+    width: 100%;
+    margin-top: 10px;
+    padding: 6px 8px;
+    color: var(--primary, #2563eb);
+    background: color-mix(in srgb, var(--primary, #2563eb) 7%, var(--color-bg, #ffffff));
+    border: 1px solid color-mix(in srgb, var(--primary, #2563eb) 35%, transparent);
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .flow-editor { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border, #e5e7eb); }
+  .flow-editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .flow-editor-actions button, .flow-editor-row button {
+    padding: 4px 6px;
+    color: var(--color-text, #0f172a);
+    background: var(--color-bg, #ffffff);
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .flow-editor-row { display: flex; align-items: center; gap: 4px; }
+  .flow-editor-row .flow-name { flex: 1; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  .flow-draft { display: grid; gap: 6px; margin-top: 4px; padding: 8px; background: var(--color-bg-subtle, #f8fafc); border: 1px solid var(--border, #e5e7eb); border-radius: 6px; }
+  .flow-draft input:not([type='checkbox']):not([type='color']) { min-width: 0; padding: 5px 7px; border: 1px solid var(--border, #cbd5e1); border-radius: 4px; }
+  .flow-draft fieldset { max-height: 130px; overflow: auto; margin: 0; border: 1px solid var(--border, #cbd5e1); border-radius: 4px; }
+  .flow-draft .flow-link-option { display: flex; grid-template-columns: none; margin-top: 3px; }
+  .flow-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .flow-colors label { display: flex; grid-template-columns: none; justify-content: space-between; }
+  .flow-editor-actions .primary { color: #ffffff; background: var(--primary, #2563eb); border-color: var(--primary, #2563eb); }
 
   .data-health-panel {
     position: absolute;
