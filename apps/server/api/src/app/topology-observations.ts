@@ -14,6 +14,7 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsView = {
     portOrders: {},
     portOffsets: {},
     edgeRoutes: {},
+    parentOverrides: {},
   },
 }
 

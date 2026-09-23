@@ -44,6 +44,7 @@ export const OperatorLayoutSchema = z.object({
   portOrders: z.record(z.string(), z.number().int().nonnegative()),
   portOffsets: z.record(z.string(), z.number().min(0).max(1)),
   edgeRoutes: z.record(z.string(), z.array(z.object({ x: z.number(), y: z.number() }))),
+  parentOverrides: z.record(z.string(), z.string().nullable()).optional(),
 })
 
 export const ObservationSummarySchema = z.object({

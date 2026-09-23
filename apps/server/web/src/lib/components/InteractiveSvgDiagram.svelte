@@ -189,6 +189,7 @@
   let building = $state(false)
   let layoutEdit = $state(false)
   let selectedLayoutNode = $state<string | null>(null)
+  let selectedLayoutType = $state<string | null>(null)
   let selectedLayoutLinkId = $state<string | null>(null)
   let selectedLayoutPinIds = $state<string[]>([])
   let pinnedPositions = $state<Record<string, { x: number; y: number }>>({})
@@ -196,6 +197,7 @@
   let portOrders = $state<Record<string, number>>({})
   let portOffsets = $state<Record<string, number>>({})
   let edgeRoutes = $state<Record<string, Array<{ x: number; y: number }>>>({})
+  let parentOverrides = $state<Record<string, string | null>>({})
   let layersOpen = $state(false)
   let nodeDetailsVisible = $state(true)
   let portLabelsVisible = $state(true)
@@ -551,6 +553,7 @@
     portOrders: Record<string, number>
     portOffsets: Record<string, number>
     edgeRoutes: Record<string, Array<{ x: number; y: number }>>
+    parentOverrides?: Record<string, string | null>
   }
 
   const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
@@ -667,6 +670,7 @@
     orders: Record<string, number>,
     offsets: Record<string, number>,
     routes: Record<string, Array<{ x: number; y: number }>>,
+    parents: Record<string, string | null> = parentOverrides,
   ) {
     if (!topologyId || readOnly) return
     await api.topologies.displaySettings.set(topologyId, {
@@ -676,6 +680,7 @@
         portOrders: orders,
         portOffsets: offsets,
         edgeRoutes: routes,
+        parentOverrides: parents,
       },
     })
   }
@@ -686,12 +691,18 @@
     sides: Record<string, 'top' | 'bottom' | 'left' | 'right'>,
     orders: Record<string, number> = portOrders,
     offsets: Record<string, number> = portOffsets,
+    parents: Record<string, string | null> = parentOverrides,
   ): NetworkGraph {
-    if (Object.keys(pins).length === 0 && Object.keys(sides).length === 0) return source
+    if (
+      Object.keys(pins).length === 0 &&
+      Object.keys(sides).length === 0 &&
+      Object.keys(parents).length === 0
+    ) return source
     return {
       ...source,
       nodes: source.nodes.map((node) => ({
         ...node,
+        ...(Object.hasOwn(parents, node.id) ? { parent: parents[node.id] ?? undefined } : {}),
         ...(pins[node.id] ? { position: pins[node.id] } : {}),
         ...(node.ports
           ? {
@@ -712,6 +723,12 @@
                   : port
               }),
             }
+          : {}),
+      })),
+      subgraphs: source.subgraphs?.map((subgraph) => ({
+        ...subgraph,
+        ...(Object.hasOwn(parents, subgraph.id)
+          ? { parent: parents[subgraph.id] ?? undefined }
           : {}),
       })),
     }
@@ -777,27 +794,32 @@
             Object.keys(saved.portSides).length > 0 ||
             Object.keys(saved.portOrders ?? {}).length > 0 ||
             Object.keys(saved.portOffsets ?? {}).length > 0 ||
-            Object.keys(saved.edgeRoutes ?? {}).length > 0)
+            Object.keys(saved.edgeRoutes ?? {}).length > 0 ||
+            Object.keys(saved.parentOverrides ?? {}).length > 0)
         const pins = serverHasLayout ? saved.nodePositions : localPins
         const sides = serverHasLayout ? saved.portSides : localSides
         const orders = serverHasLayout ? (saved.portOrders ?? {}) : {}
         const offsets = serverHasLayout ? (saved.portOffsets ?? {}) : {}
+        const parents = saved?.parentOverrides ?? {}
         edgeRoutes = saved?.edgeRoutes ?? {}
         pinnedPositions = pins
         portSides = sides
         portOrders = orders
         portOffsets = offsets
+        parentOverrides = parents
         if (
           !serverHasLayout &&
           (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)
         ) {
           void persistOperatorLayout(localPins, localSides, {}, {}, {})
         }
-        graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets)
+        graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets, parents)
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
         serverLayout =
-          Object.keys(pins).length || Object.keys(sides).length ? undefined : res.resolved
+          Object.keys(pins).length || Object.keys(sides).length || Object.keys(parents).length
+            ? undefined
+            : res.resolved
         hasGraph = true
       }
       building = res.stale === true
@@ -864,6 +886,7 @@
     if (layoutEdit) {
       selectedLayoutLinkId = type === 'edge' ? id : null
       selectedLayoutNode = id
+      selectedLayoutType = type
       selectedLayoutPinIds =
         type === 'node'
           ? id && pinnedPositions[id]
@@ -942,6 +965,7 @@
     for (const id of selectedLayoutPinIds) delete next[id]
     writePins(next)
     selectedLayoutNode = null
+    selectedLayoutType = null
     selectedLayoutPinIds = []
     void loadGraph()
   }
@@ -950,12 +974,54 @@
     edgeRoutes = {}
     portOrders = {}
     portOffsets = {}
+    parentOverrides = {}
     writePins({})
     writePortSides({})
     selectedLayoutNode = null
+    selectedLayoutType = null
     selectedLayoutLinkId = null
     selectedLayoutPinIds = []
     void loadGraph()
+  }
+
+  function isSubgraphDescendant(candidateId: string, ancestorId: string): boolean {
+    if (!graph) return false
+    const parents = new Map(
+      (graph.subgraphs ?? []).map((subgraph) => [
+        subgraph.id,
+        Object.hasOwn(parentOverrides, subgraph.id)
+          ? parentOverrides[subgraph.id] ?? undefined
+          : subgraph.parent,
+      ]),
+    )
+    let parent = parents.get(candidateId)
+    while (parent) {
+      if (parent === ancestorId) return true
+      parent = parents.get(parent)
+    }
+    return false
+  }
+
+  function availableParentsFor(id: string) {
+    return (graph?.subgraphs ?? []).filter(
+      (candidate) => candidate.id !== id && !isSubgraphDescendant(candidate.id, id),
+    )
+  }
+
+  function effectiveParent(id: string): string {
+    if (Object.hasOwn(parentOverrides, id)) return parentOverrides[id] ?? ''
+    const node = graph?.nodes.find((candidate) => candidate.id === id)
+    if (node) return node.parent ?? ''
+    return graph?.subgraphs?.find((candidate) => candidate.id === id)?.parent ?? ''
+  }
+
+  function changeSelectedParent(parent: string) {
+    if (!graph || !selectedLayoutNode || !['node', 'subgraph'].includes(selectedLayoutType ?? '')) return
+    const next = { ...parentOverrides, [selectedLayoutNode]: parent || null }
+    parentOverrides = next
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, next)
+    graph = applyLayoutOverrides(graph, pinnedPositions, portSides, portOrders, portOffsets, next)
+    serverLayout = undefined
   }
 
   function saveRoute(id: string, bends: Array<{ x: number; y: number }> | null) {
@@ -1287,6 +1353,22 @@
   {/if}
 
   <!-- Zoom / utility controls -->
+  {#if layoutEdit && selectedLayoutNode && ['node', 'subgraph'].includes(selectedLayoutType ?? '')}
+    <div class="parent-editor">
+      <strong>Container</strong>
+      <span>{graph?.nodes.find((node) => node.id === selectedLayoutNode)?.label ?? graph?.subgraphs?.find((subgraph) => subgraph.id === selectedLayoutNode)?.label ?? selectedLayoutNode}</span>
+      <select
+        aria-label="Parent container"
+        value={effectiveParent(selectedLayoutNode)}
+        onchange={(event) => changeSelectedParent(event.currentTarget.value)}
+      >
+        <option value="">Top level</option>
+        {#each availableParentsFor(selectedLayoutNode) as parent}
+          <option value={parent.id}>{parent.label ?? parent.id}</option>
+        {/each}
+      </select>
+    </div>
+  {/if}
   <div class="controls">
     <div class="control-group">
       <button onclick={() => viewer?.zoomBy(1.5)} title="Zoom In">
@@ -1332,7 +1414,8 @@
         {#if layoutEdit &&
     (Object.keys(pinnedPositions).length > 0 ||
       Object.keys(portSides).length > 0 ||
-      Object.keys(edgeRoutes).length > 0)}
+      Object.keys(edgeRoutes).length > 0 ||
+      Object.keys(parentOverrides).length > 0)}
           <button
             onclick={resetOperatorLayout}
             title="Reset all saved layout"
@@ -1761,6 +1844,39 @@
     flex-direction: column;
     gap: 8px;
     z-index: 5;
+  }
+
+  .parent-editor {
+    position: absolute;
+    right: 64px;
+    bottom: 16px;
+    z-index: 7;
+    display: grid;
+    gap: 6px;
+    width: min(320px, calc(100% - 96px));
+    padding: 10px 12px;
+    color: var(--color-text, #111827);
+    background: var(--color-bg-elevated, #ffffff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+    font-size: 12px;
+  }
+
+  .parent-editor span {
+    overflow: hidden;
+    color: var(--color-text-muted, #64748b);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .parent-editor select {
+    min-width: 0;
+    padding: 7px 9px;
+    color: var(--color-text, #111827);
+    background: var(--color-bg, #ffffff);
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 6px;
   }
 
   .layers-panel {

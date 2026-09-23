@@ -209,6 +209,7 @@ export interface DisplaySettingsView {
     portOrders: Record<string, number>
     portOffsets: Record<string, number>
     edgeRoutes: Record<string, Array<{ x: number; y: number }>>
+    parentOverrides?: Record<string, string | null>
   }
 }
 

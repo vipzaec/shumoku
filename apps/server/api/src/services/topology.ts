@@ -115,6 +115,7 @@ export interface OperatorLayoutState {
   portOrders: Record<string, number>
   portOffsets: Record<string, number>
   edgeRoutes: Record<string, Array<{ x: number; y: number }>>
+  parentOverrides?: Record<string, string | null>
 }
 
 function rowToTopology(row: TopologyRow): Topology {
@@ -487,7 +488,7 @@ export class TopologyService {
     const row = this.db
       .query('SELECT payload_json FROM topology_operator_layout WHERE topology_id = ?')
       .get(topologyId) as { payload_json: string } | null
-    if (!row) return { nodePositions: {}, portSides: {}, portOrders: {}, portOffsets: {}, edgeRoutes: {} }
+    if (!row) return { nodePositions: {}, portSides: {}, portOrders: {}, portOffsets: {}, edgeRoutes: {}, parentOverrides: {} }
     try {
       const value = JSON.parse(row.payload_json) as Partial<OperatorLayoutState>
       return {
@@ -496,9 +497,10 @@ export class TopologyService {
         portOrders: value.portOrders ?? {},
         portOffsets: value.portOffsets ?? {},
         edgeRoutes: value.edgeRoutes ?? {},
+        parentOverrides: value.parentOverrides ?? {},
       }
     } catch {
-      return { nodePositions: {}, portSides: {}, portOrders: {}, portOffsets: {}, edgeRoutes: {} }
+      return { nodePositions: {}, portSides: {}, portOrders: {}, portOffsets: {}, edgeRoutes: {}, parentOverrides: {} }
     }
   }
 
