@@ -219,6 +219,7 @@
     enabled?: boolean
     primaryColor?: string
     controlColor?: string
+    primaryLinkIds?: string[]
     controlLinkIds?: string[]
   }
 
@@ -250,12 +251,17 @@
       enabled: true,
       primaryColor: '#2563eb',
       controlColor: '#8b5cf6',
+      primaryLinkIds: [],
       controlLinkIds: [],
     }
   }
 
   function editFlowDraft(flow: TrafficFlowProfile) {
-    flowDraft = { ...flow, controlLinkIds: [...(flow.controlLinkIds ?? [])] }
+    flowDraft = {
+      ...flow,
+      primaryLinkIds: [...(flow.primaryLinkIds ?? [])],
+      controlLinkIds: [...(flow.controlLinkIds ?? [])],
+    }
   }
 
   async function commitFlowDraft() {
@@ -434,11 +440,35 @@
     pathFlowId = flowId
   }
 
-  const trafficPath = $derived.by<TrafficPath | null>(() => findTrafficPath())
+  function flowLinkLabel(link: (typeof graph.links)[number]) {
+    const from = nodeLabel(graph.nodes.find((node) => node.id === link.from.node)) || link.from.node
+    const to = nodeLabel(graph.nodes.find((node) => node.id === link.to.node)) || link.to.node
+    const label = String(link.label || '').trim()
+    return `${from} → ${to}${label ? ` · ${label}` : ''}`
+  }
+
+  const selectedTrafficFlow = $derived(availableTrafficFlows.find((flow) => flow.id === pathFlowId))
+  const trafficPath = $derived.by<TrafficPath | null>(() => {
+    const explicitIds = selectedTrafficFlow?.primaryLinkIds ?? []
+    if (!graph || explicitIds.length === 0) return findTrafficPath()
+    const nodeIds = new Set<string>()
+    const hops: PathHop[] = []
+    for (const id of explicitIds) {
+      const link = graph.links.find((item) => item.id === id)
+      if (!link) continue
+      nodeIds.add(link.from.node)
+      nodeIds.add(link.to.node)
+      hops.push({
+        linkId: link.id,
+        label: String(link.label || 'unlabelled connection'),
+        decision: trafficDecision(link as unknown as Record<string, unknown>),
+      })
+    }
+    return hops.length > 0 ? { nodeIds: [...nodeIds], hops } : findTrafficPath()
+  })
 
   const highlightedPathNodes = $derived(new Set(trafficPath?.nodeIds ?? []))
   const highlightedPathLinks = $derived(new Set(trafficPath?.hops.map((hop) => hop.linkId) ?? []))
-  const selectedTrafficFlow = $derived(availableTrafficFlows.find((flow) => flow.id === pathFlowId))
   const controlPlanePath = $derived.by(() => {
     const nodeIds = new Set<string>()
     const linkIds = new Set<string>()
@@ -1522,7 +1552,30 @@
                 <label>Control <input type="color" bind:value={flowDraft.controlColor}></label>
               </div>
               <fieldset>
+                <legend>Primary data-path links</legend>
+                <small>Select links in traffic order. Leave empty to use the calculated shortest path.</small>
+                {#each graph.links as link}
+                  <label class="flow-link-option">
+                    <input
+                      type="checkbox"
+                      checked={flowDraft.primaryLinkIds?.includes(link.id)}
+                      onchange={(event) => {
+                        const current = flowDraft?.primaryLinkIds ?? []
+                        if (!flowDraft) return
+                        flowDraft.primaryLinkIds = event.currentTarget.checked
+                          ? [...current, link.id]
+                          : current.filter((id) => id !== link.id)
+                        if (event.currentTarget.checked)
+                          flowDraft.controlLinkIds = (flowDraft.controlLinkIds ?? []).filter((id) => id !== link.id)
+                      }}
+                    >
+                    {flowLinkLabel(link)}
+                  </label>
+                {/each}
+              </fieldset>
+              <fieldset>
                 <legend>Supporting control-plane links</legend>
+                <small>Highlighted alongside the data path using the control color.</small>
                 {#each graph.links as link}
                   <label class="flow-link-option">
                     <input
@@ -1534,9 +1587,11 @@
                         flowDraft.controlLinkIds = event.currentTarget.checked
                           ? [...current, link.id]
                           : current.filter((id) => id !== link.id)
+                        if (event.currentTarget.checked)
+                          flowDraft.primaryLinkIds = (flowDraft.primaryLinkIds ?? []).filter((id) => id !== link.id)
                       }}
                     >
-                    {link.label || link.id}
+                    {flowLinkLabel(link)}
                   </label>
                 {/each}
               </fieldset>
