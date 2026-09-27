@@ -116,7 +116,7 @@ export interface OperatorLayoutState {
   portOffsets: Record<string, number>
   edgeRoutes: Record<string, Array<{ x: number; y: number }>>
   parentOverrides?: Record<string, string | null>
-  operatorNodes?: Array<{ id: string; label: string[]; parent?: string; type: string; tenant?: string; notes?: string; binding?: { dataSourceId: string; kind: string; objectId: string; objectName: string } }>
+  operatorNodes?: Array<{ id: string; label: string[]; parent?: string; type: string; tenant?: string; notes?: string; origin?: 'Manual' | 'NetBox' | 'Existing object'; reference?: { nodeId: string; nodeName: string }; binding?: { dataSourceId: string; kind: string; objectId: string; objectName: string } }>
   presentationOverrides?: Record<string, { label?: string[]; type?: string }>
   operatorLinks?: Array<{ id: string; from: string; to: string; label: string; fromSide: 'top' | 'bottom' | 'left' | 'right'; toSide: 'top' | 'bottom' | 'left' | 'right' }>
   operatorGroups?: Array<{ id: string; label: string; parent?: string; direction: 'TB' | 'BT' | 'LR' | 'RL' }>

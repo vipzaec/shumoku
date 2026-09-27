@@ -207,6 +207,8 @@
     type: string
     tenant?: string
     notes?: string
+    origin?: 'Manual' | 'NetBox' | 'Existing object'
+    reference?: { nodeId: string; nodeName: string }
     binding?: {
       dataSourceId: string
       kind: string
@@ -238,6 +240,8 @@
   let operatorGroups = $state<OperatorGroup[]>([])
   let objectEditorOpen = $state(false)
   let objectDraft = $state<OperatorNode | null>(null)
+  let objectSource = $state<'Manual' | 'NetBox' | 'Existing object'>('Manual')
+  let iconQuery = $state('')
   let bindingSources = $state<Array<{ id: string; name: string }>>([])
   let bindingSourceId = $state('')
   let bindingKind = $state('virtual-machine')
@@ -799,7 +803,7 @@
         metadata: {
           operatorObject: true,
           source: 'operator',
-          origin: manual.binding ? 'NetBox' : 'Manual',
+          origin: manual.origin ?? (manual.binding ? 'NetBox' : manual.reference ? 'Existing object' : 'Manual'),
           tenant: manual.tenant,
           annotations: manual.notes,
           binding: manual.binding,
@@ -1211,15 +1215,32 @@
     ['load-balancer', 'Load balancer'],
   ]
 
+  function topologyTenant() {
+    const tenant = graph?.nodes
+      .map((node) => node.metadata?.tenant)
+      .find((value) => typeof value === 'string' && value.trim())
+    return typeof tenant === 'string' ? tenant : ''
+  }
+
+  function filteredIconTypes() {
+    const query = iconQuery.trim().toLowerCase()
+    return query
+      ? objectIconTypes.filter(([value, label]) => value.includes(query) || label.toLowerCase().includes(query))
+      : objectIconTypes
+  }
+
   function startAddObject() {
     objectDraft = {
       id: `operator-${Date.now()}`,
       label: ['New block'],
       parent: undefined,
       type: 'generic',
-      tenant: '',
+      tenant: topologyTenant(),
       notes: '',
+      origin: 'Manual',
     }
+    objectSource = 'Manual'
+    iconQuery = ''
     objectEditorOpen = true
     void prepareBindingEditor()
   }
@@ -1260,6 +1281,8 @@
       objectId: result.id,
       objectName: result.name,
     }
+    objectDraft.origin = 'NetBox'
+    objectDraft.reference = undefined
     objectDraft.label = [...result.label]
     if (result.kind === 'virtual-machine') objectDraft.type = 'server'
     else if (result.kind === 'device') objectDraft.type = 'router'
@@ -1271,7 +1294,30 @@
   function unlinkObjectBinding() {
     if (!objectDraft) return
     objectDraft.binding = undefined
+    objectDraft.origin = objectDraft.reference ? 'Existing object' : 'Manual'
     bindingResults = []
+  }
+
+  function chooseExistingObject(nodeId: string) {
+    if (!objectDraft || !graph) return
+    const source = graph.nodes.find((node) => node.id === nodeId)
+    if (!source) return
+    const label = Array.isArray(source.label) ? source.label.map(String) : [String(source.label)]
+    objectDraft.reference = { nodeId: source.id, nodeName: label[0] ?? source.id }
+    objectDraft.binding = undefined
+    objectDraft.origin = 'Existing object'
+    objectDraft.label = [...label]
+    objectDraft.type = source.spec?.kind === 'service' ? 'generic' : String(source.spec?.type ?? 'generic')
+    const sourceTenant = source.metadata?.tenant
+    if (typeof sourceTenant === 'string' && sourceTenant.trim()) objectDraft.tenant = sourceTenant
+  }
+
+  function changeObjectSource(source: 'Manual' | 'NetBox' | 'Existing object') {
+    if (!objectDraft) return
+    objectSource = source
+    objectDraft.origin = source
+    if (source !== 'NetBox') objectDraft.binding = undefined
+    if (source !== 'Existing object') objectDraft.reference = undefined
   }
 
   async function refreshBoundNodes(nodes: OperatorNode[]): Promise<OperatorNode[]> {
@@ -1304,7 +1350,11 @@
           label: Array.isArray(node.label) ? node.label.map(String) : [String(node.label)],
           parent: effectiveParent(node.id) || undefined,
           type: node.spec?.kind === 'service' ? 'generic' : String(node.spec?.type ?? 'generic'),
+          tenant: typeof node.metadata?.tenant === 'string' ? node.metadata.tenant : topologyTenant(),
+          origin: 'Manual',
         }
+    objectSource = objectDraft.origin ?? (objectDraft.binding ? 'NetBox' : objectDraft.reference ? 'Existing object' : 'Manual')
+    iconQuery = ''
     objectEditorOpen = true
     void prepareBindingEditor()
   }
@@ -1885,6 +1935,23 @@
         <strong>{operatorNodes.some((node) => node.id === objectDraft?.id) ? 'Edit operator block' : graph?.nodes.some((node) => node.id === objectDraft?.id) ? 'Edit block appearance' : 'Add block'}</strong>
         <button onclick={() => { objectEditorOpen = false; objectDraft = null }} aria-label="Close object editor">×</button>
       </div>
+      <label>Object source
+        <select value={objectSource} onchange={(event) => changeObjectSource(event.currentTarget.value as typeof objectSource)}>
+          <option value="Manual">Manual documentation</option>
+          <option value="NetBox">NetBox inventory</option>
+          <option value="Existing object">Existing topology object</option>
+        </select>
+      </label>
+      {#if objectSource === 'Existing object'}
+        <label>Referenced object
+          <select value={objectDraft.reference?.nodeId ?? ''} onchange={(event) => chooseExistingObject(event.currentTarget.value)}>
+            <option value="">Choose an existing block</option>
+            {#each graph?.nodes.filter((node) => node.id !== objectDraft?.id && !node.metadata?.operatorObject) ?? [] as node}
+              <option value={node.id}>{nodeLabel(node)}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
       <label>Text inside block
         <textarea
           rows="5"
@@ -1893,8 +1960,12 @@
         ></textarea>
       </label>
       <label>Icon
+        <input bind:value={iconQuery} placeholder="Search icons" />
         <select bind:value={objectDraft.type}>
-          {#each objectIconTypes as icon}
+          {#if !filteredIconTypes().some(([value]) => value === objectDraft?.type)}
+            <option value={objectDraft.type}>{objectDraft.type}</option>
+          {/if}
+          {#each filteredIconTypes() as icon}
             <option value={icon[0]}>{icon[1]}</option>
           {/each}
         </select>
@@ -1916,6 +1987,7 @@
           {/each}
         </select>
       </label>
+      {#if objectSource === 'NetBox'}
       <fieldset class="binding-editor">
         <legend>NetBox data binding</legend>
         {#if objectDraft.binding}
@@ -1959,6 +2031,7 @@
         {/if}
         {#if bindingError}<div class="editor-error">{bindingError}</div>{/if}
       </fieldset>
+      {/if}
       <div class="object-editor-actions">
         {#if operatorNodes.some((node) => node.id === objectDraft?.id)}
           <button class="danger" onclick={deleteObjectDraft}>Delete block</button>

@@ -52,6 +52,8 @@ export const OperatorLayoutSchema = z.object({
     type: z.string(),
     tenant: z.string().optional(),
     notes: z.string().optional(),
+    origin: z.enum(['Manual', 'NetBox', 'Existing object']).optional(),
+    reference: z.object({ nodeId: z.string(), nodeName: z.string() }).optional(),
     binding: z.object({
       dataSourceId: z.string(),
       kind: z.string(),
