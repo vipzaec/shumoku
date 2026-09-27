@@ -94,6 +94,16 @@ export const dataSources = {
     return data
   },
 
+  listBindableObjects: async (id: string, kind: string, query = '', objectId = ''): Promise<Array<{ id: string; kind: string; name: string; label: string[] }>> => {
+    const params = new URLSearchParams({ kind })
+    if (query) params.set('q', query)
+    if (objectId) params.set('objectId', objectId)
+    const response = await fetch(`${BASE_URL}/datasources/${encodeURIComponent(id)}/bindable-objects?${params}`)
+    const payload = await response.json().catch(() => ({})) as { error?: string; objects?: Array<{ id: string; kind: string; name: string; label: string[] }> }
+    if (!response.ok) throw new ApiError(payload.error ?? `HTTP error ${response.status}`, response.status)
+    return payload.objects ?? []
+  },
+
   listByCapability: async (
     capability: 'topology' | 'metrics' | 'alerts',
   ): Promise<DataSource[]> => {

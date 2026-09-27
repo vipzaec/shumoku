@@ -169,6 +169,21 @@ export function createDataSourceRuntimeApi(services: {
   const app = createOpenAPIApp()
   const service = services.dataSources.operations
 
+  app.get('/:id/bindable-objects', async (c) => {
+    try {
+      const result = await service.listBindableObjects(
+        c.req.param('id'),
+        c.req.query('kind') || 'virtual-machine',
+        c.req.query('q'),
+        c.req.query('objectId'),
+      )
+      if (!result) return c.json({ error: 'Data source does not support object binding' }, 400)
+      return c.json({ objects: result })
+    } catch (error) {
+      return c.json(apiErrorPayload(c, errorMessage(error), 500), 500)
+    }
+  })
+
   app.openapi(hostsRoute, async (c) => {
     try {
       return c.json(await service.getHosts(c.req.valid('param').id), 200)

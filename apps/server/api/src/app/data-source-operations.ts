@@ -103,6 +103,13 @@ export function createDataSourceOperationsService(
         .catch((error) => console.error('[Datasources] alert stream ingest failed:', error))
       return alerts
     },
+    listBindableObjects: async (id, kind, query, objectId) => {
+      const plugin = service.getPlugin(id) as unknown as {
+        listBindableObjects?: (kind: string, query?: string, objectId?: string) => Promise<Array<{ id: string; kind: string; name: string; label: string[] }>>
+      } | null
+      if (!plugin?.listBindableObjects) return null
+      return plugin.listBindableObjects(kind, query, objectId)
+    },
     callNative: async (id, method, params) => {
       const plugin = service.getPlugin(id)
       if (!plugin) return { ok: false, status: 404, error: 'Data source not found' }

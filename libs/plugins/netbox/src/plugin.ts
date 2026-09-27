@@ -32,6 +32,45 @@ export class NetBoxPlugin
   private config: NetBoxPluginConfig | null = null
   private client: NetBoxClient | null = null
 
+  async listBindableObjects(kind: string, query = '', objectId?: string): Promise<Array<{
+    id: string
+    kind: string
+    name: string
+    label: string[]
+  }>> {
+    if (!this.client) throw new Error('Plugin not initialized')
+    const params = objectId ? { id: objectId } : (query.trim() ? { q: query.trim() } : {})
+    if (kind === 'virtual-machine') {
+      const response = await this.client.fetchVirtualMachines(params)
+      return response.results.slice(0, 100).map((item) => ({
+        id: String(item.id), kind, name: item.name,
+        label: [item.name, item.primary_ip4?.address ?? item.primary_ip6?.address ?? 'no IP', item.role?.name ?? item.cluster?.name ?? item.status.label],
+      }))
+    }
+    if (kind === 'device') {
+      const response = await this.client.fetchDevices(params)
+      return response.results.slice(0, 100).map((item) => ({
+        id: String(item.id), kind, name: item.name ?? `Device ${item.id}`,
+        label: [item.name ?? `Device ${item.id}`, item.primary_ip4?.address ?? item.primary_ip6?.address ?? 'no IP', item.role?.name ?? item.device_type?.model ?? item.status?.label ?? 'device'],
+      }))
+    }
+    if (kind === 'ip-address') {
+      const response = await this.client.fetchIPAddresses(params)
+      return response.results.slice(0, 100).map((item) => ({
+        id: String(item.id), kind, name: item.dns_name || item.address,
+        label: [item.dns_name || item.address, item.address, item.status.label],
+      }))
+    }
+    if (kind === 'prefix') {
+      const response = await this.client.fetchPrefixes(params)
+      return response.results.slice(0, 100).map((item) => ({
+        id: String(item.id), kind, name: item.description || item.prefix,
+        label: [item.description || item.prefix, item.prefix, item.role?.name ?? item.status.label],
+      }))
+    }
+    throw new Error(`Unsupported NetBox binding kind: ${kind}`)
+  }
+
   initialize(config: unknown): void {
     const cfg = config as NetBoxPluginConfig
     if (!cfg || typeof cfg !== 'object') {

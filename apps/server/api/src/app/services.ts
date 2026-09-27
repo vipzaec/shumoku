@@ -72,6 +72,12 @@ export interface DataSourceOperationsService {
     tags: { slug: string; name: string }[]
   } | null>
   getAlerts(id: string, options: AlertQueryOptions): Promise<Alert[] | null>
+  listBindableObjects(id: string, kind: string, query?: string, objectId?: string): Promise<Array<{
+    id: string
+    kind: string
+    name: string
+    label: string[]
+  }> | null>
   callNative(
     id: string,
     method: string,
@@ -210,7 +216,7 @@ export interface DisplaySettingsView {
     portOffsets: Record<string, number>
     edgeRoutes: Record<string, Array<{ x: number; y: number }>>
     parentOverrides?: Record<string, string | null>
-    operatorNodes?: Array<{ id: string; label: string[]; parent?: string; type: string }>
+    operatorNodes?: Array<{ id: string; label: string[]; parent?: string; type: string; binding?: { dataSourceId: string; kind: string; objectId: string; objectName: string } }>
     presentationOverrides?: Record<string, { label?: string[]; type?: string }>
     operatorLinks?: Array<{ id: string; from: string; to: string; label: string; fromSide: 'top' | 'bottom' | 'left' | 'right'; toSide: 'top' | 'bottom' | 'left' | 'right' }>
     operatorGroups?: Array<{ id: string; label: string; parent?: string; direction: 'TB' | 'BT' | 'LR' | 'RL' }>

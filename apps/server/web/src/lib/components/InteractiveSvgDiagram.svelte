@@ -205,6 +205,12 @@
     label: string[]
     parent?: string
     type: string
+    binding?: {
+      dataSourceId: string
+      kind: string
+      objectId: string
+      objectName: string
+    }
   }
   type PresentationOverride = {
     label?: string[]
@@ -230,6 +236,13 @@
   let operatorGroups = $state<OperatorGroup[]>([])
   let objectEditorOpen = $state(false)
   let objectDraft = $state<OperatorNode | null>(null)
+  let bindingSources = $state<Array<{ id: string; name: string }>>([])
+  let bindingSourceId = $state('')
+  let bindingKind = $state('virtual-machine')
+  let bindingQuery = $state('')
+  let bindingResults = $state<Array<{ id: string; kind: string; name: string; label: string[] }>>([])
+  let bindingLoading = $state(false)
+  let bindingError = $state('')
   let linkEditorOpen = $state(false)
   let linkDraft = $state<OperatorLink | null>(null)
   let linkDraftError = $state('')
@@ -926,7 +939,7 @@
         const orders = serverHasLayout ? (saved.portOrders ?? {}) : {}
         const offsets = serverHasLayout ? (saved.portOffsets ?? {}) : {}
         const parents = saved?.parentOverrides ?? {}
-        const manualNodes = saved?.operatorNodes ?? []
+        const manualNodes = await refreshBoundNodes(saved?.operatorNodes ?? [])
         const overrides = saved?.presentationOverrides ?? {}
         const manualLinks = saved?.operatorLinks ?? []
         const manualGroups = saved?.operatorGroups ?? []
@@ -1179,6 +1192,75 @@
       type: 'generic',
     }
     objectEditorOpen = true
+    void prepareBindingEditor()
+  }
+
+  async function prepareBindingEditor() {
+    bindingResults = []
+    bindingError = ''
+    try {
+      const sources = (await api.dataSources.list()).filter((source) => source.type === 'netbox')
+      bindingSources = sources.map((source) => ({ id: source.id, name: source.name }))
+      bindingSourceId = objectDraft?.binding?.dataSourceId ?? bindingSources[0]?.id ?? ''
+      bindingKind = objectDraft?.binding?.kind ?? 'virtual-machine'
+      bindingQuery = objectDraft?.binding?.objectName ?? ''
+    } catch (error) {
+      bindingError = error instanceof Error ? error.message : 'Unable to load NetBox sources'
+    }
+  }
+
+  async function searchBindingObjects() {
+    if (!bindingSourceId) return
+    bindingLoading = true
+    bindingError = ''
+    try {
+      bindingResults = await api.dataSources.listBindableObjects(bindingSourceId, bindingKind, bindingQuery)
+      if (bindingResults.length === 0) bindingError = 'No matching NetBox objects'
+    } catch (error) {
+      bindingError = error instanceof Error ? error.message : 'NetBox search failed'
+    } finally {
+      bindingLoading = false
+    }
+  }
+
+  function bindObject(result: { id: string; kind: string; name: string; label: string[] }) {
+    if (!objectDraft) return
+    objectDraft.binding = {
+      dataSourceId: bindingSourceId,
+      kind: result.kind,
+      objectId: result.id,
+      objectName: result.name,
+    }
+    objectDraft.label = [...result.label]
+    if (result.kind === 'virtual-machine') objectDraft.type = 'server'
+    else if (result.kind === 'device') objectDraft.type = 'router'
+    else if (result.kind === 'prefix' || result.kind === 'ip-address') objectDraft.type = 'cloud'
+    bindingQuery = result.name
+    bindingResults = []
+  }
+
+  function unlinkObjectBinding() {
+    if (!objectDraft) return
+    objectDraft.binding = undefined
+    bindingResults = []
+  }
+
+  async function refreshBoundNodes(nodes: OperatorNode[]): Promise<OperatorNode[]> {
+    return Promise.all(nodes.map(async (node) => {
+      if (!node.binding) return node
+      try {
+        const matches = await api.dataSources.listBindableObjects(
+          node.binding.dataSourceId,
+          node.binding.kind,
+          '',
+          node.binding.objectId,
+        )
+        const current = matches.find((item) => item.id === node.binding?.objectId)
+        return current ? { ...node, label: current.label, binding: { ...node.binding, objectName: current.name } } : node
+      } catch {
+        return node
+      }
+    }))
   }
 
   function startEditSelectedObject() {
@@ -1195,6 +1277,7 @@
           type: node.spec?.kind === 'service' ? 'generic' : String(node.spec?.type ?? 'generic'),
         }
     objectEditorOpen = true
+    void prepareBindingEditor()
   }
 
   function saveObjectDraft() {
@@ -1798,6 +1881,49 @@
           {/each}
         </select>
       </label>
+      <fieldset class="binding-editor">
+        <legend>NetBox data binding</legend>
+        {#if objectDraft.binding}
+          <div class="binding-current">
+            <strong>{objectDraft.binding.objectName}</strong>
+            <span>{objectDraft.binding.kind} · ID {objectDraft.binding.objectId}</span>
+            <button onclick={unlinkObjectBinding}>Unlink</button>
+          </div>
+        {/if}
+        {#if bindingSources.length > 0}
+          <div class="binding-grid">
+            <label>Source
+              <select bind:value={bindingSourceId}>
+                {#each bindingSources as source}<option value={source.id}>{source.name}</option>{/each}
+              </select>
+            </label>
+            <label>Object type
+              <select bind:value={bindingKind}>
+                <option value="virtual-machine">Virtual machine</option>
+                <option value="device">Device</option>
+                <option value="ip-address">IP address</option>
+                <option value="prefix">Prefix / network</option>
+              </select>
+            </label>
+          </div>
+          <div class="binding-search">
+            <input bind:value={bindingQuery} placeholder="Name, IP or object ID" onkeydown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void searchBindingObjects() } }} />
+            <button onclick={searchBindingObjects} disabled={bindingLoading}>{bindingLoading ? 'Searching…' : 'Search'}</button>
+          </div>
+          {#if bindingResults.length > 0}
+            <div class="binding-results">
+              {#each bindingResults as result}
+                <button onclick={() => bindObject(result)}>
+                  <strong>{result.name}</strong><span>{result.label.slice(1).join(' · ')}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        {:else if !bindingError}
+          <div class="empty-editor-state">No NetBox data source is configured.</div>
+        {/if}
+        {#if bindingError}<div class="editor-error">{bindingError}</div>{/if}
+      </fieldset>
       <div class="object-editor-actions">
         {#if operatorNodes.some((node) => node.id === objectDraft?.id)}
           <button class="danger" onclick={deleteObjectDraft}>Delete block</button>
@@ -2520,6 +2646,17 @@
   }
   .group-list-row .group-name { overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
   .group-list-row .danger { color: #b91c1c; }
+  .binding-editor { display: grid; gap: 8px; margin: 0; padding: 10px; border: 1px solid var(--border, #cbd5e1); border-radius: 8px; }
+  .binding-editor legend { padding: 0 5px; font-size: 12px; font-weight: 700; }
+  .binding-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .binding-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+  .binding-search input, .binding-search button, .binding-current button { padding: 7px 9px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--color-bg, #fff); }
+  .binding-results { display: grid; gap: 5px; max-height: 180px; overflow: auto; }
+  .binding-results button { display: grid; gap: 2px; padding: 7px 9px; text-align: left; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--color-bg, #fff); cursor: pointer; }
+  .binding-results span, .binding-current span { color: var(--color-text-muted, #64748b); font-size: 11px; }
+  .binding-current { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; }
+  .binding-current span { grid-column: 1; }
+  .binding-current button { grid-column: 2; grid-row: 1 / span 2; cursor: pointer; }
 
   .layers-panel {
     position: absolute;
