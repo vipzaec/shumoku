@@ -50,6 +50,8 @@ export const OperatorLayoutSchema = z.object({
     label: z.array(z.string()),
     parent: z.string().optional(),
     type: z.string(),
+    tenant: z.string().optional(),
+    notes: z.string().optional(),
     binding: z.object({
       dataSourceId: z.string(),
       kind: z.string(),

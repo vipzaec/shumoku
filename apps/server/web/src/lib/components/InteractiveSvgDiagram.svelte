@@ -205,6 +205,8 @@
     label: string[]
     parent?: string
     type: string
+    tenant?: string
+    notes?: string
     binding?: {
       dataSourceId: string
       kind: string
@@ -253,6 +255,7 @@
   let nodeDetailsVisible = $state(true)
   let portLabelsVisible = $state(true)
   let linkLabelsVisible = $state(true)
+  let operatorObjectsVisible = $state(true)
   let pathExplorerOpen = $state(false)
   let dataHealthOpen = $state(false)
   let pathSourceId = $state('')
@@ -622,10 +625,12 @@
       nodeDetailsVisible = saved.nodeDetails ?? true
       portLabelsVisible = saved.portLabels ?? true
       linkLabelsVisible = saved.linkLabels ?? true
+      operatorObjectsVisible = saved.operatorObjects ?? true
     } catch {
       nodeDetailsVisible = true
       portLabelsVisible = true
       linkLabelsVisible = true
+      operatorObjectsVisible = true
     }
   }
 
@@ -637,16 +642,30 @@
         nodeDetails: nodeDetailsVisible,
         portLabels: portLabelsVisible,
         linkLabels: linkLabelsVisible,
+        operatorObjects: operatorObjectsVisible,
       }),
     )
   }
 
-  function setLayer(layer: 'nodeDetails' | 'portLabels' | 'linkLabels', enabled: boolean) {
+  function setLayer(layer: 'nodeDetails' | 'portLabels' | 'linkLabels' | 'operatorObjects', enabled: boolean) {
     if (layer === 'nodeDetails') nodeDetailsVisible = enabled
     if (layer === 'portLabels') portLabelsVisible = enabled
     if (layer === 'linkLabels') linkLabelsVisible = enabled
+    if (layer === 'operatorObjects') operatorObjectsVisible = enabled
     saveLayerPreferences()
   }
+
+  const visibleGraph = $derived.by<NetworkGraph | undefined>(() => {
+    if (!graph || operatorObjectsVisible) return graph
+    const hiddenNodes = new Set(graph.nodes.filter((node) => Boolean((node.metadata as Record<string, unknown> | undefined)?.operatorObject)).map((node) => node.id))
+    const hiddenGroups = new Set((graph.subgraphs ?? []).filter((group) => Boolean((group.metadata as Record<string, unknown> | undefined)?.operatorObject)).map((group) => group.id))
+    return {
+      ...graph,
+      nodes: graph.nodes.filter((node) => !hiddenNodes.has(node.id)).map((node) => hiddenGroups.has(node.parent ?? '') ? { ...node, parent: undefined } : node),
+      links: graph.links.filter((link) => !Boolean((link.metadata as Record<string, unknown> | undefined)?.operatorObject) && !hiddenNodes.has(link.from.node) && !hiddenNodes.has(link.to.node)),
+      subgraphs: (graph.subgraphs ?? []).filter((group) => !hiddenGroups.has(group.id)).map((group) => hiddenGroups.has(group.parent ?? '') ? { ...group, parent: undefined } : group),
+    }
+  })
 
   type ViewPreset = 'full' | 'overview' | 'troubleshooting'
 
@@ -776,7 +795,15 @@
         label: manual.label,
         parent: manual.parent,
         spec: { kind: 'hardware' as const, type: manual.type },
-        metadata: { operatorObject: true, source: 'operator' },
+        style: { strokeDasharray: '6 4' },
+        metadata: {
+          operatorObject: true,
+          source: 'operator',
+          origin: manual.binding ? 'NetBox' : 'Manual',
+          tenant: manual.tenant,
+          annotations: manual.notes,
+          binding: manual.binding,
+        },
       })),
     ]
     const operatorPorts = new Map<string, Array<{ id: string; label: string; connectors: never[]; placement: { side: 'top' | 'bottom' | 'left' | 'right'; order: number } }>>()
@@ -1190,6 +1217,8 @@
       label: ['New block'],
       parent: undefined,
       type: 'generic',
+      tenant: '',
+      notes: '',
     }
     objectEditorOpen = true
     void prepareBindingEditor()
@@ -1778,7 +1807,7 @@
 
     <TopologyViewer
       bind:this={viewer}
-      {graph}
+      graph={visibleGraph}
       sheetId={currentSheetId}
       layout={currentSheetId ? undefined : serverLayout}
       theme={currentTheme}
@@ -1869,6 +1898,12 @@
             <option value={icon[0]}>{icon[1]}</option>
           {/each}
         </select>
+      </label>
+      <label>Tenant
+        <input bind:value={objectDraft.tenant} placeholder="MSP, admiral, ing…" />
+      </label>
+      <label>Operator notes
+        <textarea rows="3" bind:value={objectDraft.notes} placeholder="Purpose, owner or operational note"></textarea>
       </label>
       <label>Container
         <select
@@ -2192,6 +2227,14 @@
           onchange={(e) => setLayer('linkLabels', e.currentTarget.checked)}
         >
         Link labels</label
+      >
+      <label
+        ><input
+          type="checkbox"
+          checked={operatorObjectsVisible}
+          onchange={(e) => setLayer('operatorObjects', e.currentTarget.checked)}
+        >
+        Operator objects</label
       >
       <label
         ><input
