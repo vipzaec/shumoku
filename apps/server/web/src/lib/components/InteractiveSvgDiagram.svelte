@@ -235,6 +235,7 @@
   let linkDraftError = $state('')
   let groupEditorOpen = $state(false)
   let groupDraft = $state<OperatorGroup | null>(null)
+  let groupManagerOpen = $state(false)
   let layersOpen = $state(false)
   let nodeDetailsVisible = $state(true)
   let portLabelsVisible = $state(true)
@@ -776,11 +777,19 @@
     }
     const mergedSubgraphs = [
       ...(source.subgraphs ?? []),
-      ...manualGroups.filter((manual) => !(source.subgraphs ?? []).some((group) => group.id === manual.id)).map((manual) => ({
+      ...manualGroups.filter((manual) => !(source.subgraphs ?? []).some((group) => group.id === manual.id)).map((manual, index) => ({
         id: manual.id,
         label: manual.label,
         parent: manual.parent,
         direction: manual.direction,
+        // Empty groups have no child hull for the layout engine to measure.
+        // Keep a small selectable canvas area until an object is placed in it.
+        bounds: {
+          x: 80 + (index % 3) * 280,
+          y: 80 + Math.floor(index / 3) * 180,
+          width: 240,
+          height: 140,
+        },
         metadata: { operatorObject: true, source: 'operator' },
       })),
     ]
@@ -1363,6 +1372,14 @@
     groupEditorOpen = true
   }
 
+  function startEditGroup(group: OperatorGroup) {
+    selectedLayoutNode = group.id
+    selectedLayoutType = 'subgraph'
+    groupDraft = { ...group }
+    groupEditorOpen = true
+    groupManagerOpen = false
+  }
+
   function saveGroupDraft() {
     if (!graph || !groupDraft?.label.trim()) return
     const normalized = { ...groupDraft, label: groupDraft.label.trim() }
@@ -1378,9 +1395,8 @@
     groupDraft = null
   }
 
-  function deleteGroupDraft() {
-    if (!groupDraft || !operatorGroups.some((group) => group.id === groupDraft?.id)) return
-    const removedId = groupDraft.id
+  function deleteOperatorGroup(removedId: string) {
+    if (!operatorGroups.some((group) => group.id === removedId)) return
     const nextGroups = operatorGroups
       .filter((group) => group.id !== removedId)
       .map((group) => group.parent === removedId ? { ...group, parent: undefined } : group)
@@ -1394,7 +1410,16 @@
     void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, nextParents, nextNodes, presentationOverrides, operatorLinks, nextGroups)
     groupEditorOpen = false
     groupDraft = null
+    groupManagerOpen = false
+    if (selectedLayoutNode === removedId) {
+      selectedLayoutNode = null
+      selectedLayoutType = null
+    }
     void loadGraph()
+  }
+
+  function deleteGroupDraft() {
+    if (groupDraft) deleteOperatorGroup(groupDraft.id)
   }
 
   function saveRoute(id: string, bends: Array<{ x: number; y: number }> | null) {
@@ -1859,6 +1884,26 @@
       </div>
     </div>
   {/if}
+  {#if layoutEdit && groupManagerOpen}
+    <div class="object-editor group-manager">
+      <div class="object-editor-title">
+        <strong>Container groups</strong>
+        <button onclick={() => { groupManagerOpen = false }} aria-label="Close group manager">×</button>
+      </div>
+      {#if operatorGroups.length === 0}
+        <div class="empty-editor-state">No operator groups</div>
+      {:else}
+        <div class="group-list">
+          {#each operatorGroups as group}
+            <div class="group-list-row">
+              <button class="group-name" onclick={() => startEditGroup(group)}>{group.label}</button>
+              <button class="danger" onclick={() => deleteOperatorGroup(group.id)} aria-label={`Delete ${group.label}`}>Delete</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
   <div class="controls">
     <div class="control-group">
       <button onclick={() => viewer?.zoomBy(1.5)} title="Zoom In">
@@ -1885,6 +1930,7 @@
           </button>
           <button onclick={startAddLink} title="Connect two blocks" aria-label="Connect two blocks">⛓</button>
           <button onclick={startAddGroup} title="Add container group" aria-label="Add container group">▣</button>
+          <button onclick={() => { groupManagerOpen = !groupManagerOpen }} class:active={groupManagerOpen} title="Manage container groups" aria-label="Manage container groups">▤</button>
         {/if}
         {#if layoutEdit && selectedLayoutType === 'node' && selectedLayoutNode}
           <button onclick={startEditSelectedObject} title="Edit selected block" aria-label="Edit selected block">
@@ -2462,6 +2508,18 @@
   .object-editor-actions button.danger { color: #b91c1c; margin-right: auto; }
   .side-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
   .editor-error { color: #b91c1c; font-size: 0.75rem; }
+  .empty-editor-state { color: var(--color-text-muted, #64748b); font-size: 0.8rem; }
+  .group-list { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+  .group-list-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .group-list-row button {
+    padding: 7px 9px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 6px;
+    background: var(--color-bg, #ffffff);
+    cursor: pointer;
+  }
+  .group-list-row .group-name { overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  .group-list-row .danger { color: #b91c1c; }
 
   .layers-panel {
     position: absolute;

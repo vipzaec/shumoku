@@ -98,6 +98,25 @@
     })}
   />
   {@render overlay?.(subgraph, overlayContext)}
+  <!-- The title strip stays clickable even when child nodes cover the body. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <rect
+    class="subgraph-select-handle"
+    x={subgraph.bounds?.x ?? 0}
+    y={subgraph.bounds?.y ?? 0}
+    width={subgraph.bounds?.width ?? 0}
+    height={Math.min(32, subgraph.bounds?.height ?? 0)}
+    fill="transparent"
+    pointer-events="all"
+    onclick={(e) => { e.stopPropagation(); onselect?.(subgraph.id, e) }}
+    oncontextmenu={(e) => { if (preventContextMenuDefault) e.preventDefault(); onselect?.(subgraph.id, e); onctx?.(subgraph.id, e) }}
+    use:elementDrag={() => ({
+      filter: (e) => e.button === 0 && interactive,
+      onStart: () => ondragstart?.(subgraph.id),
+      onDrag: (dx, dy) => ondragmove?.(subgraph.id, (subgraph.bounds?.x ?? 0) + dx, (subgraph.bounds?.y ?? 0) + dy),
+      onEnd: () => ondragend?.(subgraph.id),
+    })}
+  />
   <text
     x={(subgraph.bounds?.x ?? 0) + 10}
     y={(subgraph.bounds?.y ?? 0) + 20}
