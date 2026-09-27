@@ -104,6 +104,8 @@
     MagnifyingGlassMinusIcon,
     MagnifyingGlassPlusIcon,
     PathIcon,
+    PlusIcon,
+    PencilSimpleIcon,
     StackIcon,
   } from 'phosphor-svelte'
   import { onDestroy } from 'svelte'
@@ -198,6 +200,31 @@
   let portOffsets = $state<Record<string, number>>({})
   let edgeRoutes = $state<Record<string, Array<{ x: number; y: number }>>>({})
   let parentOverrides = $state<Record<string, string | null>>({})
+  type OperatorNode = {
+    id: string
+    label: string[]
+    parent?: string
+    type: string
+  }
+  type PresentationOverride = {
+    label?: string[]
+    type?: string
+  }
+  type OperatorLink = {
+    id: string
+    from: string
+    to: string
+    label: string
+    fromSide: 'top' | 'bottom' | 'left' | 'right'
+    toSide: 'top' | 'bottom' | 'left' | 'right'
+  }
+  let operatorNodes = $state<OperatorNode[]>([])
+  let presentationOverrides = $state<Record<string, PresentationOverride>>({})
+  let operatorLinks = $state<OperatorLink[]>([])
+  let objectEditorOpen = $state(false)
+  let objectDraft = $state<OperatorNode | null>(null)
+  let linkEditorOpen = $state(false)
+  let linkDraft = $state<OperatorLink | null>(null)
   let layersOpen = $state(false)
   let nodeDetailsVisible = $state(true)
   let portLabelsVisible = $state(true)
@@ -554,6 +581,9 @@
     portOffsets: Record<string, number>
     edgeRoutes: Record<string, Array<{ x: number; y: number }>>
     parentOverrides?: Record<string, string | null>
+    operatorNodes?: OperatorNode[]
+    presentationOverrides?: Record<string, PresentationOverride>
+    operatorLinks?: OperatorLink[]
   }
 
   const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
@@ -671,6 +701,9 @@
     offsets: Record<string, number>,
     routes: Record<string, Array<{ x: number; y: number }>>,
     parents: Record<string, string | null> = parentOverrides,
+    manualNodes: OperatorNode[] = operatorNodes,
+    overrides: Record<string, PresentationOverride> = presentationOverrides,
+    manualLinks: OperatorLink[] = operatorLinks,
   ) {
     if (!topologyId || readOnly) return
     await api.topologies.displaySettings.set(topologyId, {
@@ -681,6 +714,9 @@
         portOffsets: offsets,
         edgeRoutes: routes,
         parentOverrides: parents,
+        operatorNodes: manualNodes,
+        presentationOverrides: overrides,
+        operatorLinks: manualLinks,
       },
     })
   }
@@ -692,21 +728,60 @@
     orders: Record<string, number> = portOrders,
     offsets: Record<string, number> = portOffsets,
     parents: Record<string, string | null> = parentOverrides,
+    manualNodes: OperatorNode[] = operatorNodes,
+    overrides: Record<string, PresentationOverride> = presentationOverrides,
+    manualLinks: OperatorLink[] = operatorLinks,
   ): NetworkGraph {
     if (
       Object.keys(pins).length === 0 &&
       Object.keys(sides).length === 0 &&
-      Object.keys(parents).length === 0
+      Object.keys(parents).length === 0 &&
+      manualNodes.length === 0 &&
+      Object.keys(overrides).length === 0
+      && manualLinks.length === 0
     ) return source
+    const mergedNodes = [
+      ...source.nodes,
+      ...manualNodes.filter((manual) => !source.nodes.some((node) => node.id === manual.id)).map((manual) => ({
+        id: manual.id,
+        label: manual.label,
+        parent: manual.parent,
+        spec: { kind: 'hardware' as const, type: manual.type },
+        metadata: { operatorObject: true, source: 'operator' },
+      })),
+    ]
+    const operatorPorts = new Map<string, Array<{ id: string; label: string; connectors: never[]; placement: { side: 'top' | 'bottom' | 'left' | 'right'; order: number } }>>()
+    for (const link of manualLinks) {
+      const fromPorts = operatorPorts.get(link.from) ?? []
+      fromPorts.push({ id: `${link.id}:from`, label: link.label, connectors: [], placement: { side: link.fromSide, order: fromPorts.length } })
+      operatorPorts.set(link.from, fromPorts)
+      const toPorts = operatorPorts.get(link.to) ?? []
+      toPorts.push({ id: `${link.id}:to`, label: link.label, connectors: [], placement: { side: link.toSide, order: toPorts.length } })
+      operatorPorts.set(link.to, toPorts)
+    }
     return {
       ...source,
-      nodes: source.nodes.map((node) => ({
+      nodes: mergedNodes.map((node) => ({
         ...node,
+        ...(manualNodes.find((manual) => manual.id === node.id)
+          ? {
+              label: manualNodes.find((manual) => manual.id === node.id)!.label,
+              parent: manualNodes.find((manual) => manual.id === node.id)!.parent,
+              spec: {
+                kind: 'hardware' as const,
+                type: manualNodes.find((manual) => manual.id === node.id)!.type,
+              },
+            }
+          : {}),
+        ...(overrides[node.id]?.label ? { label: overrides[node.id].label } : {}),
+        ...(overrides[node.id]?.type
+          ? { spec: { kind: 'hardware' as const, type: overrides[node.id].type } }
+          : {}),
         ...(Object.hasOwn(parents, node.id) ? { parent: parents[node.id] ?? undefined } : {}),
         ...(pins[node.id] ? { position: pins[node.id] } : {}),
-        ...(node.ports
+        ...((node.ports || operatorPorts.has(node.id))
           ? {
-              ports: node.ports.map((port) => {
+              ports: [...(node.ports ?? []).filter((port) => !port.id.startsWith('operator-link-')), ...(operatorPorts.get(node.id) ?? [])].map((port) => {
                 const side = sides[`${node.id}:${port.id}`]
                 const order = orders[`${node.id}:${port.id}`]
                 const offset = offsets[`${node.id}:${port.id}`]
@@ -725,6 +800,17 @@
             }
           : {}),
       })),
+      links: [
+        ...source.links.filter((link) => !(link.metadata as Record<string, unknown> | undefined)?.operatorObject),
+        ...manualLinks.map((link) => ({
+          id: link.id,
+          from: { node: link.from, port: `${link.id}:from` },
+          to: { node: link.to, port: `${link.id}:to` },
+          label: link.label,
+          arrow: 'forward' as const,
+          metadata: { operatorObject: true, source: 'operator' },
+        })),
+      ],
       subgraphs: source.subgraphs?.map((subgraph) => ({
         ...subgraph,
         ...(Object.hasOwn(parents, subgraph.id)
@@ -795,29 +881,38 @@
             Object.keys(saved.portOrders ?? {}).length > 0 ||
             Object.keys(saved.portOffsets ?? {}).length > 0 ||
             Object.keys(saved.edgeRoutes ?? {}).length > 0 ||
-            Object.keys(saved.parentOverrides ?? {}).length > 0)
+            Object.keys(saved.parentOverrides ?? {}).length > 0 ||
+            (saved.operatorNodes?.length ?? 0) > 0 ||
+            Object.keys(saved.presentationOverrides ?? {}).length > 0 ||
+            (saved.operatorLinks?.length ?? 0) > 0)
         const pins = serverHasLayout ? saved.nodePositions : localPins
         const sides = serverHasLayout ? saved.portSides : localSides
         const orders = serverHasLayout ? (saved.portOrders ?? {}) : {}
         const offsets = serverHasLayout ? (saved.portOffsets ?? {}) : {}
         const parents = saved?.parentOverrides ?? {}
+        const manualNodes = saved?.operatorNodes ?? []
+        const overrides = saved?.presentationOverrides ?? {}
+        const manualLinks = saved?.operatorLinks ?? []
         edgeRoutes = saved?.edgeRoutes ?? {}
         pinnedPositions = pins
         portSides = sides
         portOrders = orders
         portOffsets = offsets
         parentOverrides = parents
+        operatorNodes = manualNodes
+        presentationOverrides = overrides
+        operatorLinks = manualLinks
         if (
           !serverHasLayout &&
           (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)
         ) {
           void persistOperatorLayout(localPins, localSides, {}, {}, {})
         }
-        graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets, parents)
+        graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets, parents, manualNodes, overrides, manualLinks)
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
         serverLayout =
-          Object.keys(pins).length || Object.keys(sides).length || Object.keys(parents).length
+          Object.keys(pins).length || Object.keys(sides).length || Object.keys(parents).length || manualNodes.length || Object.keys(overrides).length
             ? undefined
             : res.resolved
         hasGraph = true
@@ -1022,6 +1117,171 @@
     void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, next)
     graph = applyLayoutOverrides(graph, pinnedPositions, portSides, portOrders, portOffsets, next)
     serverLayout = undefined
+  }
+
+  const objectIconTypes = [
+    ['generic', 'Generic'],
+    ['server', 'Server / VM'],
+    ['router', 'Router'],
+    ['l2-switch', 'L2 switch'],
+    ['l3-switch', 'L3 switch'],
+    ['firewall', 'Firewall'],
+    ['vpn', 'VPN'],
+    ['cloud', 'Cloud'],
+    ['internet', 'Internet'],
+    ['database', 'Database'],
+    ['load-balancer', 'Load balancer'],
+  ]
+
+  function startAddObject() {
+    objectDraft = {
+      id: `operator-${Date.now()}`,
+      label: ['New block'],
+      parent: undefined,
+      type: 'generic',
+    }
+    objectEditorOpen = true
+  }
+
+  function startEditSelectedObject() {
+    if (!graph || !selectedLayoutNode || selectedLayoutType !== 'node') return
+    const node = graph.nodes.find((candidate) => candidate.id === selectedLayoutNode)
+    if (!node) return
+    const manual = operatorNodes.find((candidate) => candidate.id === node.id)
+    objectDraft = manual
+      ? { ...manual, label: [...manual.label] }
+      : {
+          id: node.id,
+          label: Array.isArray(node.label) ? node.label.map(String) : [String(node.label)],
+          parent: effectiveParent(node.id) || undefined,
+          type: node.spec?.kind === 'service' ? 'generic' : String(node.spec?.type ?? 'generic'),
+        }
+    objectEditorOpen = true
+  }
+
+  function saveObjectDraft() {
+    if (!graph || !objectDraft) return
+    const cleaned = objectDraft.label.map((line) => line.trim()).filter(Boolean)
+    if (cleaned.length === 0) return
+    const normalized = { ...objectDraft, label: cleaned }
+    const isGenerated = graph.nodes.some(
+      (node) => node.id === normalized.id && !operatorNodes.some((manual) => manual.id === node.id),
+    )
+    let nextNodes = operatorNodes
+    let nextOverrides = presentationOverrides
+    let nextParents = parentOverrides
+    if (isGenerated) {
+      nextOverrides = {
+        ...presentationOverrides,
+        [normalized.id]: { label: normalized.label, type: normalized.type },
+      }
+      nextParents = { ...parentOverrides, [normalized.id]: normalized.parent ?? null }
+    } else {
+      const index = operatorNodes.findIndex((node) => node.id === normalized.id)
+      nextNodes = index >= 0
+        ? operatorNodes.map((node, i) => (i === index ? normalized : node))
+        : [...operatorNodes, normalized]
+    }
+    operatorNodes = nextNodes
+    presentationOverrides = nextOverrides
+    parentOverrides = nextParents
+    void persistOperatorLayout(
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      edgeRoutes,
+      nextParents,
+      nextNodes,
+      nextOverrides,
+    )
+    graph = applyLayoutOverrides(
+      graph,
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      nextParents,
+      nextNodes,
+      nextOverrides,
+    )
+    serverLayout = undefined
+    objectEditorOpen = false
+    objectDraft = null
+  }
+
+  function resetSelectedPresentation() {
+    if (!selectedLayoutNode) return
+    const next = { ...presentationOverrides }
+    delete next[selectedLayoutNode]
+    presentationOverrides = next
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, operatorNodes, next)
+    objectEditorOpen = false
+    objectDraft = null
+    void loadGraph()
+  }
+
+  function deleteObjectDraft() {
+    if (!graph || !objectDraft || !operatorNodes.some((node) => node.id === objectDraft?.id)) return
+    const removedId = objectDraft.id
+    const nextNodes = operatorNodes.filter((node) => node.id !== removedId)
+    const nextLinks = operatorLinks.filter((link) => link.from !== removedId && link.to !== removedId)
+    const nextPins = { ...pinnedPositions }
+    delete nextPins[removedId]
+    operatorNodes = nextNodes
+    operatorLinks = nextLinks
+    pinnedPositions = nextPins
+    void persistOperatorLayout(nextPins, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, nextNodes, presentationOverrides, nextLinks)
+    objectEditorOpen = false
+    objectDraft = null
+    void loadGraph()
+  }
+
+  function startAddLink() {
+    const first = selectedLayoutType === 'node' ? selectedLayoutNode ?? '' : ''
+    linkDraft = {
+      id: `operator-link-${Date.now()}`,
+      from: first,
+      to: '',
+      label: 'connection',
+      fromSide: 'right',
+      toSide: 'left',
+    }
+    linkEditorOpen = true
+  }
+
+  function startEditSelectedLink() {
+    if (!selectedLayoutLinkId) return
+    const existing = operatorLinks.find((link) => link.id === selectedLayoutLinkId)
+    if (!existing) return
+    linkDraft = { ...existing }
+    linkEditorOpen = true
+  }
+
+  function saveLinkDraft() {
+    if (!graph || !linkDraft || !linkDraft.from || !linkDraft.to || linkDraft.from === linkDraft.to) return
+    const normalized = { ...linkDraft, label: linkDraft.label.trim() || 'connection' }
+    const index = operatorLinks.findIndex((link) => link.id === normalized.id)
+    const next = index >= 0
+      ? operatorLinks.map((link, i) => i === index ? normalized : link)
+      : [...operatorLinks, normalized]
+    operatorLinks = next
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, operatorNodes, presentationOverrides, next)
+    graph = applyLayoutOverrides(graph, pinnedPositions, portSides, portOrders, portOffsets, parentOverrides, operatorNodes, presentationOverrides, next)
+    serverLayout = undefined
+    linkEditorOpen = false
+    linkDraft = null
+  }
+
+  function deleteLinkDraft() {
+    if (!linkDraft || !operatorLinks.some((link) => link.id === linkDraft?.id)) return
+    const next = operatorLinks.filter((link) => link.id !== linkDraft?.id)
+    operatorLinks = next
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, operatorNodes, presentationOverrides, next)
+    linkEditorOpen = false
+    linkDraft = null
+    selectedLayoutLinkId = null
+    void loadGraph()
   }
 
   function saveRoute(id: string, bends: Array<{ x: number; y: number }> | null) {
@@ -1369,6 +1629,93 @@
       </select>
     </div>
   {/if}
+  {#if layoutEdit && objectEditorOpen && objectDraft}
+    <div class="object-editor">
+      <div class="object-editor-title">
+        <strong>{operatorNodes.some((node) => node.id === objectDraft?.id) ? 'Edit operator block' : graph?.nodes.some((node) => node.id === objectDraft?.id) ? 'Edit block appearance' : 'Add block'}</strong>
+        <button onclick={() => { objectEditorOpen = false; objectDraft = null }} aria-label="Close object editor">×</button>
+      </div>
+      <label>Text inside block
+        <textarea
+          rows="5"
+          value={objectDraft.label.join('\n')}
+          oninput={(event) => { if (objectDraft) objectDraft.label = event.currentTarget.value.split('\n') }}
+        ></textarea>
+      </label>
+      <label>Icon
+        <select bind:value={objectDraft.type}>
+          {#each objectIconTypes as icon}
+            <option value={icon[0]}>{icon[1]}</option>
+          {/each}
+        </select>
+      </label>
+      <label>Container
+        <select
+          value={objectDraft.parent ?? ''}
+          onchange={(event) => { if (objectDraft) objectDraft.parent = event.currentTarget.value || undefined }}
+        >
+          <option value="">Top level</option>
+          {#each availableParentsFor(objectDraft.id) as parent}
+            <option value={parent.id}>{parent.label ?? parent.id}</option>
+          {/each}
+        </select>
+      </label>
+      <div class="object-editor-actions">
+        {#if operatorNodes.some((node) => node.id === objectDraft?.id)}
+          <button class="danger" onclick={deleteObjectDraft}>Delete block</button>
+        {/if}
+        {#if presentationOverrides[objectDraft.id]}
+          <button onclick={resetSelectedPresentation}>Reset generated appearance</button>
+        {/if}
+        <button class="primary" onclick={saveObjectDraft}>Save block</button>
+      </div>
+    </div>
+  {/if}
+  {#if layoutEdit && linkEditorOpen && linkDraft}
+    <div class="object-editor link-editor">
+      <div class="object-editor-title">
+        <strong>{operatorLinks.some((link) => link.id === linkDraft?.id) ? 'Edit connection' : 'Add connection'}</strong>
+        <button onclick={() => { linkEditorOpen = false; linkDraft = null }} aria-label="Close connection editor">×</button>
+      </div>
+      <label>Source
+        <select bind:value={linkDraft.from}>
+          <option value="">Choose a block</option>
+          {#each graph?.nodes ?? [] as node}
+            <option value={node.id}>{nodeLabel(node)}</option>
+          {/each}
+        </select>
+      </label>
+      <label>Destination
+        <select bind:value={linkDraft.to}>
+          <option value="">Choose a block</option>
+          {#each graph?.nodes ?? [] as node}
+            <option value={node.id}>{nodeLabel(node)}</option>
+          {/each}
+        </select>
+      </label>
+      <label>Connection label
+        <input bind:value={linkDraft.label} />
+      </label>
+      <div class="side-pickers">
+        <label>Source side
+          <select bind:value={linkDraft.fromSide}>
+            <option value="right">Right</option><option value="left">Left</option><option value="top">Top</option><option value="bottom">Bottom</option>
+          </select>
+        </label>
+        <label>Destination side
+          <select bind:value={linkDraft.toSide}>
+            <option value="left">Left</option><option value="right">Right</option><option value="top">Top</option><option value="bottom">Bottom</option>
+          </select>
+        </label>
+      </div>
+      <div class="object-editor-actions">
+        {#if operatorLinks.some((link) => link.id === linkDraft?.id)}
+          <button class="danger" onclick={deleteLinkDraft}>Delete connection</button>
+        {/if}
+        <button class="primary" disabled={!linkDraft.from || !linkDraft.to || linkDraft.from === linkDraft.to} onclick={saveLinkDraft}>Create connection</button>
+      </div>
+    </div>
+  {/if}
   <div class="controls">
     <div class="control-group">
       <button onclick={() => viewer?.zoomBy(1.5)} title="Zoom In">
@@ -1389,6 +1736,22 @@
         >
           {layoutEdit ? '✓' : '↔'}
         </button>
+        {#if layoutEdit}
+          <button onclick={startAddObject} title="Add standalone block" aria-label="Add standalone block">
+            <PlusIcon size={18} />
+          </button>
+          <button onclick={startAddLink} title="Connect two blocks" aria-label="Connect two blocks">⛓</button>
+        {/if}
+        {#if layoutEdit && selectedLayoutType === 'node' && selectedLayoutNode}
+          <button onclick={startEditSelectedObject} title="Edit selected block" aria-label="Edit selected block">
+            <PencilSimpleIcon size={18} />
+          </button>
+        {/if}
+        {#if layoutEdit && selectedLayoutType === 'edge' && selectedLayoutLinkId && operatorLinks.some((link) => link.id === selectedLayoutLinkId)}
+          <button onclick={startEditSelectedLink} title="Edit selected connection" aria-label="Edit selected connection">
+            <PencilSimpleIcon size={18} />
+          </button>
+        {/if}
         {#if layoutEdit && selectedLayoutNode && selectedLayoutPinIds.length > 0}
           <button onclick={unpinSelected} title="Unpin selected node or block">×</button>
         {/if}
@@ -1878,6 +2241,77 @@
     border: 1px solid var(--border, #cbd5e1);
     border-radius: 6px;
   }
+
+  .object-editor {
+    position: absolute;
+    right: 64px;
+    bottom: 16px;
+    z-index: 8;
+    display: grid;
+    gap: 10px;
+    width: min(360px, calc(100% - 96px));
+    padding: 14px;
+    color: var(--color-text, #111827);
+    background: var(--color-bg-elevated, #ffffff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  }
+
+  .object-editor-title,
+  .object-editor-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .object-editor-title button {
+    border: 0;
+    background: transparent;
+    color: var(--color-text-muted, #64748b);
+    cursor: pointer;
+    font-size: 20px;
+  }
+
+  .object-editor label {
+    display: grid;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .object-editor textarea,
+  .object-editor select,
+  .object-editor input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 8px 9px;
+    color: var(--color-text, #111827);
+    background: var(--color-bg, #ffffff);
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 400;
+  }
+
+  .object-editor textarea { resize: vertical; }
+  .object-editor-actions { justify-content: flex-end; }
+  .object-editor-actions button {
+    padding: 7px 10px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 6px;
+    background: var(--color-bg, #ffffff);
+    cursor: pointer;
+  }
+  .object-editor-actions button.primary {
+    color: white;
+    background: var(--primary, #2563eb);
+    border-color: var(--primary, #2563eb);
+  }
+  .object-editor-actions button.danger { color: #b91c1c; margin-right: auto; }
+  .side-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 
   .layers-panel {
     position: absolute;

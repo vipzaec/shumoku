@@ -15,6 +15,9 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsView = {
     portOffsets: {},
     edgeRoutes: {},
     parentOverrides: {},
+    operatorNodes: [],
+    presentationOverrides: {},
+    operatorLinks: [],
   },
 }
 

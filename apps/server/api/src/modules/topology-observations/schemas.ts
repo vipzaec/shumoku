@@ -45,6 +45,24 @@ export const OperatorLayoutSchema = z.object({
   portOffsets: z.record(z.string(), z.number().min(0).max(1)),
   edgeRoutes: z.record(z.string(), z.array(z.object({ x: z.number(), y: z.number() }))),
   parentOverrides: z.record(z.string(), z.string().nullable()).optional(),
+  operatorNodes: z.array(z.object({
+    id: z.string(),
+    label: z.array(z.string()),
+    parent: z.string().optional(),
+    type: z.string(),
+  })).optional(),
+  presentationOverrides: z.record(z.string(), z.object({
+    label: z.array(z.string()).optional(),
+    type: z.string().optional(),
+  })).optional(),
+  operatorLinks: z.array(z.object({
+    id: z.string(),
+    from: z.string(),
+    to: z.string(),
+    label: z.string(),
+    fromSide: z.enum(['top', 'bottom', 'left', 'right']),
+    toSide: z.enum(['top', 'bottom', 'left', 'right']),
+  })).optional(),
 })
 
 export const ObservationSummarySchema = z.object({
