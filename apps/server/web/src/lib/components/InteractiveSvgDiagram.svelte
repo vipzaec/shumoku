@@ -225,6 +225,8 @@
     from: string
     to: string
     label: string
+    relationship?: 'network' | 'management' | 'dependency' | 'traffic' | 'documentation'
+    direction?: 'none' | 'forward' | 'back' | 'both'
     fromSide: 'top' | 'bottom' | 'left' | 'right'
     toSide: 'top' | 'bottom' | 'left' | 'right'
   }
@@ -886,8 +888,13 @@
           from: { node: link.from, port: `${link.id}:from` },
           to: { node: link.to, port: `${link.id}:to` },
           label: link.label,
-          arrow: 'forward' as const,
-          metadata: { operatorObject: true, source: 'operator' },
+          arrow: link.direction ?? 'forward',
+          metadata: {
+            operatorObject: true,
+            source: 'operator',
+            relationship: link.relationship ?? 'network',
+            direction: link.direction ?? 'forward',
+          },
         })),
       ],
       subgraphs: mergedSubgraphs.map((subgraph) => ({
@@ -1444,6 +1451,8 @@
       from: first,
       to: '',
       label: 'connection',
+      relationship: 'network',
+      direction: 'forward',
       fromSide: 'right',
       toSide: 'left',
     }
@@ -2068,6 +2077,18 @@
       <label>Connection label
         <input bind:value={linkDraft.label} />
       </label>
+      <div class="side-pickers">
+        <label>Relationship
+          <select bind:value={linkDraft.relationship}>
+            <option value="network">Network</option><option value="management">Management</option><option value="dependency">Dependency</option><option value="traffic">Traffic flow</option><option value="documentation">Documentation</option>
+          </select>
+        </label>
+        <label>Direction
+          <select bind:value={linkDraft.direction}>
+            <option value="forward">Source → destination</option><option value="back">Source ← destination</option><option value="both">Bidirectional</option><option value="none">Undirected</option>
+          </select>
+        </label>
+      </div>
       <div class="side-pickers">
         <label>Source side
           <select bind:value={linkDraft.fromSide}>
