@@ -232,6 +232,7 @@
   let objectDraft = $state<OperatorNode | null>(null)
   let linkEditorOpen = $state(false)
   let linkDraft = $state<OperatorLink | null>(null)
+  let linkDraftError = $state('')
   let groupEditorOpen = $state(false)
   let groupDraft = $state<OperatorGroup | null>(null)
   let layersOpen = $state(false)
@@ -1275,6 +1276,7 @@
       fromSide: 'right',
       toSide: 'left',
     }
+    linkDraftError = ''
     linkEditorOpen = true
   }
 
@@ -1283,12 +1285,42 @@
     const existing = operatorLinks.find((link) => link.id === selectedLayoutLinkId)
     if (!existing) return
     linkDraft = { ...existing }
+    linkDraftError = ''
     linkEditorOpen = true
+  }
+
+  function autoPlaceLinkSides() {
+    if (!graph || !linkDraft) return
+    const from = graph.nodes.find((node) => node.id === linkDraft?.from)?.position
+    const to = graph.nodes.find((node) => node.id === linkDraft?.to)?.position
+    if (!from || !to) {
+      linkDraft.fromSide = 'right'
+      linkDraft.toSide = 'left'
+      return
+    }
+    const dx = to.x - from.x
+    const dy = to.y - from.y
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      linkDraft.fromSide = dx >= 0 ? 'right' : 'left'
+      linkDraft.toSide = dx >= 0 ? 'left' : 'right'
+    } else {
+      linkDraft.fromSide = dy >= 0 ? 'bottom' : 'top'
+      linkDraft.toSide = dy >= 0 ? 'top' : 'bottom'
+    }
   }
 
   function saveLinkDraft() {
     if (!graph || !linkDraft || !linkDraft.from || !linkDraft.to || linkDraft.from === linkDraft.to) return
     const normalized = { ...linkDraft, label: linkDraft.label.trim() || 'connection' }
+    const duplicate = operatorLinks.some((link) =>
+      link.id !== normalized.id &&
+      ((link.from === normalized.from && link.to === normalized.to) ||
+        (link.from === normalized.to && link.to === normalized.from)),
+    )
+    if (duplicate) {
+      linkDraftError = 'A manual connection between these blocks already exists.'
+      return
+    }
     const index = operatorLinks.findIndex((link) => link.id === normalized.id)
     const next = index >= 0
       ? operatorLinks.map((link, i) => i === index ? normalized : link)
@@ -1299,6 +1331,7 @@
     serverLayout = undefined
     linkEditorOpen = false
     linkDraft = null
+    linkDraftError = ''
   }
 
   function deleteLinkDraft() {
@@ -1788,6 +1821,8 @@
           </select>
         </label>
       </div>
+      <button onclick={autoPlaceLinkSides}>Choose sides from current placement</button>
+      {#if linkDraftError}<div class="editor-error">{linkDraftError}</div>{/if}
       <div class="object-editor-actions">
         {#if operatorLinks.some((link) => link.id === linkDraft?.id)}
           <button class="danger" onclick={deleteLinkDraft}>Delete connection</button>
@@ -2426,6 +2461,7 @@
   }
   .object-editor-actions button.danger { color: #b91c1c; margin-right: auto; }
   .side-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .editor-error { color: #b91c1c; font-size: 0.75rem; }
 
   .layers-panel {
     position: absolute;
