@@ -218,13 +218,22 @@
     fromSide: 'top' | 'bottom' | 'left' | 'right'
     toSide: 'top' | 'bottom' | 'left' | 'right'
   }
+  type OperatorGroup = {
+    id: string
+    label: string
+    parent?: string
+    direction: 'TB' | 'BT' | 'LR' | 'RL'
+  }
   let operatorNodes = $state<OperatorNode[]>([])
   let presentationOverrides = $state<Record<string, PresentationOverride>>({})
   let operatorLinks = $state<OperatorLink[]>([])
+  let operatorGroups = $state<OperatorGroup[]>([])
   let objectEditorOpen = $state(false)
   let objectDraft = $state<OperatorNode | null>(null)
   let linkEditorOpen = $state(false)
   let linkDraft = $state<OperatorLink | null>(null)
+  let groupEditorOpen = $state(false)
+  let groupDraft = $state<OperatorGroup | null>(null)
   let layersOpen = $state(false)
   let nodeDetailsVisible = $state(true)
   let portLabelsVisible = $state(true)
@@ -584,6 +593,7 @@
     operatorNodes?: OperatorNode[]
     presentationOverrides?: Record<string, PresentationOverride>
     operatorLinks?: OperatorLink[]
+    operatorGroups?: OperatorGroup[]
   }
 
   const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
@@ -704,6 +714,7 @@
     manualNodes: OperatorNode[] = operatorNodes,
     overrides: Record<string, PresentationOverride> = presentationOverrides,
     manualLinks: OperatorLink[] = operatorLinks,
+    manualGroups: OperatorGroup[] = operatorGroups,
   ) {
     if (!topologyId || readOnly) return
     await api.topologies.displaySettings.set(topologyId, {
@@ -717,6 +728,7 @@
         operatorNodes: manualNodes,
         presentationOverrides: overrides,
         operatorLinks: manualLinks,
+        operatorGroups: manualGroups,
       },
     })
   }
@@ -731,6 +743,7 @@
     manualNodes: OperatorNode[] = operatorNodes,
     overrides: Record<string, PresentationOverride> = presentationOverrides,
     manualLinks: OperatorLink[] = operatorLinks,
+    manualGroups: OperatorGroup[] = operatorGroups,
   ): NetworkGraph {
     if (
       Object.keys(pins).length === 0 &&
@@ -739,6 +752,7 @@
       manualNodes.length === 0 &&
       Object.keys(overrides).length === 0
       && manualLinks.length === 0
+      && manualGroups.length === 0
     ) return source
     const mergedNodes = [
       ...source.nodes,
@@ -759,6 +773,17 @@
       toPorts.push({ id: `${link.id}:to`, label: link.label, connectors: [], placement: { side: link.toSide, order: toPorts.length } })
       operatorPorts.set(link.to, toPorts)
     }
+    const mergedSubgraphs = [
+      ...(source.subgraphs ?? []),
+      ...manualGroups.filter((manual) => !(source.subgraphs ?? []).some((group) => group.id === manual.id)).map((manual) => ({
+        id: manual.id,
+        label: manual.label,
+        parent: manual.parent,
+        direction: manual.direction,
+        metadata: { operatorObject: true, source: 'operator' },
+      })),
+    ]
+    const validNodeIds = new Set(mergedNodes.map((node) => node.id))
     return {
       ...source,
       nodes: mergedNodes.map((node) => ({
@@ -802,7 +827,7 @@
       })),
       links: [
         ...source.links.filter((link) => !(link.metadata as Record<string, unknown> | undefined)?.operatorObject),
-        ...manualLinks.map((link) => ({
+        ...manualLinks.filter((link) => validNodeIds.has(link.from) && validNodeIds.has(link.to)).map((link) => ({
           id: link.id,
           from: { node: link.from, port: `${link.id}:from` },
           to: { node: link.to, port: `${link.id}:to` },
@@ -811,7 +836,7 @@
           metadata: { operatorObject: true, source: 'operator' },
         })),
       ],
-      subgraphs: source.subgraphs?.map((subgraph) => ({
+      subgraphs: mergedSubgraphs.map((subgraph) => ({
         ...subgraph,
         ...(Object.hasOwn(parents, subgraph.id)
           ? { parent: parents[subgraph.id] ?? undefined }
@@ -884,7 +909,8 @@
             Object.keys(saved.parentOverrides ?? {}).length > 0 ||
             (saved.operatorNodes?.length ?? 0) > 0 ||
             Object.keys(saved.presentationOverrides ?? {}).length > 0 ||
-            (saved.operatorLinks?.length ?? 0) > 0)
+            (saved.operatorLinks?.length ?? 0) > 0 ||
+            (saved.operatorGroups?.length ?? 0) > 0)
         const pins = serverHasLayout ? saved.nodePositions : localPins
         const sides = serverHasLayout ? saved.portSides : localSides
         const orders = serverHasLayout ? (saved.portOrders ?? {}) : {}
@@ -893,6 +919,7 @@
         const manualNodes = saved?.operatorNodes ?? []
         const overrides = saved?.presentationOverrides ?? {}
         const manualLinks = saved?.operatorLinks ?? []
+        const manualGroups = saved?.operatorGroups ?? []
         edgeRoutes = saved?.edgeRoutes ?? {}
         pinnedPositions = pins
         portSides = sides
@@ -902,13 +929,14 @@
         operatorNodes = manualNodes
         presentationOverrides = overrides
         operatorLinks = manualLinks
+        operatorGroups = manualGroups
         if (
           !serverHasLayout &&
           (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)
         ) {
           void persistOperatorLayout(localPins, localSides, {}, {}, {})
         }
-        graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets, parents, manualNodes, overrides, manualLinks)
+        graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets, parents, manualNodes, overrides, manualLinks, manualGroups)
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
         serverLayout =
@@ -1281,6 +1309,58 @@
     linkEditorOpen = false
     linkDraft = null
     selectedLayoutLinkId = null
+    void loadGraph()
+  }
+
+  function startAddGroup() {
+    groupDraft = {
+      id: `operator-group-${Date.now()}`,
+      label: 'New group',
+      parent: undefined,
+      direction: 'LR',
+    }
+    groupEditorOpen = true
+  }
+
+  function startEditSelectedGroup() {
+    if (!selectedLayoutNode || selectedLayoutType !== 'subgraph') return
+    const existing = operatorGroups.find((group) => group.id === selectedLayoutNode)
+    if (!existing) return
+    groupDraft = { ...existing }
+    groupEditorOpen = true
+  }
+
+  function saveGroupDraft() {
+    if (!graph || !groupDraft?.label.trim()) return
+    const normalized = { ...groupDraft, label: groupDraft.label.trim() }
+    const index = operatorGroups.findIndex((group) => group.id === normalized.id)
+    const next = index >= 0
+      ? operatorGroups.map((group, i) => i === index ? normalized : group)
+      : [...operatorGroups, normalized]
+    operatorGroups = next
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, operatorNodes, presentationOverrides, operatorLinks, next)
+    graph = applyLayoutOverrides(graph, pinnedPositions, portSides, portOrders, portOffsets, parentOverrides, operatorNodes, presentationOverrides, operatorLinks, next)
+    serverLayout = undefined
+    groupEditorOpen = false
+    groupDraft = null
+  }
+
+  function deleteGroupDraft() {
+    if (!groupDraft || !operatorGroups.some((group) => group.id === groupDraft?.id)) return
+    const removedId = groupDraft.id
+    const nextGroups = operatorGroups
+      .filter((group) => group.id !== removedId)
+      .map((group) => group.parent === removedId ? { ...group, parent: undefined } : group)
+    const nextNodes = operatorNodes.map((node) => node.parent === removedId ? { ...node, parent: undefined } : node)
+    const nextParents = { ...parentOverrides }
+    for (const [id, parent] of Object.entries(nextParents)) if (parent === removedId) nextParents[id] = null
+    delete nextParents[removedId]
+    operatorGroups = nextGroups
+    operatorNodes = nextNodes
+    parentOverrides = nextParents
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, nextParents, nextNodes, presentationOverrides, operatorLinks, nextGroups)
+    groupEditorOpen = false
+    groupDraft = null
     void loadGraph()
   }
 
@@ -1716,6 +1796,34 @@
       </div>
     </div>
   {/if}
+  {#if layoutEdit && groupEditorOpen && groupDraft}
+    <div class="object-editor group-editor">
+      <div class="object-editor-title">
+        <strong>{operatorGroups.some((group) => group.id === groupDraft?.id) ? 'Edit group' : 'Add group'}</strong>
+        <button onclick={() => { groupEditorOpen = false; groupDraft = null }} aria-label="Close group editor">×</button>
+      </div>
+      <label>Group name <input bind:value={groupDraft.label} /></label>
+      <label>Parent container
+        <select value={groupDraft.parent ?? ''} onchange={(event) => { if (groupDraft) groupDraft.parent = event.currentTarget.value || undefined }}>
+          <option value="">Top level</option>
+          {#each availableParentsFor(groupDraft.id) as parent}
+            <option value={parent.id}>{parent.label ?? parent.id}</option>
+          {/each}
+        </select>
+      </label>
+      <label>Internal layout
+        <select bind:value={groupDraft.direction}>
+          <option value="LR">Left to right</option><option value="RL">Right to left</option><option value="TB">Top to bottom</option><option value="BT">Bottom to top</option>
+        </select>
+      </label>
+      <div class="object-editor-actions">
+        {#if operatorGroups.some((group) => group.id === groupDraft?.id)}
+          <button class="danger" onclick={deleteGroupDraft}>Delete group</button>
+        {/if}
+        <button class="primary" onclick={saveGroupDraft}>Save group</button>
+      </div>
+    </div>
+  {/if}
   <div class="controls">
     <div class="control-group">
       <button onclick={() => viewer?.zoomBy(1.5)} title="Zoom In">
@@ -1741,6 +1849,7 @@
             <PlusIcon size={18} />
           </button>
           <button onclick={startAddLink} title="Connect two blocks" aria-label="Connect two blocks">⛓</button>
+          <button onclick={startAddGroup} title="Add container group" aria-label="Add container group">▣</button>
         {/if}
         {#if layoutEdit && selectedLayoutType === 'node' && selectedLayoutNode}
           <button onclick={startEditSelectedObject} title="Edit selected block" aria-label="Edit selected block">
@@ -1749,6 +1858,11 @@
         {/if}
         {#if layoutEdit && selectedLayoutType === 'edge' && selectedLayoutLinkId && operatorLinks.some((link) => link.id === selectedLayoutLinkId)}
           <button onclick={startEditSelectedLink} title="Edit selected connection" aria-label="Edit selected connection">
+            <PencilSimpleIcon size={18} />
+          </button>
+        {/if}
+        {#if layoutEdit && selectedLayoutType === 'subgraph' && selectedLayoutNode && operatorGroups.some((group) => group.id === selectedLayoutNode)}
+          <button onclick={startEditSelectedGroup} title="Edit selected group" aria-label="Edit selected group">
             <PencilSimpleIcon size={18} />
           </button>
         {/if}

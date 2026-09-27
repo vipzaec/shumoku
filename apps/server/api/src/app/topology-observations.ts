@@ -18,6 +18,7 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsView = {
     operatorNodes: [],
     presentationOverrides: {},
     operatorLinks: [],
+    operatorGroups: [],
   },
 }
 

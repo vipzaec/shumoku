@@ -63,6 +63,12 @@ export const OperatorLayoutSchema = z.object({
     fromSide: z.enum(['top', 'bottom', 'left', 'right']),
     toSide: z.enum(['top', 'bottom', 'left', 'right']),
   })).optional(),
+  operatorGroups: z.array(z.object({
+    id: z.string(),
+    label: z.string(),
+    parent: z.string().optional(),
+    direction: z.enum(['TB', 'BT', 'LR', 'RL']),
+  })).optional(),
 })
 
 export const ObservationSummarySchema = z.object({
