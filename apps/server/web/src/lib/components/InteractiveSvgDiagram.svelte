@@ -227,6 +227,8 @@
     label: string
     relationship?: 'network' | 'management' | 'dependency' | 'traffic' | 'documentation'
     direction?: 'none' | 'forward' | 'back' | 'both'
+    tenant?: string
+    notes?: string
     fromSide: 'top' | 'bottom' | 'left' | 'right'
     toSide: 'top' | 'bottom' | 'left' | 'right'
   }
@@ -235,6 +237,8 @@
     label: string
     parent?: string
     direction: 'TB' | 'BT' | 'LR' | 'RL'
+    tenant?: string
+    notes?: string
   }
   let operatorNodes = $state<OperatorNode[]>([])
   let presentationOverrides = $state<Record<string, PresentationOverride>>({})
@@ -836,7 +840,13 @@
           width: 240,
           height: 140,
         },
-        metadata: { operatorObject: true, source: 'operator' },
+        metadata: {
+          operatorObject: true,
+          source: 'operator',
+          origin: 'Manual',
+          tenant: manual.tenant,
+          annotations: manual.notes,
+        },
       })),
     ]
     const validNodeIds = new Set(mergedNodes.map((node) => node.id))
@@ -894,6 +904,9 @@
             source: 'operator',
             relationship: link.relationship ?? 'network',
             direction: link.direction ?? 'forward',
+            origin: 'Manual',
+            tenant: link.tenant,
+            annotations: link.notes,
           },
         })),
       ],
@@ -1486,6 +1499,8 @@
       label: 'connection',
       relationship: 'network',
       direction: 'forward',
+      tenant: topologyTenant(),
+      notes: '',
       fromSide: 'right',
       toSide: 'left',
     }
@@ -1564,6 +1579,8 @@
       label: 'New group',
       parent: undefined,
       direction: 'LR',
+      tenant: topologyTenant(),
+      notes: '',
     }
     groupEditorOpen = true
   }
@@ -2114,6 +2131,10 @@
         <input bind:value={linkDraft.label} />
       </label>
       <div class="side-pickers">
+        <label>Tenant <input bind:value={linkDraft.tenant} placeholder="MSP, admiral, ing…" /></label>
+        <label>Operator notes <input bind:value={linkDraft.notes} placeholder="Purpose or operational note" /></label>
+      </div>
+      <div class="side-pickers">
         <label>Relationship
           <select bind:value={linkDraft.relationship}>
             <option value="network">Network</option><option value="management">Management</option><option value="dependency">Dependency</option><option value="traffic">Traffic flow</option><option value="documentation">Documentation</option>
@@ -2154,6 +2175,8 @@
         <button onclick={() => { groupEditorOpen = false; groupDraft = null }} aria-label="Close group editor">×</button>
       </div>
       <label>Group name <input bind:value={groupDraft.label} /></label>
+      <label>Tenant <input bind:value={groupDraft.tenant} placeholder="MSP, admiral, ing…" /></label>
+      <label>Operator notes <textarea rows="3" bind:value={groupDraft.notes} placeholder="Purpose, owner or operational note"></textarea></label>
       <label>Parent container
         <select value={groupDraft.parent ?? ''} onchange={(event) => { if (groupDraft) groupDraft.parent = event.currentTarget.value || undefined }}>
           <option value="">Top level</option>

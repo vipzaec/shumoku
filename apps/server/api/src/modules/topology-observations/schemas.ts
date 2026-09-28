@@ -72,6 +72,8 @@ export const OperatorLayoutSchema = z.object({
     label: z.string(),
     relationship: z.enum(['network', 'management', 'dependency', 'traffic', 'documentation']).optional(),
     direction: z.enum(['none', 'forward', 'back', 'both']).optional(),
+    tenant: z.string().optional(),
+    notes: z.string().optional(),
     fromSide: z.enum(['top', 'bottom', 'left', 'right']),
     toSide: z.enum(['top', 'bottom', 'left', 'right']),
   })).optional(),
@@ -80,6 +82,8 @@ export const OperatorLayoutSchema = z.object({
     label: z.string(),
     parent: z.string().optional(),
     direction: z.enum(['TB', 'BT', 'LR', 'RL']),
+    tenant: z.string().optional(),
+    notes: z.string().optional(),
   })).optional(),
 })
 
