@@ -1421,8 +1421,41 @@
     if (!selectedLayoutNode) return
     const next = { ...presentationOverrides }
     delete next[selectedLayoutNode]
+    const nextParents = { ...parentOverrides }
+    delete nextParents[selectedLayoutNode]
     presentationOverrides = next
-    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, operatorNodes, next)
+    parentOverrides = nextParents
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, nextParents, operatorNodes, next)
+    objectEditorOpen = false
+    objectDraft = null
+    void loadGraph()
+  }
+
+  function resetPresentationField(field: 'label' | 'type' | 'parent') {
+    if (!objectDraft) return
+    const nodeId = objectDraft.id
+    const nextOverrides = { ...presentationOverrides }
+    const nextParents = { ...parentOverrides }
+    if (field === 'parent') {
+      delete nextParents[nodeId]
+    } else {
+      const current = { ...(nextOverrides[nodeId] ?? {}) }
+      delete current[field]
+      if (Object.keys(current).length === 0) delete nextOverrides[nodeId]
+      else nextOverrides[nodeId] = current
+    }
+    presentationOverrides = nextOverrides
+    parentOverrides = nextParents
+    void persistOperatorLayout(
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      edgeRoutes,
+      nextParents,
+      operatorNodes,
+      nextOverrides,
+    )
     objectEditorOpen = false
     objectDraft = null
     void loadGraph()
@@ -1961,14 +1994,15 @@
           </select>
         </label>
       {/if}
-      <label>Text inside block
+      <label>Text inside block {#if presentationOverrides[objectDraft.id]?.label}<span class="override-marker">overridden</span>{/if}
         <textarea
           rows="5"
           value={objectDraft.label.join('\n')}
           oninput={(event) => { if (objectDraft) objectDraft.label = event.currentTarget.value.split('\n') }}
         ></textarea>
+        {#if presentationOverrides[objectDraft.id]?.label}<button class="field-reset" onclick={() => resetPresentationField('label')}>Reset text to source</button>{/if}
       </label>
-      <label>Icon
+      <label>Icon {#if presentationOverrides[objectDraft.id]?.type}<span class="override-marker">overridden</span>{/if}
         <input bind:value={iconQuery} placeholder="Search icons" />
         <select bind:value={objectDraft.type}>
           {#if !filteredIconTypes().some(([value]) => value === objectDraft?.type)}
@@ -1978,6 +2012,7 @@
             <option value={icon[0]}>{icon[1]}</option>
           {/each}
         </select>
+        {#if presentationOverrides[objectDraft.id]?.type}<button class="field-reset" onclick={() => resetPresentationField('type')}>Reset icon to source</button>{/if}
       </label>
       <label>Tenant
         <input bind:value={objectDraft.tenant} placeholder="MSP, admiral, ing…" />
@@ -1985,7 +2020,7 @@
       <label>Operator notes
         <textarea rows="3" bind:value={objectDraft.notes} placeholder="Purpose, owner or operational note"></textarea>
       </label>
-      <label>Container
+      <label>Container {#if Object.hasOwn(parentOverrides, objectDraft.id)}<span class="override-marker">overridden</span>{/if}
         <select
           value={objectDraft.parent ?? ''}
           onchange={(event) => { if (objectDraft) objectDraft.parent = event.currentTarget.value || undefined }}
@@ -1995,6 +2030,7 @@
             <option value={parent.id}>{parent.label ?? parent.id}</option>
           {/each}
         </select>
+        {#if Object.hasOwn(parentOverrides, objectDraft.id)}<button class="field-reset" onclick={() => resetPresentationField('parent')}>Reset container to source</button>{/if}
       </label>
       {#if objectSource === 'NetBox'}
       <fieldset class="binding-editor">
@@ -2045,8 +2081,8 @@
         {#if operatorNodes.some((node) => node.id === objectDraft?.id)}
           <button class="danger" onclick={deleteObjectDraft}>Delete block</button>
         {/if}
-        {#if presentationOverrides[objectDraft.id]}
-          <button onclick={resetSelectedPresentation}>Reset generated appearance</button>
+        {#if presentationOverrides[objectDraft.id] || Object.hasOwn(parentOverrides, objectDraft.id)}
+          <button onclick={resetSelectedPresentation}>Reset all presentation</button>
         {/if}
         <button class="primary" onclick={saveObjectDraft}>Save block</button>
       </div>
@@ -2755,6 +2791,8 @@
   }
 
   .object-editor textarea { resize: vertical; }
+  .override-marker { color: #b45309; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .object-editor .field-reset { justify-self: start; padding: 4px 7px; color: #b45309; background: transparent; border: 1px solid #f59e0b; border-radius: 5px; cursor: pointer; font-size: 10px; }
   .object-editor-actions { justify-content: flex-end; }
   .object-editor-actions button {
     padding: 7px 10px;
