@@ -118,6 +118,33 @@
       })
       .filter(Boolean)
   })
+  let metadataPublications = $derived.by(() => {
+    if (!Array.isArray(nodeMetadata.publications)) return []
+    return nodeMetadata.publications
+      .filter((value): value is Record<string, unknown> =>
+        Boolean(value && typeof value === 'object' && !Array.isArray(value)),
+      )
+      .map((publication) => {
+        const endpoints = Array.isArray(publication.externalEndpoints)
+          ? publication.externalEndpoints
+          : publication.externalEndpoint
+            ? [publication.externalEndpoint]
+            : []
+        const external = endpoints[0] as Record<string, unknown> | undefined
+        const target = publication.target as Record<string, unknown> | undefined
+        const match = publication.inventoryMatch as Record<string, unknown> | undefined
+        return {
+          id: String(publication.id ?? ''),
+          kind: String(publication.kind ?? 'Publication'),
+          host: typeof publication.configuredHost === 'string' ? publication.configuredHost : '',
+          external: [external?.address, external?.port].filter(Boolean).join(':'),
+          target: [target?.ip, target?.port].filter(Boolean).join(':'),
+          protocol: String(target?.protocol ?? 'TCP').toUpperCase(),
+          match: String(match?.status ?? 'UNVERIFIED'),
+          condition: String(publication.routeCondition ?? ''),
+        }
+      })
+  })
   let metadataVirtualMachines = $derived.by(() => {
     if (!Array.isArray(nodeMetadata.virtualMachines)) return []
     return nodeMetadata.virtualMachines.filter((value): value is Record<string, unknown> =>
@@ -594,6 +621,7 @@
     metadataCluster ||
     metadataTenant ||
     metadataServices.length > 0 ||
+    metadataPublications.length > 0 ||
     metadataVirtualMachines.length > 0 ||
     metadataDecisions.length > 0 ||
     metadataComparisons.length > 0 ||
@@ -609,14 +637,17 @@
                 </div>
 
                 {#if consistency}
-                  <div class="flex items-center justify-between gap-3 rounded-md bg-background px-2.5 py-2 text-xs">
+                  <div
+                    class="flex items-center justify-between gap-3 rounded-md bg-background px-2.5 py-2 text-xs"
+                  >
                     <span class="text-muted-foreground">NetBox ↔ observed</span>
                     <span
                       class:text-success={consistency === 'confirmed'}
                       class:text-danger={consistency === 'mismatch'}
                       class:text-warning={consistency === 'unverified'}
                       class="font-semibold uppercase"
-                    >{consistency}</span>
+                      >{consistency}</span
+                    >
                   </div>
                 {/if}
 
@@ -666,6 +697,40 @@
                   </div>
                 {/if}
 
+                {#if metadataPublications.length > 0}
+                  <div class="pt-2 border-t border-border space-y-2">
+                    <div class="text-xs uppercase tracking-wide text-muted-foreground">
+                      Configured publications
+                    </div>
+                    {#each metadataPublications as publication (publication.id)}
+                      <div
+                        class="rounded-md border border-border bg-background px-2.5 py-2 text-xs space-y-1"
+                      >
+                        <div class="flex items-start justify-between gap-2">
+                          <span class="font-semibold break-all"
+                            >{publication.host || publication.external || 'Default route'}</span
+                          >
+                          <span class="shrink-0 font-medium">{publication.kind}</span>
+                        </div>
+                        <div class="font-mono break-all">
+                          {publication.external || 'Frontend unknown'}
+                          → {publication.target || 'Target unknown'}
+                          {publication.protocol}
+                        </div>
+                        {#if publication.condition}
+                          <div class="text-muted-foreground">{publication.condition}</div>
+                        {/if}
+                        {#if publication.match !== 'MATCHED'}
+                          <div class="text-warning">NetBox VM: {publication.match}</div>
+                        {/if}
+                      </div>
+                    {/each}
+                    <div class="text-xs text-muted-foreground">
+                      OPNsense configuration; application response not verified.
+                    </div>
+                  </div>
+                {/if}
+
                 {#if metadataDecisions.length > 0}
                   <div class="pt-2 border-t border-border space-y-1">
                     <div class="text-xs uppercase tracking-wide text-muted-foreground">
@@ -693,7 +758,8 @@
                             class:text-danger={comparison.status === 'mismatch'}
                             class:text-warning={comparison.status === 'unknown'}
                             class="font-semibold uppercase"
-                          >{String(comparison.status ?? 'unknown')}</span>
+                            >{String(comparison.status ?? 'unknown')}</span
+                          >
                         </div>
                         <div class="grid grid-cols-[72px_1fr] gap-x-2 text-muted-foreground">
                           <span>NetBox</span><span>{String(comparison.netbox ?? '—')}</span>
@@ -755,7 +821,7 @@
                     >Discovery</span
                   >
                   {#if nodeData.node.provenance?.state}
-                    {@const state = nodeData.node.provenance.state}
+                    {@const (state = nodeData.node.provenance.state)}
                     <span
                       class="text-xs font-medium {state === 'confirmed'
     ? 'text-green-600 dark:text-green-400'
@@ -784,7 +850,7 @@
                 {/if}
 
                 {#if nodeData.node.identity}
-                  {@const id = nodeData.node.identity}
+                  {@const (id = nodeData.node.identity)}
                   <div
                     class="grid grid-cols-[80px_1fr] gap-x-2 gap-y-1 text-xs pt-2 border-t border-border"
                   >
@@ -822,9 +888,9 @@
                 </div>
                 <div class="border rounded-lg divide-y max-h-48 overflow-y-auto">
                   {#each nodeData.connectedLinks as link}
-                    {@const isFrom = link.from.id === nodeData.node.id}
-                    {@const otherNode = isFrom ? link.to : link.from}
-                    {@const metrics = linkMetricsMap[link.id]}
+                    {@const (isFrom = link.from.id === nodeData.node.id)}
+                    {@const (otherNode = isFrom ? link.to : link.from)}
+                    {@const (metrics = linkMetricsMap[link.id])}
                     <div class="p-3 space-y-1">
                       <div class="flex items-center justify-between">
                         <span class="text-sm font-medium flex items-center gap-1.5">
