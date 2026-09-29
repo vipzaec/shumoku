@@ -94,6 +94,9 @@
 
   let currentNodeMapping = $derived(nodeData && currentMapping?.nodes?.[nodeData.node.id])
   let nodeMetadata = $derived(nodeData?.node.metadata ?? {})
+  let metadataTitle = $derived(
+    typeof nodeMetadata.displayName === 'string' ? nodeMetadata.displayName : undefined,
+  )
   let metadataSource = $derived(
     typeof nodeMetadata.source === 'string' ? nodeMetadata.source : undefined,
   )
@@ -473,7 +476,7 @@
             <ArrowLeftIcon size={16} />
           </button>
         {/if}
-        {stripHtmlTags(nodeData?.node.label) || 'Node'}
+        {metadataTitle || stripHtmlTags(nodeData?.node.label) || 'Node'}
       </Dialog.Title>
     </Dialog.Header>
 
