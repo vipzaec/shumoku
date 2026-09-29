@@ -821,7 +821,7 @@
                     >Discovery</span
                   >
                   {#if nodeData.node.provenance?.state}
-                    {@const (state = nodeData.node.provenance.state)}
+                    {@const state = nodeData.node.provenance.state}
                     <span
                       class="text-xs font-medium {state === 'confirmed'
     ? 'text-green-600 dark:text-green-400'
@@ -850,7 +850,7 @@
                 {/if}
 
                 {#if nodeData.node.identity}
-                  {@const (id = nodeData.node.identity)}
+                  {@const id = nodeData.node.identity}
                   <div
                     class="grid grid-cols-[80px_1fr] gap-x-2 gap-y-1 text-xs pt-2 border-t border-border"
                   >
@@ -888,9 +888,9 @@
                 </div>
                 <div class="border rounded-lg divide-y max-h-48 overflow-y-auto">
                   {#each nodeData.connectedLinks as link}
-                    {@const (isFrom = link.from.id === nodeData.node.id)}
-                    {@const (otherNode = isFrom ? link.to : link.from)}
-                    {@const (metrics = linkMetricsMap[link.id])}
+                    {@const isFrom = link.from.id === nodeData.node.id}
+                    {@const otherNode = isFrom ? link.to : link.from}
+                    {@const metrics = linkMetricsMap[link.id]}
                     <div class="p-3 space-y-1">
                       <div class="flex items-center justify-between">
                         <span class="text-sm font-medium flex items-center gap-1.5">
