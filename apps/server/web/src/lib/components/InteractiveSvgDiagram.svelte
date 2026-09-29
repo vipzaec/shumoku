@@ -388,6 +388,11 @@
     return 'UNKNOWN'
   }
 
+  function trafficHopLabel(link: Record<string, unknown>): string {
+    const metadata = (link.metadata ?? {}) as Record<string, unknown>
+    return String(metadata.pathLabel ?? link.label ?? '').trim() || 'unlabelled connection'
+  }
+
   function findTrafficPath(requiredService = 'any'): TrafficPath | null {
     if (!graph || !pathSourceId || !pathDestinationId || pathSourceId === pathDestinationId)
       return null
@@ -446,7 +451,7 @@
       if (!step) return null
       hops.unshift({
         linkId: String(step.link.id ?? ''),
-        label: String(step.link.label ?? 'unlabelled connection'),
+        label: trafficHopLabel(step.link),
         decision: trafficDecision(step.link),
       })
       nodeIds.unshift(step.nodeId)
@@ -526,7 +531,7 @@
       nodeIds.add(link.to.node)
       hops.push({
         linkId: link.id,
-        label: String(link.label || 'unlabelled connection'),
+        label: trafficHopLabel(link as unknown as Record<string, unknown>),
         decision: trafficDecision(link as unknown as Record<string, unknown>),
       })
     }
