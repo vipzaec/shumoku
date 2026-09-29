@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ResolvedEdge } from '@shumoku/core'
+  import { continuationGeometry } from '../../lib/continuation'
   import type { LinkOverlaySnippet } from '../../lib/overlays'
   import type { RenderColors } from '../../lib/render-colors'
   import {
@@ -51,15 +52,17 @@
   // Edges with `edge.route` set were routed orthogonally (bus / polyline)
   // by the router and override the default Bezier; the polyline points
   // are drawn as right-angle segments with rounded corners.
+  const continuation = $derived(continuationGeometry(edge))
   const pathD = $derived(
-    edge.route
-      ? polylinePath(edge.route.points)
-      : edge.fromPort && edge.toPort
-        ? bezierEdgePath(
-            { ...edge.fromPort, lateralOffset: edge.fromLateralOffset },
-            { ...edge.toPort, lateralOffset: edge.toLateralOffset },
-          )
-        : `M ${edge.points[0]?.x ?? 0} ${edge.points[0]?.y ?? 0} L ${edge.points[1]?.x ?? 0} ${edge.points[1]?.y ?? 0}`,
+    continuation?.path ??
+      (edge.route
+        ? polylinePath(edge.route.points)
+        : edge.fromPort && edge.toPort
+          ? bezierEdgePath(
+              { ...edge.fromPort, lateralOffset: edge.fromLateralOffset },
+              { ...edge.toPort, lateralOffset: edge.toLateralOffset },
+            )
+          : `M ${edge.points[0]?.x ?? 0} ${edge.points[0]?.y ?? 0} L ${edge.points[1]?.x ?? 0} ${edge.points[1]?.y ?? 0}`),
   )
 
   const link = $derived(edge.link)
@@ -129,6 +132,11 @@
     e.stopPropagation()
     onselect?.(edge.id, e)
   }
+  function onBadgeKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    onselect?.(edge.id)
+  }
 
   function handleContextMenu(e: MouseEvent) {
     if (preventContextMenuDefault) e.preventDefault()
@@ -196,6 +204,43 @@
 
   {@render overlay?.(edge, overlayContext)}
 
+  {#if continuation}
+    {#each continuation.ends as terminal, index}
+      <circle cx={terminal.x} cy={terminal.y} r="4" fill={strokeColor} pointer-events="none" />
+      <g
+        role="button"
+        tabindex="0"
+        aria-label={`${continuation.label}: ${index === 0 ? 'source' : 'destination'} of the same connection`}
+        {onclick}
+        onkeydown={onBadgeKeydown}
+        style="cursor: pointer"
+      >
+        <rect
+          x={terminal.badgeX - 34}
+          y={terminal.badgeY - 10}
+          width="68"
+          height="20"
+          rx="5"
+          fill={selected ? colors.selection : '#1e293b'}
+          stroke="white"
+          stroke-width="1"
+        />
+        <text
+          x={terminal.badgeX}
+          y={terminal.badgeY + 3}
+          text-anchor="middle"
+          font-size="9"
+          font-weight="700"
+          fill="white"
+          pointer-events="none"
+        >
+          {continuation.label}
+        </text>
+        <title>One logical connection: {continuation.label}. Select to trace both ends.</title>
+      </g>
+    {/each}
+  {/if}
+
   <!-- Hit area -->
   <path
     d={pathD}
@@ -210,18 +255,32 @@
     oncontextmenu={handleContextMenu}
   />
 
-  {#if routeEdit && selected && edge.route?.kind === 'polyline'}
+  {#if routeEdit && selected && edge.route?.kind === 'polyline' && !continuation}
     {#each edge.route.points.slice(1, -1) as point, index}
-      <circle cx={point.x} cy={point.y} r="8" fill="white" stroke={colors.selection}
-        stroke-width="2" style="cursor: grab; touch-action: none" title="Drag to move; double-click to remove"
-        onpointerdown={(e) => { e.stopPropagation(); draggedPoint = index; e.currentTarget.setPointerCapture(e.pointerId) }}
+      <circle
+        cx={point.x}
+        cy={point.y}
+        r="8"
+        fill="white"
+        stroke={colors.selection}
+        stroke-width="2"
+        style="cursor: grab; touch-action: none"
+        title="Drag to move; double-click to remove"
+        onpointerdown={(e) => {
+    e.stopPropagation()
+    draggedPoint = index
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }}
         onpointerup={finishPoint}
-        ondblclick={(e) => { e.stopPropagation(); onrouteremove?.(edge.id, index) }}
+        ondblclick={(e) => {
+    e.stopPropagation()
+    onrouteremove?.(edge.id, index)
+  }}
       />
     {/each}
   {/if}
 
-  {#if midpoint()}
+  {#if midpoint() && !continuation}
     {@const mp = midpoint()}
     {#if mp}
       {@const labels = linkLabel()}

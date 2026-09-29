@@ -40,6 +40,7 @@ const resolveNodeSize = (n: {
   size?: { width: number; height: number }
 }) => n.size ?? engine.nodeBodySize(n as Parameters<typeof engine.nodeBodySize>[0])
 
+import { continuationGeometry } from './lib/continuation'
 import { type RenderColors, themeToColors } from './lib/render-colors'
 import {
   bezierEdgePath,
@@ -279,14 +280,17 @@ function renderEdge(edge: ResolvedEdge, colors: RenderColors): string {
   // Orthogonal (bus / polyline) routes are drawn as right-angle
   // polylines with light corner rounding; everything else falls back
   // to the standard port-anchored Bezier.
-  const pathD = edge.route
-    ? polylinePath(edge.route.points)
-    : edge.fromPort && edge.toPort
-      ? bezierEdgePath(
-          { ...edge.fromPort, lateralOffset: edge.fromLateralOffset },
-          { ...edge.toPort, lateralOffset: edge.toLateralOffset },
-        )
-      : `M ${edge.points[0]?.x ?? 0} ${edge.points[0]?.y ?? 0} L ${edge.points[1]?.x ?? 0} ${edge.points[1]?.y ?? 0}`
+  const continuation = continuationGeometry(edge)
+  const pathD =
+    continuation?.path ??
+    (edge.route
+      ? polylinePath(edge.route.points)
+      : edge.fromPort && edge.toPort
+        ? bezierEdgePath(
+            { ...edge.fromPort, lateralOffset: edge.fromLateralOffset },
+            { ...edge.toPort, lateralOffset: edge.toLateralOffset },
+          )
+        : `M ${edge.points[0]?.x ?? 0} ${edge.points[0]?.y ?? 0} L ${edge.points[1]?.x ?? 0} ${edge.points[1]?.y ?? 0}`)
   const link = edge.link
   const stroke = link?.style?.stroke ?? getVlanStroke(link?.vlan) ?? colors.linkStroke
   const dasharray = link?.type === 'dashed' ? '5 3' : (link?.style?.strokeDasharray ?? '')
@@ -305,7 +309,7 @@ function renderEdge(edge: ResolvedEdge, colors: RenderColors): string {
 
   // Labels
   let labels = ''
-  if (edge.labelAnchor || edge.points.length >= 2) {
+  if (!continuation && (edge.labelAnchor || edge.points.length >= 2)) {
     const midIdx = Math.floor(edge.points.length / 2)
     const a = edge.points[midIdx - 1]
     const b = edge.points[midIdx]
@@ -358,10 +362,21 @@ function renderEdge(edge: ResolvedEdge, colors: RenderColors): string {
   }
 
   const hitArea = `<path class="link-hit link-hit-area" d="${pathD}" fill="none" stroke="transparent" stroke-width="${Math.max(edge.width + 12, 16)}" stroke-linecap="round"/>`
+  const terminals =
+    continuation?.ends
+      .map(
+        (terminal, index) => `
+  <circle cx="${terminal.x}" cy="${terminal.y}" r="4" fill="${stroke}"/>
+  <g data-continuation-end="${index === 0 ? 'source' : 'destination'}">
+    <rect x="${terminal.badgeX - 34}" y="${terminal.badgeY - 10}" width="68" height="20" rx="5" fill="#1e293b" stroke="white" stroke-width="1"/>
+    <text x="${terminal.badgeX}" y="${terminal.badgeY + 3}" text-anchor="middle" font-size="9" font-weight="700" fill="white">${esc(continuation.label)}</text>
+  </g>`,
+      )
+      .join('') ?? ''
 
   return `<g class="link-group" ${dataAttributes.join(' ')}>
   ${line}
-  ${hitArea}${labels}
+  ${hitArea}${terminals}${labels}
 </g>`
 }
 
