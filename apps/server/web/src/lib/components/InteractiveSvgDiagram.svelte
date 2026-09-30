@@ -120,10 +120,12 @@
     HighlightOverlay,
     type HoveredElement,
     NodeStatusOverlay,
+    SemanticLayerOverlay,
     TooltipOverlay,
     TopologyViewer,
     WeathermapLinkOverlay,
   } from '$lib/components/topology'
+  import { semanticLayers } from '$lib/components/topology/semantic-layers'
   import { serviceIcons } from '$lib/service-icons'
   import {
     displaySettings,
@@ -292,6 +294,7 @@
   let portLabelsVisible = $state(true)
   let linkLabelsVisible = $state(true)
   let operatorObjectsVisible = $state(true)
+  let semanticHiddenLayers = $state<string[]>([])
   let pathExplorerOpen = $state(false)
   let dataHealthOpen = $state(false)
   let pathSourceId = $state('')
@@ -678,6 +681,8 @@
   const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
   const portStorageKey = $derived(`shumoku-layout-port-sides:${topologyId}`)
   const layerStorageKey = $derived(`shumoku-view-layers:${topologyId}`)
+  const availableSemanticLayers = $derived(semanticLayers(graph))
+  const hiddenSemanticLayerSet = $derived(new Set(semanticHiddenLayers))
 
   function loadLayerPreferences() {
     if (typeof localStorage === 'undefined' || !topologyId) return
@@ -687,11 +692,17 @@
       portLabelsVisible = saved.portLabels ?? true
       linkLabelsVisible = saved.linkLabels ?? true
       operatorObjectsVisible = saved.operatorObjects ?? true
+      semanticHiddenLayers = Array.isArray(saved.semanticHiddenLayers)
+        ? saved.semanticHiddenLayers.filter(
+            (item: unknown): item is string => typeof item === 'string',
+          )
+        : []
     } catch {
       nodeDetailsVisible = true
       portLabelsVisible = true
       linkLabelsVisible = true
       operatorObjectsVisible = true
+      semanticHiddenLayers = []
     }
   }
 
@@ -704,6 +715,7 @@
         portLabels: portLabelsVisible,
         linkLabels: linkLabelsVisible,
         operatorObjects: operatorObjectsVisible,
+        semanticHiddenLayers,
       }),
     )
   }
@@ -716,6 +728,13 @@
     if (layer === 'portLabels') portLabelsVisible = enabled
     if (layer === 'linkLabels') linkLabelsVisible = enabled
     if (layer === 'operatorObjects') operatorObjectsVisible = enabled
+    saveLayerPreferences()
+  }
+
+  function setSemanticLayer(layer: string, enabled: boolean) {
+    semanticHiddenLayers = enabled
+      ? semanticHiddenLayers.filter((item) => item !== layer)
+      : [...new Set([...semanticHiddenLayers, layer])]
     saveLayerPreferences()
   }
 
@@ -2533,6 +2552,12 @@
     svgElement,
     graph: activeGraph,
   })}
+        <SemanticLayerOverlay
+          {svgElement}
+          graph={activeGraph}
+          hiddenLayers={hiddenSemanticLayerSet}
+          forcedLinkIds={new Set([...highlightedPathLinks, ...controlPlanePath.linkIds])}
+        />
         <NodeStatusOverlay
           {svgElement}
           status={nodeStatusView}
@@ -3277,6 +3302,19 @@
   {#if layersOpen}
     <div class="layers-panel">
       <div class="layers-title">Information layers</div>
+      {#if availableSemanticLayers.length > 0}
+        <div class="layers-title">Diagram relationships</div>
+        {#each availableSemanticLayers as semanticLayer}
+          <label>
+            <input
+              type="checkbox"
+              checked={!hiddenSemanticLayerSet.has(semanticLayer)}
+              onchange={(event) => setSemanticLayer(semanticLayer, event.currentTarget.checked)}
+            >
+            {semanticLayer}
+          </label>
+        {/each}
+      {/if}
       <div class="view-presets" aria-label="View presets">
         <button class:active={activeViewPreset === 'full'} onclick={() => applyViewPreset('full')}>
           Full

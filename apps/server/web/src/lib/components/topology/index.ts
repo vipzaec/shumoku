@@ -24,6 +24,7 @@
 
 export { default as HighlightOverlay } from './HighlightOverlay.svelte'
 export { default as NodeStatusOverlay } from './NodeStatusOverlay.svelte'
+export { default as SemanticLayerOverlay } from './SemanticLayerOverlay.svelte'
 export type { ElementKind, HoveredElement } from './TooltipOverlay.svelte'
 export { default as TooltipOverlay } from './TooltipOverlay.svelte'
 export type {
