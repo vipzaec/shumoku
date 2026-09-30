@@ -23,7 +23,7 @@
     type RendererOverlaySnippets,
   } from '@shumoku/renderer'
   import ShumokuRenderer from '@shumoku/renderer/components/ShumokuRenderer.svelte'
-  import type { Snippet } from 'svelte'
+  import { type Snippet, untrack } from 'svelte'
 
   export interface ViewerContext {
     svgElement: SVGSVGElement | null
@@ -93,6 +93,8 @@
      * switches.
      */
     resetCameraOnSheetChange?: boolean
+    /** Reset the viewport when a different topology is loaded into this viewer. */
+    cameraResetKey?: string
 
     // --- LOD ---
     detail?: DetailOptions
@@ -129,6 +131,7 @@
     interaction = {},
     camera: cameraOptions = {},
     resetCameraOnSheetChange = true,
+    cameraResetKey = '',
     detail = {},
     onselect,
     oncontextmenu,
@@ -319,26 +322,54 @@
   // new `cameraOptions` reference.
 
   let camera = $state<Camera | null>(null)
+  let detachedCameraTransform: { x: number; y: number; k: number } | null = null
+  let detachedCameraSheetId: string | null = null
+  let detachedCameraResetKey = ''
   $effect(() => {
     if (cameraOptions === false || !svgElement) {
       camera = null
       return
     }
     const c = attachCamera(svgElement, cameraOptions)
+    const attachedSheetId = untrack(() => sheetId)
+    const attachedResetKey = untrack(() => cameraResetKey)
+    if (
+      detachedCameraTransform &&
+      detachedCameraResetKey === attachedResetKey &&
+      (detachedCameraSheetId === attachedSheetId || !resetCameraOnSheetChange)
+    ) {
+      c.zoomTo(detachedCameraTransform.k)
+      c.panTo(detachedCameraTransform.x, detachedCameraTransform.y)
+    }
     camera = c
     return () => {
+      detachedCameraTransform = c.getTransform()
+      detachedCameraSheetId = attachedSheetId
+      detachedCameraResetKey = attachedResetKey
       c.detach()
       camera = null
     }
   })
 
-  // Reset camera transform when the active sheet (or graph) changes,
-  // so each sheet opens at 1:1 rather than inheriting the previous
-  // sheet's pan/zoom. Opt-out via `resetCameraOnSheetChange={false}`.
+  // Graph refreshes (including port moves) must retain the viewport.
+  // Only a real sheet or topology switch resets it.
+  let previousCameraSheetId: string | null = null
+  let previousCameraResetKey = ''
+  let cameraIdentityInitialized = false
   $effect(() => {
-    sheetId // track
-    graph // track
-    if (resetCameraOnSheetChange) camera?.reset()
+    const nextSheetId = sheetId
+    const nextResetKey = cameraResetKey
+    if (!cameraIdentityInitialized) {
+      previousCameraSheetId = nextSheetId
+      previousCameraResetKey = nextResetKey
+      cameraIdentityInitialized = true
+      return
+    }
+    const sheetChanged = nextSheetId !== previousCameraSheetId
+    const topologyChanged = nextResetKey !== previousCameraResetKey
+    previousCameraSheetId = nextSheetId
+    previousCameraResetKey = nextResetKey
+    if (topologyChanged || (sheetChanged && resetCameraOnSheetChange)) camera?.reset()
   })
 
   function handleSelect(id: string | null, type: string | null) {
@@ -391,6 +422,11 @@
     return renderer?.getPinnedPositions(elementId) ?? {}
   }
 
+  /** Clear the render view's selection, including its visual highlight. */
+  export function clearSelection(): void {
+    renderer?.clearSelection()
+  }
+
   /** Snapshot the current camera transform so it can be restored later. */
   export function getCameraTransform(): { x: number; y: number; k: number } | null {
     return camera?.getTransform() ?? null
@@ -399,8 +435,8 @@
   /** Restore a previously snapshotted transform (pan + zoom level). */
   export function setCameraTransform(t: { x: number; y: number; k: number }): void {
     if (!camera) return
-    camera.panTo(t.x, t.y)
     camera.zoomTo(t.k)
+    camera.panTo(t.x, t.y)
   }
 
   // Only constructed when the template branch below has already

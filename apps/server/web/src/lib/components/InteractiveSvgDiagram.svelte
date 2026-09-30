@@ -2444,6 +2444,20 @@
   // --- Keyboard shortcut for search palette ---
 
   function handleKeydown(e: KeyboardEvent) {
+    if (
+      e.key === 'Escape' &&
+      layoutEdit &&
+      !objectEditorOpen &&
+      !linkEditorOpen &&
+      !groupEditorOpen
+    ) {
+      if (selectedLayoutNode || selectedLayoutLinkId || selectedLayoutPinIds.length > 0) {
+        viewer?.clearSelection()
+        handleSelect(null, null)
+        e.preventDefault()
+      }
+      return
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'k' && onSearchOpen) {
       e.preventDefault()
       onSearchOpen()
@@ -2486,6 +2500,7 @@
       bind:this={viewer}
       graph={visibleGraph}
       sheetId={currentSheetId}
+      cameraResetKey={topologyId}
       layout={currentSheetId ? undefined : serverLayout}
       theme={currentTheme}
       mode={layoutEdit ? 'edit' : 'view'}

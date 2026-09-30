@@ -360,6 +360,11 @@
     selection = new SvelteSet()
     emitSelection()
   }
+
+  /** Clear selection even when keyboard focus is outside the SVG. */
+  export function clearSelection(): void {
+    handleBackgroundClick()
+  }
   function handleContextMenu(id: string, type: string, e: MouseEvent) {
     // Right-click on an unselected item reduces the selection to that
     // single item; right-click on something already selected keeps the
