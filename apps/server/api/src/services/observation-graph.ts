@@ -77,6 +77,13 @@ const nodeShapeSchema = z.enum([
   'trapezoid',
 ]) satisfies z.ZodType<NodeShape>
 
+const blockSpacingSchema = z.object({
+  top: z.number().optional(),
+  right: z.number().optional(),
+  bottom: z.number().optional(),
+  left: z.number().optional(),
+})
+
 const nodeStyleSchema = modelObject<NodeStyle>()({
   fill: z.string().optional(),
   stroke: z.string().optional(),
@@ -86,6 +93,7 @@ const nodeStyleSchema = modelObject<NodeStyle>()({
   fontSize: z.number().optional(),
   fontWeight: z.enum(['normal', 'bold']).optional(),
   opacity: z.number().optional(),
+  outerSpacing: blockSpacingSchema.optional(),
 }) satisfies z.ZodType<NodeStyle>
 
 const deviceTypeSchema = z.enum(DeviceType) satisfies z.ZodType<DeviceType>
@@ -434,6 +442,7 @@ const subgraphStyleSchema = modelObject<SubgraphStyle>()({
   padding: z.number().optional(),
   nodeSpacing: z.number().optional(),
   rankSpacing: z.number().optional(),
+  outerSpacing: blockSpacingSchema.optional(),
 }) satisfies z.ZodType<SubgraphStyle>
 
 const pinSchema = modelObject<Pin>()({

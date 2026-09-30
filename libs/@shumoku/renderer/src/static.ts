@@ -284,7 +284,7 @@ function renderEdge(edge: ResolvedEdge, colors: RenderColors): string {
   const pathD =
     continuation?.path ??
     (edge.route
-      ? polylinePath(edge.route.points)
+      ? polylinePath(edge.route.points, edge.link.metadata?.['routePolicy'] === 'avoid' ? 12 : 6)
       : edge.fromPort && edge.toPort
         ? bezierEdgePath(
             { ...edge.fromPort, lateralOffset: edge.fromLateralOffset },

@@ -116,10 +116,53 @@ export interface OperatorLayoutState {
   portOffsets: Record<string, number>
   edgeRoutes: Record<string, Array<{ x: number; y: number }>>
   parentOverrides?: Record<string, string | null>
-  operatorNodes?: Array<{ id: string; label: string[]; parent?: string; type: string; tenant?: string; notes?: string; origin?: 'Manual' | 'NetBox' | 'Existing object'; reference?: { nodeId: string; nodeName: string }; binding?: { dataSourceId: string; kind: string; objectId: string; objectName: string } }>
-  presentationOverrides?: Record<string, { label?: string[]; type?: string }>
-  operatorLinks?: Array<{ id: string; from: string; to: string; label: string; relationship?: 'network' | 'management' | 'dependency' | 'traffic' | 'documentation'; direction?: 'none' | 'forward' | 'back' | 'both'; tenant?: string; notes?: string; fromSide: 'top' | 'bottom' | 'left' | 'right'; toSide: 'top' | 'bottom' | 'left' | 'right' }>
-  operatorGroups?: Array<{ id: string; label: string; parent?: string; direction: 'TB' | 'BT' | 'LR' | 'RL'; tenant?: string; notes?: string }>
+  operatorNodes?: Array<{
+    id: string
+    label: string[]
+    parent?: string
+    type: string
+    icon?: string
+    tenant?: string
+    notes?: string
+    origin?: 'Manual' | 'NetBox' | 'Existing object'
+    reference?: { nodeId: string; nodeName: string }
+    binding?: { dataSourceId: string; kind: string; objectId: string; objectName: string }
+  }>
+  presentationOverrides?: Record<string, { label?: string[]; type?: string; icon?: string }>
+  operatorLinks?: Array<{
+    id: string
+    from: string
+    to: string
+    label: string
+    relationship?: 'network' | 'management' | 'dependency' | 'traffic' | 'documentation'
+    direction?: 'none' | 'forward' | 'back' | 'both'
+    tenant?: string
+    notes?: string
+    fromSide: 'top' | 'bottom' | 'left' | 'right'
+    toSide: 'top' | 'bottom' | 'left' | 'right'
+  }>
+  operatorGroups?: Array<{
+    id: string
+    label: string
+    parent?: string
+    direction: 'TB' | 'BT' | 'LR' | 'RL'
+    tenant?: string
+    notes?: string
+  }>
+  blockSpacingOverrides?: Record<
+    string,
+    { top?: number; right?: number; bottom?: number; left?: number }
+  >
+  linkAppearanceOverrides?: Record<
+    string,
+    {
+      color: string
+      width: number
+      preset: 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash' | 'double'
+      routePolicy: 'avoid' | 'under'
+    }
+  >
+  linkPortOverrides?: Record<string, { from?: string; to?: string }>
 }
 
 function rowToTopology(row: TopologyRow): Topology {
@@ -492,7 +535,22 @@ export class TopologyService {
     const row = this.db
       .query('SELECT payload_json FROM topology_operator_layout WHERE topology_id = ?')
       .get(topologyId) as { payload_json: string } | null
-    if (!row) return { nodePositions: {}, portSides: {}, portOrders: {}, portOffsets: {}, edgeRoutes: {}, parentOverrides: {}, operatorNodes: [], presentationOverrides: {}, operatorLinks: [], operatorGroups: [] }
+    if (!row)
+      return {
+        nodePositions: {},
+        portSides: {},
+        portOrders: {},
+        portOffsets: {},
+        edgeRoutes: {},
+        parentOverrides: {},
+        operatorNodes: [],
+        presentationOverrides: {},
+        operatorLinks: [],
+        operatorGroups: [],
+        blockSpacingOverrides: {},
+        linkAppearanceOverrides: {},
+        linkPortOverrides: {},
+      }
     try {
       const value = JSON.parse(row.payload_json) as Partial<OperatorLayoutState>
       return {
@@ -506,9 +564,26 @@ export class TopologyService {
         presentationOverrides: value.presentationOverrides ?? {},
         operatorLinks: value.operatorLinks ?? [],
         operatorGroups: value.operatorGroups ?? [],
+        blockSpacingOverrides: value.blockSpacingOverrides ?? {},
+        linkAppearanceOverrides: value.linkAppearanceOverrides ?? {},
+        linkPortOverrides: value.linkPortOverrides ?? {},
       }
     } catch {
-      return { nodePositions: {}, portSides: {}, portOrders: {}, portOffsets: {}, edgeRoutes: {}, parentOverrides: {}, operatorNodes: [], presentationOverrides: {}, operatorLinks: [], operatorGroups: [] }
+      return {
+        nodePositions: {},
+        portSides: {},
+        portOrders: {},
+        portOffsets: {},
+        edgeRoutes: {},
+        parentOverrides: {},
+        operatorNodes: [],
+        presentationOverrides: {},
+        operatorLinks: [],
+        operatorGroups: [],
+        blockSpacingOverrides: {},
+        linkAppearanceOverrides: {},
+        linkPortOverrides: {},
+      }
     }
   }
 

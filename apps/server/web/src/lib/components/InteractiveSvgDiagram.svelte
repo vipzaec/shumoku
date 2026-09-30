@@ -93,10 +93,16 @@
    * `getSvgElement`) used by the search palette and drill-down flows
    * continue to work without refactoring callers.
    */
-  import { darkTheme, lightTheme, type NetworkGraph, type ResolvedLayout } from '@shumoku/core'
   import {
-    ArrowLeftIcon,
+    type BlockSpacing,
+    darkTheme,
+    lightTheme,
+    type NetworkGraph,
+    type ResolvedLayout,
+  } from '@shumoku/core'
+  import {
     ArrowCounterClockwiseIcon,
+    ArrowLeftIcon,
     CornersOutIcon,
     DatabaseIcon,
     GearSixIcon,
@@ -104,8 +110,8 @@
     MagnifyingGlassMinusIcon,
     MagnifyingGlassPlusIcon,
     PathIcon,
-    PlusIcon,
     PencilSimpleIcon,
+    PlusIcon,
     StackIcon,
   } from 'phosphor-svelte'
   import { onDestroy } from 'svelte'
@@ -118,6 +124,7 @@
     TopologyViewer,
     WeathermapLinkOverlay,
   } from '$lib/components/topology'
+  import { serviceIcons } from '$lib/service-icons'
   import {
     displaySettings,
     linkMapping,
@@ -183,6 +190,7 @@
   // the browser main thread froze the tab for minutes. Sheet drill-downs
   // still compute locally (child sheets are much smaller).
   let serverLayout = $state<ResolvedLayout | undefined>(undefined)
+  let baseGraph: NetworkGraph | undefined
   let loading = $state(true)
   let error = $state('')
   // Server is baking the layout in the background (large topology). While a
@@ -205,6 +213,7 @@
     label: string[]
     parent?: string
     type: string
+    icon?: string
     tenant?: string
     notes?: string
     origin?: 'Manual' | 'NetBox' | 'Existing object'
@@ -219,6 +228,7 @@
   type PresentationOverride = {
     label?: string[]
     type?: string
+    icon?: string
   }
   type OperatorLink = {
     id: string
@@ -244,15 +254,31 @@
   let presentationOverrides = $state<Record<string, PresentationOverride>>({})
   let operatorLinks = $state<OperatorLink[]>([])
   let operatorGroups = $state<OperatorGroup[]>([])
+  type LinkAppearance = {
+    color: string
+    width: number
+    preset: 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash' | 'double'
+    routePolicy: 'avoid' | 'under'
+  }
+  type LinkPorts = { from?: string; to?: string }
+  let blockSpacingOverrides = $state<Record<string, BlockSpacing>>({})
+  let linkAppearanceOverrides = $state<Record<string, LinkAppearance>>({})
+  let linkPortOverrides = $state<Record<string, LinkPorts>>({})
+  let appearanceEditorOpen = $state(false)
+  let appearanceDraft = $state<(LinkAppearance & LinkPorts & { id: string }) | null>(null)
   let objectEditorOpen = $state(false)
   let objectDraft = $state<OperatorNode | null>(null)
   let objectSource = $state<'Manual' | 'NetBox' | 'Existing object'>('Manual')
   let iconQuery = $state('')
+  let iconImportUrl = $state('')
+  let iconImportError = $state('')
   let bindingSources = $state<Array<{ id: string; name: string }>>([])
   let bindingSourceId = $state('')
   let bindingKind = $state('virtual-machine')
   let bindingQuery = $state('')
-  let bindingResults = $state<Array<{ id: string; kind: string; name: string; label: string[] }>>([])
+  let bindingResults = $state<Array<{ id: string; kind: string; name: string; label: string[] }>>(
+    [],
+  )
   let bindingLoading = $state(false)
   let bindingError = $state('')
   let linkEditorOpen = $state(false)
@@ -304,8 +330,7 @@
 
   async function saveCustomTrafficFlows(next: TrafficFlowProfile[]) {
     customTrafficFlows = next
-    if (topologyId && !readOnly)
-      await api.settings.setValue(flowSettingsKey, JSON.stringify(next))
+    if (topologyId && !readOnly) await api.settings.setValue(flowSettingsKey, JSON.stringify(next))
   }
 
   function newFlowDraft() {
@@ -359,7 +384,9 @@
 
   async function toggleCustomFlow(flow: TrafficFlowProfile) {
     await saveCustomTrafficFlows(
-      customTrafficFlows.map((item) => item.id === flow.id ? { ...item, enabled: item.enabled === false } : item),
+      customTrafficFlows.map((item) =>
+        item.id === flow.id ? { ...item, enabled: item.enabled === false } : item,
+      ),
     )
   }
 
@@ -396,8 +423,11 @@
   function findTrafficPath(requiredService = 'any'): TrafficPath | null {
     if (!graph || !pathSourceId || !pathDestinationId || pathSourceId === pathDestinationId)
       return null
-    const sourceLabel = nodeLabel(graph.nodes.find((node) => node.id === pathSourceId)).toLowerCase()
-    const kerioAccessPath = sourceLabel.includes('remote vpn users') || sourceLabel.includes('kerio')
+    const sourceLabel = nodeLabel(
+      graph.nodes.find((node) => node.id === pathSourceId),
+    ).toLowerCase()
+    const kerioAccessPath =
+      sourceLabel.includes('remote vpn users') || sourceLabel.includes('kerio')
     const adjacency = new Map<string, Array<{ nodeId: string; link: Record<string, unknown> }>>()
     for (const rawLink of graph.links) {
       const item = rawLink as unknown as Record<string, unknown>
@@ -410,8 +440,10 @@
       // not the path taken by these clients and must not hide the VPN gateway.
       if (kerioAccessPath && /^(local|lan) routing$/i.test(label)) continue
       const arrow = String(item.arrow ?? 'both')
-      if (arrow !== 'reverse') adjacency.set(from, [...(adjacency.get(from) ?? []), { nodeId: to, link: item }])
-      if (arrow !== 'forward') adjacency.set(to, [...(adjacency.get(to) ?? []), { nodeId: from, link: item }])
+      if (arrow !== 'reverse')
+        adjacency.set(from, [...(adjacency.get(from) ?? []), { nodeId: to, link: item }])
+      if (arrow !== 'forward')
+        adjacency.set(to, [...(adjacency.get(to) ?? []), { nodeId: from, link: item }])
     }
     const startKey = `${pathSourceId}|${requiredService === 'any' ? 1 : 0}`
     const queue = [{ nodeId: pathSourceId, matched: requiredService === 'any' }]
@@ -422,7 +454,8 @@
     const visited = new Set([startKey])
     let goalKey = ''
     while (queue.length) {
-      const current = queue.shift()!
+      const current = queue.shift()
+      if (!current) break
       const currentKey = `${current.nodeId}|${current.matched ? 1 : 0}`
       if (current.nodeId === pathDestinationId && current.matched) {
         goalKey = currentKey
@@ -464,7 +497,9 @@
     const metadata = (graph as unknown as { metadata?: { trafficFlows?: unknown[] } })?.metadata
     const resolvedIds = new Map(
       (graph?.nodes ?? []).map((node) => [
-        String((node as unknown as { metadata?: { logicalId?: string } }).metadata?.logicalId ?? node.id),
+        String(
+          (node as unknown as { metadata?: { logicalId?: string } }).metadata?.logicalId ?? node.id,
+        ),
         node.id,
       ]),
     )
@@ -479,20 +514,21 @@
         }
       })
     })
-    const profiles = [...(metadata?.trafficFlows ?? []), ...nodeFlows].filter((item): item is TrafficFlowProfile => {
-      const flow = item as Partial<TrafficFlowProfile>
-      return Boolean(flow.id && flow.label && flow.source && flow.destination)
-    })
+    const profiles = [...(metadata?.trafficFlows ?? []), ...nodeFlows].filter(
+      (item): item is TrafficFlowProfile => {
+        const flow = item as Partial<TrafficFlowProfile>
+        return Boolean(flow.id && flow.label && flow.source && flow.destination)
+      },
+    )
     return [...new Map(profiles.map((flow) => [flow.id, flow])).values()]
   })
   const editableTrafficFlows = $derived.by(() => {
     const customIds = new Set(customTrafficFlows.map((flow) => flow.id))
-    return [
-      ...customTrafficFlows,
-      ...trafficFlowProfiles.filter((flow) => !customIds.has(flow.id)),
-    ]
+    return [...customTrafficFlows, ...trafficFlowProfiles.filter((flow) => !customIds.has(flow.id))]
   })
-  const availableTrafficFlows = $derived(editableTrafficFlows.filter((flow) => flow.enabled !== false))
+  const availableTrafficFlows = $derived(
+    editableTrafficFlows.filter((flow) => flow.enabled !== false),
+  )
 
   $effect(() => {
     if (!pathFlowId) return
@@ -553,12 +589,18 @@
       }
       return { nodeIds, linkIds }
     }
-    const sourceLabel = nodeLabel(graph?.nodes.find((node) => node.id === pathSourceId)).toLowerCase()
-    if (!graph || !sourceLabel.includes('netbird'))
-      return { nodeIds, linkIds }
+    const sourceLabel = nodeLabel(
+      graph?.nodes.find((node) => node.id === pathSourceId),
+    ).toLowerCase()
+    if (!graph || !sourceLabel.includes('netbird')) return { nodeIds, linkIds }
     for (const rawLink of graph.links) {
       const item = rawLink as unknown as Record<string, unknown>
-      if (String(item.label ?? '').trim().toLowerCase() !== 'control') continue
+      if (
+        String(item.label ?? '')
+          .trim()
+          .toLowerCase() !== 'control'
+      )
+        continue
       const from = String((item.from as { node?: string })?.node ?? '')
       const to = String((item.to as { node?: string })?.node ?? '')
       if (from) nodeIds.add(from)
@@ -576,7 +618,8 @@
         const item = raw as { source?: unknown; observedAt?: unknown }
         const source = String(item.source ?? '')
         const observedAt = Number(item.observedAt ?? 0)
-        if (source && observedAt && observedAt > (entries.get(source) ?? 0)) entries.set(source, observedAt)
+        if (source && observedAt && observedAt > (entries.get(source) ?? 0))
+          entries.set(source, observedAt)
       }
     }
     return [...entries.entries()].map(([source, observedAt]) => ({ source, observedAt }))
@@ -627,6 +670,9 @@
     presentationOverrides?: Record<string, PresentationOverride>
     operatorLinks?: OperatorLink[]
     operatorGroups?: OperatorGroup[]
+    blockSpacingOverrides?: Record<string, BlockSpacing>
+    linkAppearanceOverrides?: Record<string, LinkAppearance>
+    linkPortOverrides?: Record<string, LinkPorts>
   }
 
   const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
@@ -662,7 +708,10 @@
     )
   }
 
-  function setLayer(layer: 'nodeDetails' | 'portLabels' | 'linkLabels' | 'operatorObjects', enabled: boolean) {
+  function setLayer(
+    layer: 'nodeDetails' | 'portLabels' | 'linkLabels' | 'operatorObjects',
+    enabled: boolean,
+  ) {
     if (layer === 'nodeDetails') nodeDetailsVisible = enabled
     if (layer === 'portLabels') portLabelsVisible = enabled
     if (layer === 'linkLabels') linkLabelsVisible = enabled
@@ -672,13 +721,38 @@
 
   const visibleGraph = $derived.by<NetworkGraph | undefined>(() => {
     if (!graph || operatorObjectsVisible) return graph
-    const hiddenNodes = new Set(graph.nodes.filter((node) => Boolean((node.metadata as Record<string, unknown> | undefined)?.operatorObject)).map((node) => node.id))
-    const hiddenGroups = new Set((graph.subgraphs ?? []).filter((group) => Boolean((group.metadata as Record<string, unknown> | undefined)?.operatorObject)).map((group) => group.id))
+    const hiddenNodes = new Set(
+      graph.nodes
+        .filter((node) =>
+          Boolean((node.metadata as Record<string, unknown> | undefined)?.operatorObject),
+        )
+        .map((node) => node.id),
+    )
+    const hiddenGroups = new Set(
+      (graph.subgraphs ?? [])
+        .filter((group) =>
+          Boolean((group.metadata as Record<string, unknown> | undefined)?.operatorObject),
+        )
+        .map((group) => group.id),
+    )
     return {
       ...graph,
-      nodes: graph.nodes.filter((node) => !hiddenNodes.has(node.id)).map((node) => hiddenGroups.has(node.parent ?? '') ? { ...node, parent: undefined } : node),
-      links: graph.links.filter((link) => !Boolean((link.metadata as Record<string, unknown> | undefined)?.operatorObject) && !hiddenNodes.has(link.from.node) && !hiddenNodes.has(link.to.node)),
-      subgraphs: (graph.subgraphs ?? []).filter((group) => !hiddenGroups.has(group.id)).map((group) => hiddenGroups.has(group.parent ?? '') ? { ...group, parent: undefined } : group),
+      nodes: graph.nodes
+        .filter((node) => !hiddenNodes.has(node.id))
+        .map((node) =>
+          hiddenGroups.has(node.parent ?? '') ? { ...node, parent: undefined } : node,
+        ),
+      links: graph.links.filter(
+        (link) =>
+          !(link.metadata as Record<string, unknown> | undefined)?.operatorObject &&
+          !hiddenNodes.has(link.from.node) &&
+          !hiddenNodes.has(link.to.node),
+      ),
+      subgraphs: (graph.subgraphs ?? [])
+        .filter((group) => !hiddenGroups.has(group.id))
+        .map((group) =>
+          hiddenGroups.has(group.parent ?? '') ? { ...group, parent: undefined } : group,
+        ),
     }
   })
 
@@ -764,6 +838,9 @@
     overrides: Record<string, PresentationOverride> = presentationOverrides,
     manualLinks: OperatorLink[] = operatorLinks,
     manualGroups: OperatorGroup[] = operatorGroups,
+    spacing: Record<string, BlockSpacing> = blockSpacingOverrides,
+    appearances: Record<string, LinkAppearance> = linkAppearanceOverrides,
+    linkPorts: Record<string, LinkPorts> = linkPortOverrides,
   ) {
     if (!topologyId || readOnly) return
     await api.topologies.displaySettings.set(topologyId, {
@@ -778,8 +855,48 @@
         presentationOverrides: overrides,
         operatorLinks: manualLinks,
         operatorGroups: manualGroups,
+        blockSpacingOverrides: spacing,
+        linkAppearanceOverrides: appearances,
+        linkPortOverrides: linkPorts,
       },
     })
+  }
+
+  function applyLinkPresentation<T extends NetworkGraph['links'][number]>(
+    link: T,
+    appearances: Record<string, LinkAppearance>,
+    linkPorts: Record<string, LinkPorts>,
+  ): T {
+    const id = link.id ?? ''
+    const ports = linkPorts[id]
+    const appearance = appearances[id]
+    const dash =
+      appearance?.preset === 'dashed'
+        ? '8 5'
+        : appearance?.preset === 'dotted'
+          ? '1 5'
+          : appearance?.preset === 'dash-dot'
+            ? '10 4 2 4'
+            : appearance?.preset === 'long-dash'
+              ? '16 6'
+              : ''
+    return {
+      ...link,
+      ...(ports?.from ? { from: { ...link.from, port: ports.from } } : {}),
+      ...(ports?.to ? { to: { ...link.to, port: ports.to } } : {}),
+      ...(appearance
+        ? {
+            type: appearance.preset === 'double' ? ('double' as const) : ('solid' as const),
+            style: {
+              ...link.style,
+              stroke: appearance.color,
+              strokeWidth: appearance.width,
+              strokeDasharray: dash,
+            },
+            metadata: { ...link.metadata, routePolicy: appearance.routePolicy },
+          }
+        : {}),
+    } as T
   }
 
   function applyLayoutOverrides(
@@ -793,130 +910,194 @@
     overrides: Record<string, PresentationOverride> = presentationOverrides,
     manualLinks: OperatorLink[] = operatorLinks,
     manualGroups: OperatorGroup[] = operatorGroups,
+    spacing: Record<string, BlockSpacing> = blockSpacingOverrides,
+    appearances: Record<string, LinkAppearance> = linkAppearanceOverrides,
+    linkPorts: Record<string, LinkPorts> = linkPortOverrides,
   ): NetworkGraph {
     if (
       Object.keys(pins).length === 0 &&
       Object.keys(sides).length === 0 &&
       Object.keys(parents).length === 0 &&
       manualNodes.length === 0 &&
-      Object.keys(overrides).length === 0
-      && manualLinks.length === 0
-      && manualGroups.length === 0
-    ) return source
+      Object.keys(overrides).length === 0 &&
+      manualLinks.length === 0 &&
+      manualGroups.length === 0 &&
+      Object.keys(spacing).length === 0 &&
+      Object.keys(appearances).length === 0 &&
+      Object.keys(linkPorts).length === 0
+    )
+      return source
     const mergedNodes = [
       ...source.nodes,
-      ...manualNodes.filter((manual) => !source.nodes.some((node) => node.id === manual.id)).map((manual) => ({
-        id: manual.id,
-        label: manual.label,
-        parent: manual.parent,
-        spec: { kind: 'hardware' as const, type: manual.type },
-        style: { strokeDasharray: '6 4' },
-        metadata: {
-          operatorObject: true,
-          source: 'operator',
-          origin: manual.origin ?? (manual.binding ? 'NetBox' : manual.reference ? 'Existing object' : 'Manual'),
-          tenant: manual.tenant,
-          annotations: manual.notes,
-          binding: manual.binding,
-        },
-      })),
+      ...manualNodes
+        .filter((manual) => !source.nodes.some((node) => node.id === manual.id))
+        .map((manual) => ({
+          id: manual.id,
+          label: manual.label,
+          parent: manual.parent,
+          spec: {
+            kind: 'hardware' as const,
+            type: manual.type,
+            ...(manual.icon ? { icon: manual.icon } : {}),
+          },
+          style: { strokeDasharray: '6 4' },
+          metadata: {
+            operatorObject: true,
+            source: 'operator',
+            origin:
+              manual.origin ??
+              (manual.binding ? 'NetBox' : manual.reference ? 'Existing object' : 'Manual'),
+            tenant: manual.tenant,
+            annotations: manual.notes,
+            binding: manual.binding,
+          },
+        })),
     ]
-    const operatorPorts = new Map<string, Array<{ id: string; label: string; connectors: never[]; placement: { side: 'top' | 'bottom' | 'left' | 'right'; order: number } }>>()
+    const operatorPorts = new Map<
+      string,
+      Array<{
+        id: string
+        label: string
+        connectors: never[]
+        placement: { side: 'top' | 'bottom' | 'left' | 'right'; order: number }
+      }>
+    >()
     for (const link of manualLinks) {
       const fromPorts = operatorPorts.get(link.from) ?? []
-      fromPorts.push({ id: `${link.id}:from`, label: link.label, connectors: [], placement: { side: link.fromSide, order: fromPorts.length } })
+      fromPorts.push({
+        id: `${link.id}:from`,
+        label: link.label,
+        connectors: [],
+        placement: { side: link.fromSide, order: fromPorts.length },
+      })
       operatorPorts.set(link.from, fromPorts)
       const toPorts = operatorPorts.get(link.to) ?? []
-      toPorts.push({ id: `${link.id}:to`, label: link.label, connectors: [], placement: { side: link.toSide, order: toPorts.length } })
+      toPorts.push({
+        id: `${link.id}:to`,
+        label: link.label,
+        connectors: [],
+        placement: { side: link.toSide, order: toPorts.length },
+      })
       operatorPorts.set(link.to, toPorts)
     }
     const mergedSubgraphs = [
       ...(source.subgraphs ?? []),
-      ...manualGroups.filter((manual) => !(source.subgraphs ?? []).some((group) => group.id === manual.id)).map((manual, index) => ({
-        id: manual.id,
-        label: manual.label,
-        parent: manual.parent,
-        direction: manual.direction,
-        // Empty groups have no child hull for the layout engine to measure.
-        // Keep a small selectable canvas area until an object is placed in it.
-        bounds: {
-          x: 80 + (index % 3) * 280,
-          y: 80 + Math.floor(index / 3) * 180,
-          width: 240,
-          height: 140,
-        },
-        metadata: {
-          operatorObject: true,
-          source: 'operator',
-          origin: 'Manual',
-          tenant: manual.tenant,
-          annotations: manual.notes,
-        },
-      })),
+      ...manualGroups
+        .filter((manual) => !(source.subgraphs ?? []).some((group) => group.id === manual.id))
+        .map((manual, index) => ({
+          id: manual.id,
+          label: manual.label,
+          parent: manual.parent,
+          direction: manual.direction,
+          // Empty groups have no child hull for the layout engine to measure.
+          // Keep a small selectable canvas area until an object is placed in it.
+          bounds: {
+            x: 80 + (index % 3) * 280,
+            y: 80 + Math.floor(index / 3) * 180,
+            width: 240,
+            height: 140,
+          },
+          metadata: {
+            operatorObject: true,
+            source: 'operator',
+            origin: 'Manual',
+            tenant: manual.tenant,
+            annotations: manual.notes,
+          },
+        })),
     ]
     const validNodeIds = new Set(mergedNodes.map((node) => node.id))
     return {
       ...source,
-      nodes: mergedNodes.map((node) => ({
-        ...node,
-        ...(manualNodes.find((manual) => manual.id === node.id)
-          ? {
-              label: manualNodes.find((manual) => manual.id === node.id)!.label,
-              parent: manualNodes.find((manual) => manual.id === node.id)!.parent,
-              spec: {
-                kind: 'hardware' as const,
-                type: manualNodes.find((manual) => manual.id === node.id)!.type,
-              },
-            }
-          : {}),
-        ...(overrides[node.id]?.label ? { label: overrides[node.id].label } : {}),
-        ...(overrides[node.id]?.type
-          ? { spec: { kind: 'hardware' as const, type: overrides[node.id].type } }
-          : {}),
-        ...(Object.hasOwn(parents, node.id) ? { parent: parents[node.id] ?? undefined } : {}),
-        ...(pins[node.id] ? { position: pins[node.id] } : {}),
-        ...((node.ports || operatorPorts.has(node.id))
-          ? {
-              ports: [...(node.ports ?? []).filter((port) => !port.id.startsWith('operator-link-')), ...(operatorPorts.get(node.id) ?? [])].map((port) => {
-                const side = sides[`${node.id}:${port.id}`]
-                const order = orders[`${node.id}:${port.id}`]
-                const offset = offsets[`${node.id}:${port.id}`]
-                return side || order !== undefined || offset !== undefined
-                  ? {
-                      ...port,
-                      placement: {
-                        ...port.placement,
-                        ...(side ? { side } : {}),
-                        ...(order !== undefined ? { order } : {}),
-                        ...(offset !== undefined ? { offset } : {}),
-                      },
-                    }
-                  : port
-              }),
-            }
-          : {}),
-      })),
+      nodes: mergedNodes.map((node) => {
+        const manual = manualNodes.find((candidate) => candidate.id === node.id)
+        return {
+          ...node,
+          ...(manual
+            ? {
+                label: manual.label,
+                parent: manual.parent,
+                spec: {
+                  kind: 'hardware' as const,
+                  type: manual.type,
+                  ...(manual.icon ? { icon: manual.icon } : {}),
+                },
+              }
+            : {}),
+          ...(overrides[node.id]?.label ? { label: overrides[node.id].label } : {}),
+          ...(overrides[node.id]?.type || overrides[node.id]?.icon
+            ? {
+                spec: {
+                  ...node.spec,
+                  ...(overrides[node.id]?.type
+                    ? { kind: 'hardware' as const, type: overrides[node.id].type }
+                    : {}),
+                  ...(overrides[node.id]?.icon ? { icon: overrides[node.id].icon } : {}),
+                },
+              }
+            : {}),
+          ...(Object.hasOwn(parents, node.id) ? { parent: parents[node.id] ?? undefined } : {}),
+          ...(pins[node.id] ? { position: pins[node.id] } : {}),
+          ...(spacing[node.id] ? { style: { ...node.style, outerSpacing: spacing[node.id] } } : {}),
+          ...(node.ports || operatorPorts.has(node.id)
+            ? {
+                ports: [
+                  ...(node.ports ?? []).filter((port) => !port.id.startsWith('operator-link-')),
+                  ...(operatorPorts.get(node.id) ?? []),
+                ].map((port) => {
+                  const side = sides[`${node.id}:${port.id}`]
+                  const order = orders[`${node.id}:${port.id}`]
+                  const offset = offsets[`${node.id}:${port.id}`]
+                  return side || order !== undefined || offset !== undefined
+                    ? {
+                        ...port,
+                        placement: {
+                          ...port.placement,
+                          ...(side ? { side } : {}),
+                          ...(order !== undefined ? { order } : {}),
+                          ...(offset !== undefined ? { offset } : {}),
+                        },
+                      }
+                    : port
+                }),
+              }
+            : {}),
+        }
+      }),
       links: [
-        ...source.links.filter((link) => !(link.metadata as Record<string, unknown> | undefined)?.operatorObject),
-        ...manualLinks.filter((link) => validNodeIds.has(link.from) && validNodeIds.has(link.to)).map((link) => ({
-          id: link.id,
-          from: { node: link.from, port: `${link.id}:from` },
-          to: { node: link.to, port: `${link.id}:to` },
-          label: link.label,
-          arrow: link.direction ?? 'forward',
-          metadata: {
-            operatorObject: true,
-            source: 'operator',
-            relationship: link.relationship ?? 'network',
-            direction: link.direction ?? 'forward',
-            origin: 'Manual',
-            tenant: link.tenant,
-            annotations: link.notes,
-          },
-        })),
+        ...source.links
+          .filter((link) => !(link.metadata as Record<string, unknown> | undefined)?.operatorObject)
+          .map((link) => applyLinkPresentation(link, appearances, linkPorts)),
+        ...manualLinks
+          .filter((link) => validNodeIds.has(link.from) && validNodeIds.has(link.to))
+          .map((link) =>
+            applyLinkPresentation(
+              {
+                id: link.id,
+                from: { node: link.from, port: `${link.id}:from` },
+                to: { node: link.to, port: `${link.id}:to` },
+                label: link.label,
+                arrow: link.direction ?? 'forward',
+                metadata: {
+                  operatorObject: true,
+                  source: 'operator',
+                  relationship: link.relationship ?? 'network',
+                  direction: link.direction ?? 'forward',
+                  origin: 'Manual',
+                  tenant: link.tenant,
+                  annotations: link.notes,
+                },
+              },
+              appearances,
+              linkPorts,
+            ),
+          ),
       ],
       subgraphs: mergedSubgraphs.map((subgraph) => ({
         ...subgraph,
+        ...(spacing[subgraph.id]
+          ? { style: { ...subgraph.style, outerSpacing: spacing[subgraph.id] } }
+          : {}),
         ...(Object.hasOwn(parents, subgraph.id)
           ? { parent: parents[subgraph.id] ?? undefined }
           : {}),
@@ -975,6 +1156,7 @@
         return
       }
       if (res.graph) {
+        baseGraph = res.graph
         const saved = (display as { operatorLayout?: OperatorLayout } | null)?.operatorLayout
         const localPins = readPins()
         const localSides = readPortSides()
@@ -989,7 +1171,10 @@
             (saved.operatorNodes?.length ?? 0) > 0 ||
             Object.keys(saved.presentationOverrides ?? {}).length > 0 ||
             (saved.operatorLinks?.length ?? 0) > 0 ||
-            (saved.operatorGroups?.length ?? 0) > 0)
+            (saved.operatorGroups?.length ?? 0) > 0 ||
+            Object.keys(saved.blockSpacingOverrides ?? {}).length > 0 ||
+            Object.keys(saved.linkAppearanceOverrides ?? {}).length > 0 ||
+            Object.keys(saved.linkPortOverrides ?? {}).length > 0)
         const pins = serverHasLayout ? saved.nodePositions : localPins
         const sides = serverHasLayout ? saved.portSides : localSides
         const orders = serverHasLayout ? (saved.portOrders ?? {}) : {}
@@ -999,6 +1184,9 @@
         const overrides = saved?.presentationOverrides ?? {}
         const manualLinks = saved?.operatorLinks ?? []
         const manualGroups = saved?.operatorGroups ?? []
+        const spacing = saved?.blockSpacingOverrides ?? {}
+        const appearances = saved?.linkAppearanceOverrides ?? {}
+        const linkPorts = saved?.linkPortOverrides ?? {}
         edgeRoutes = saved?.edgeRoutes ?? {}
         pinnedPositions = pins
         portSides = sides
@@ -1009,17 +1197,41 @@
         presentationOverrides = overrides
         operatorLinks = manualLinks
         operatorGroups = manualGroups
+        blockSpacingOverrides = spacing
+        linkAppearanceOverrides = appearances
+        linkPortOverrides = linkPorts
         if (
           !serverHasLayout &&
           (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)
         ) {
           void persistOperatorLayout(localPins, localSides, {}, {}, {})
         }
-        graph = applyLayoutOverrides(res.graph, pins, sides, orders, offsets, parents, manualNodes, overrides, manualLinks, manualGroups)
+        graph = applyLayoutOverrides(
+          res.graph,
+          pins,
+          sides,
+          orders,
+          offsets,
+          parents,
+          manualNodes,
+          overrides,
+          manualLinks,
+          manualGroups,
+          spacing,
+          appearances,
+          linkPorts,
+        )
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
         serverLayout =
-          Object.keys(pins).length || Object.keys(sides).length || Object.keys(parents).length || manualNodes.length || Object.keys(overrides).length
+          Object.keys(pins).length ||
+          Object.keys(sides).length ||
+          Object.keys(parents).length ||
+          manualNodes.length ||
+          Object.keys(overrides).length ||
+          Object.keys(spacing).length ||
+          Object.keys(appearances).length ||
+          Object.keys(linkPorts).length
             ? undefined
             : res.resolved
         hasGraph = true
@@ -1192,7 +1404,7 @@
       (graph.subgraphs ?? []).map((subgraph) => [
         subgraph.id,
         Object.hasOwn(parentOverrides, subgraph.id)
-          ? parentOverrides[subgraph.id] ?? undefined
+          ? (parentOverrides[subgraph.id] ?? undefined)
           : subgraph.parent,
       ]),
     )
@@ -1218,11 +1430,44 @@
   }
 
   function changeSelectedParent(parent: string) {
-    if (!graph || !selectedLayoutNode || !['node', 'subgraph'].includes(selectedLayoutType ?? '')) return
+    if (!graph || !selectedLayoutNode || !['node', 'subgraph'].includes(selectedLayoutType ?? ''))
+      return
     const next = { ...parentOverrides, [selectedLayoutNode]: parent || null }
     parentOverrides = next
-    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, next)
+    void persistOperatorLayout(
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      edgeRoutes,
+      next,
+    )
     graph = applyLayoutOverrides(graph, pinnedPositions, portSides, portOrders, portOffsets, next)
+    serverLayout = undefined
+  }
+
+  function selectedBlockSpacing(side: keyof BlockSpacing): number {
+    if (!selectedLayoutNode) return 0
+    const node = graph?.nodes.find((candidate) => candidate.id === selectedLayoutNode)
+    const group = graph?.subgraphs?.find((candidate) => candidate.id === selectedLayoutNode)
+    return (
+      blockSpacingOverrides[selectedLayoutNode]?.[side] ??
+      node?.style?.outerSpacing?.[side] ??
+      group?.style?.outerSpacing?.[side] ??
+      0
+    )
+  }
+
+  function setSelectedBlockSpacing(side: keyof BlockSpacing, raw: string) {
+    if (!graph || !selectedLayoutNode) return
+    const value = Math.min(1000, Math.max(0, Number(raw) || 0))
+    const next = {
+      ...blockSpacingOverrides,
+      [selectedLayoutNode]: { ...blockSpacingOverrides[selectedLayoutNode], [side]: value },
+    }
+    blockSpacingOverrides = next
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
+    graph = applyLayoutOverrides(graph, pinnedPositions, portSides, portOrders, portOffsets)
     serverLayout = undefined
   }
 
@@ -1250,8 +1495,141 @@
   function filteredIconTypes() {
     const query = iconQuery.trim().toLowerCase()
     return query
-      ? objectIconTypes.filter(([value, label]) => value.includes(query) || label.toLowerCase().includes(query))
+      ? objectIconTypes.filter(
+          ([value, label]) => value.includes(query) || label.toLowerCase().includes(query),
+        )
       : objectIconTypes
+  }
+
+  async function readLocalIcon(file: File): Promise<string> {
+    if (file.size > 450_000) throw new Error('Icon exceeds 450 KB')
+    const type = file.type.toLowerCase()
+    if (type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
+      const document = new DOMParser().parseFromString(await file.text(), 'image/svg+xml')
+      const root = document.documentElement
+      if (root.localName !== 'svg' || document.querySelector('parsererror'))
+        throw new Error('Invalid SVG')
+      const allowedElements = new Set([
+        'svg',
+        'g',
+        'path',
+        'rect',
+        'circle',
+        'ellipse',
+        'polygon',
+        'polyline',
+        'line',
+        'defs',
+        'linearGradient',
+        'radialGradient',
+        'stop',
+        'clipPath',
+      ])
+      const allowedAttributes = new Set([
+        'xmlns',
+        'viewBox',
+        'width',
+        'height',
+        'fill',
+        'stroke',
+        'stroke-width',
+        'stroke-linecap',
+        'stroke-linejoin',
+        'fill-rule',
+        'clip-rule',
+        'd',
+        'points',
+        'x',
+        'y',
+        'cx',
+        'cy',
+        'r',
+        'rx',
+        'ry',
+        'x1',
+        'x2',
+        'y1',
+        'y2',
+        'transform',
+        'opacity',
+        'stop-color',
+        'stop-opacity',
+        'id',
+        'offset',
+        'clip-path',
+      ])
+      for (const element of [...root.querySelectorAll('*')]) {
+        if (!allowedElements.has(element.localName)) {
+          element.remove()
+          continue
+        }
+        for (const attribute of [...element.attributes]) {
+          if (
+            !allowedAttributes.has(attribute.name) ||
+            /url\(|javascript:|data:/i.test(attribute.value)
+          )
+            element.removeAttribute(attribute.name)
+        }
+      }
+      for (const attribute of [...root.attributes]) {
+        if (
+          !allowedAttributes.has(attribute.name) ||
+          /url\(|javascript:|data:/i.test(attribute.value)
+        )
+          root.removeAttribute(attribute.name)
+      }
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(root))}`
+    }
+    if (
+      ![
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+        'image/x-icon',
+        'image/vnd.microsoft.icon',
+      ].includes(type)
+    ) {
+      throw new Error('Use SVG, PNG, JPEG, WebP or ICO')
+    }
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result ?? ''))
+      reader.onerror = () => reject(new Error('Unable to read icon file'))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  async function uploadObjectIcon(file: File | undefined) {
+    if (!file || !objectDraft) return
+    iconImportError = ''
+    try {
+      const icon = await readLocalIcon(file)
+      if (icon.length > 750_000) throw new Error('Encoded icon exceeds 750 KB')
+      objectDraft.icon = icon
+    } catch (error) {
+      iconImportError = error instanceof Error ? error.message : 'Unable to import icon'
+    }
+  }
+
+  async function importObjectIconUrl() {
+    if (!objectDraft) return
+    iconImportError = ''
+    try {
+      const url = new URL(iconImportUrl)
+      if (url.protocol !== 'https:') throw new Error('Use an HTTPS image URL')
+      const response = await fetch(url, { credentials: 'omit', mode: 'cors' })
+      if (!response.ok) throw new Error(`Icon download failed (${response.status})`)
+      const blob = await response.blob()
+      const file = new File([blob], url.pathname.split('/').pop() || 'icon', { type: blob.type })
+      const icon = await readLocalIcon(file)
+      if (icon.length > 750_000) throw new Error('Encoded icon exceeds 750 KB')
+      objectDraft.icon = icon
+    } catch (error) {
+      iconImportError =
+        error instanceof Error
+          ? error.message
+          : 'Import failed; download the image and upload it from your computer'
+    }
   }
 
   function startAddObject() {
@@ -1289,7 +1667,11 @@
     bindingLoading = true
     bindingError = ''
     try {
-      bindingResults = await api.dataSources.listBindableObjects(bindingSourceId, bindingKind, bindingQuery)
+      bindingResults = await api.dataSources.listBindableObjects(
+        bindingSourceId,
+        bindingKind,
+        bindingQuery,
+      )
       if (bindingResults.length === 0) bindingError = 'No matching NetBox objects'
     } catch (error) {
       bindingError = error instanceof Error ? error.message : 'NetBox search failed'
@@ -1332,7 +1714,9 @@
     objectDraft.binding = undefined
     objectDraft.origin = 'Existing object'
     objectDraft.label = [...label]
-    objectDraft.type = source.spec?.kind === 'service' ? 'generic' : String(source.spec?.type ?? 'generic')
+    objectDraft.type =
+      source.spec?.kind === 'service' ? 'generic' : String(source.spec?.type ?? 'generic')
+    objectDraft.icon = source.spec?.icon
     const sourceTenant = source.metadata?.tenant
     if (typeof sourceTenant === 'string' && sourceTenant.trim()) objectDraft.tenant = sourceTenant
   }
@@ -1346,21 +1730,29 @@
   }
 
   async function refreshBoundNodes(nodes: OperatorNode[]): Promise<OperatorNode[]> {
-    return Promise.all(nodes.map(async (node) => {
-      if (!node.binding) return node
-      try {
-        const matches = await api.dataSources.listBindableObjects(
-          node.binding.dataSourceId,
-          node.binding.kind,
-          '',
-          node.binding.objectId,
-        )
-        const current = matches.find((item) => item.id === node.binding?.objectId)
-        return current ? { ...node, label: current.label, binding: { ...node.binding, objectName: current.name } } : node
-      } catch {
-        return node
-      }
-    }))
+    return Promise.all(
+      nodes.map(async (node) => {
+        if (!node.binding) return node
+        try {
+          const matches = await api.dataSources.listBindableObjects(
+            node.binding.dataSourceId,
+            node.binding.kind,
+            '',
+            node.binding.objectId,
+          )
+          const current = matches.find((item) => item.id === node.binding?.objectId)
+          return current
+            ? {
+                ...node,
+                label: current.label,
+                binding: { ...node.binding, objectName: current.name },
+              }
+            : node
+        } catch {
+          return node
+        }
+      }),
+    )
   }
 
   function startEditSelectedObject() {
@@ -1375,10 +1767,14 @@
           label: Array.isArray(node.label) ? node.label.map(String) : [String(node.label)],
           parent: effectiveParent(node.id) || undefined,
           type: node.spec?.kind === 'service' ? 'generic' : String(node.spec?.type ?? 'generic'),
-          tenant: typeof node.metadata?.tenant === 'string' ? node.metadata.tenant : topologyTenant(),
+          icon: node.spec?.icon,
+          tenant:
+            typeof node.metadata?.tenant === 'string' ? node.metadata.tenant : topologyTenant(),
           origin: 'Manual',
         }
-    objectSource = objectDraft.origin ?? (objectDraft.binding ? 'NetBox' : objectDraft.reference ? 'Existing object' : 'Manual')
+    objectSource =
+      objectDraft.origin ??
+      (objectDraft.binding ? 'NetBox' : objectDraft.reference ? 'Existing object' : 'Manual')
     iconQuery = ''
     objectEditorOpen = true
     void prepareBindingEditor()
@@ -1398,14 +1794,15 @@
     if (isGenerated) {
       nextOverrides = {
         ...presentationOverrides,
-        [normalized.id]: { label: normalized.label, type: normalized.type },
+        [normalized.id]: { label: normalized.label, type: normalized.type, icon: normalized.icon },
       }
       nextParents = { ...parentOverrides, [normalized.id]: normalized.parent ?? null }
     } else {
       const index = operatorNodes.findIndex((node) => node.id === normalized.id)
-      nextNodes = index >= 0
-        ? operatorNodes.map((node, i) => (i === index ? normalized : node))
-        : [...operatorNodes, normalized]
+      nextNodes =
+        index >= 0
+          ? operatorNodes.map((node, i) => (i === index ? normalized : node))
+          : [...operatorNodes, normalized]
     }
     operatorNodes = nextNodes
     presentationOverrides = nextOverrides
@@ -1443,13 +1840,22 @@
     delete nextParents[selectedLayoutNode]
     presentationOverrides = next
     parentOverrides = nextParents
-    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, nextParents, operatorNodes, next)
+    void persistOperatorLayout(
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      edgeRoutes,
+      nextParents,
+      operatorNodes,
+      next,
+    )
     objectEditorOpen = false
     objectDraft = null
     void loadGraph()
   }
 
-  function resetPresentationField(field: 'label' | 'type' | 'parent') {
+  function resetPresentationField(field: 'label' | 'type' | 'icon' | 'parent') {
     if (!objectDraft) return
     const nodeId = objectDraft.id
     const nextOverrides = { ...presentationOverrides }
@@ -1483,20 +1889,32 @@
     if (!graph || !objectDraft || !operatorNodes.some((node) => node.id === objectDraft?.id)) return
     const removedId = objectDraft.id
     const nextNodes = operatorNodes.filter((node) => node.id !== removedId)
-    const nextLinks = operatorLinks.filter((link) => link.from !== removedId && link.to !== removedId)
+    const nextLinks = operatorLinks.filter(
+      (link) => link.from !== removedId && link.to !== removedId,
+    )
     const nextPins = { ...pinnedPositions }
     delete nextPins[removedId]
     operatorNodes = nextNodes
     operatorLinks = nextLinks
     pinnedPositions = nextPins
-    void persistOperatorLayout(nextPins, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, nextNodes, presentationOverrides, nextLinks)
+    void persistOperatorLayout(
+      nextPins,
+      portSides,
+      portOrders,
+      portOffsets,
+      edgeRoutes,
+      parentOverrides,
+      nextNodes,
+      presentationOverrides,
+      nextLinks,
+    )
     objectEditorOpen = false
     objectDraft = null
     void loadGraph()
   }
 
   function startAddLink() {
-    const first = selectedLayoutType === 'node' ? selectedLayoutNode ?? '' : ''
+    const first = selectedLayoutType === 'node' ? (selectedLayoutNode ?? '') : ''
     linkDraft = {
       id: `operator-link-${Date.now()}`,
       from: first,
@@ -1522,6 +1940,80 @@
     linkEditorOpen = true
   }
 
+  function startEditSelectedAppearance() {
+    const link = graph?.links.find((candidate) => candidate.id === selectedLayoutLinkId)
+    if (!link?.id) return
+    const saved = linkAppearanceOverrides[link.id]
+    const dash = link.style?.strokeDasharray ?? ''
+    const preset =
+      link.type === 'double'
+        ? 'double'
+        : dash === '8 5'
+          ? 'dashed'
+          : dash === '1 5'
+            ? 'dotted'
+            : dash === '10 4 2 4'
+              ? 'dash-dot'
+              : dash === '16 6'
+                ? 'long-dash'
+                : 'solid'
+    appearanceDraft = {
+      id: link.id,
+      color: saved?.color ?? link.style?.stroke ?? '#475569',
+      width: saved?.width ?? link.style?.strokeWidth ?? 3,
+      preset: saved?.preset ?? preset,
+      routePolicy:
+        saved?.routePolicy ?? (link.metadata?.['routePolicy'] === 'under' ? 'under' : 'avoid'),
+      from: linkPortOverrides[link.id]?.from ?? link.from.port,
+      to: linkPortOverrides[link.id]?.to ?? link.to.port,
+    }
+    appearanceEditorOpen = true
+  }
+
+  function saveSelectedAppearance() {
+    if (!appearanceDraft || !graph) return
+    const source = baseGraph ?? graph
+    const link =
+      source.links.find((candidate) => candidate.id === appearanceDraft?.id) ??
+      graph.links.find((candidate) => candidate.id === appearanceDraft?.id)
+    if (!link?.id) return
+    const fromNode = graph.nodes.find((node) => node.id === link.from.node)
+    const toNode = graph.nodes.find((node) => node.id === link.to.node)
+    if (
+      !fromNode?.ports?.some((port) => port.id === appearanceDraft?.from) ||
+      !toNode?.ports?.some((port) => port.id === appearanceDraft?.to)
+    )
+      return
+    const nextAppearance = {
+      ...linkAppearanceOverrides,
+      [link.id]: {
+        color: appearanceDraft.color,
+        width: Math.min(12, Math.max(1, Number(appearanceDraft.width) || 3)),
+        preset: appearanceDraft.preset,
+        routePolicy: appearanceDraft.routePolicy,
+      },
+    }
+    const nextPorts = { ...linkPortOverrides }
+    const selectedPorts = {
+      ...(appearanceDraft.from !== link.from.port ? { from: appearanceDraft.from } : {}),
+      ...(appearanceDraft.to !== link.to.port ? { to: appearanceDraft.to } : {}),
+    }
+    if (Object.keys(selectedPorts).length) nextPorts[link.id] = selectedPorts
+    else delete nextPorts[link.id]
+    linkAppearanceOverrides = nextAppearance
+    linkPortOverrides = nextPorts
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
+    graph = applyLayoutOverrides(source, pinnedPositions, portSides, portOrders, portOffsets)
+    serverLayout = undefined
+    appearanceEditorOpen = false
+    appearanceDraft = null
+  }
+
+  function appearancePorts(side: 'from' | 'to') {
+    const link = graph?.links.find((candidate) => candidate.id === appearanceDraft?.id)
+    return graph?.nodes.find((node) => node.id === link?.[side].node)?.ports ?? []
+  }
+
   function autoPlaceLinkSides() {
     if (!graph || !linkDraft) return
     const from = graph.nodes.find((node) => node.id === linkDraft?.from)?.position
@@ -1543,24 +2035,46 @@
   }
 
   function saveLinkDraft() {
-    if (!graph || !linkDraft || !linkDraft.from || !linkDraft.to || linkDraft.from === linkDraft.to) return
+    if (!graph || !linkDraft?.from || !linkDraft.to || linkDraft.from === linkDraft.to) return
     const normalized = { ...linkDraft, label: linkDraft.label.trim() || 'connection' }
-    const duplicate = operatorLinks.some((link) =>
-      link.id !== normalized.id &&
-      ((link.from === normalized.from && link.to === normalized.to) ||
-        (link.from === normalized.to && link.to === normalized.from)),
+    const duplicate = operatorLinks.some(
+      (link) =>
+        link.id !== normalized.id &&
+        ((link.from === normalized.from && link.to === normalized.to) ||
+          (link.from === normalized.to && link.to === normalized.from)),
     )
     if (duplicate) {
       linkDraftError = 'A manual connection between these blocks already exists.'
       return
     }
     const index = operatorLinks.findIndex((link) => link.id === normalized.id)
-    const next = index >= 0
-      ? operatorLinks.map((link, i) => i === index ? normalized : link)
-      : [...operatorLinks, normalized]
+    const next =
+      index >= 0
+        ? operatorLinks.map((link, i) => (i === index ? normalized : link))
+        : [...operatorLinks, normalized]
     operatorLinks = next
-    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, operatorNodes, presentationOverrides, next)
-    graph = applyLayoutOverrides(graph, pinnedPositions, portSides, portOrders, portOffsets, parentOverrides, operatorNodes, presentationOverrides, next)
+    void persistOperatorLayout(
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      edgeRoutes,
+      parentOverrides,
+      operatorNodes,
+      presentationOverrides,
+      next,
+    )
+    graph = applyLayoutOverrides(
+      graph,
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      parentOverrides,
+      operatorNodes,
+      presentationOverrides,
+      next,
+    )
     serverLayout = undefined
     linkEditorOpen = false
     linkDraft = null
@@ -1571,7 +2085,17 @@
     if (!linkDraft || !operatorLinks.some((link) => link.id === linkDraft?.id)) return
     const next = operatorLinks.filter((link) => link.id !== linkDraft?.id)
     operatorLinks = next
-    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, operatorNodes, presentationOverrides, next)
+    void persistOperatorLayout(
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      edgeRoutes,
+      parentOverrides,
+      operatorNodes,
+      presentationOverrides,
+      next,
+    )
     linkEditorOpen = false
     linkDraft = null
     selectedLayoutLinkId = null
@@ -1610,12 +2134,35 @@
     if (!graph || !groupDraft?.label.trim()) return
     const normalized = { ...groupDraft, label: groupDraft.label.trim() }
     const index = operatorGroups.findIndex((group) => group.id === normalized.id)
-    const next = index >= 0
-      ? operatorGroups.map((group, i) => i === index ? normalized : group)
-      : [...operatorGroups, normalized]
+    const next =
+      index >= 0
+        ? operatorGroups.map((group, i) => (i === index ? normalized : group))
+        : [...operatorGroups, normalized]
     operatorGroups = next
-    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, parentOverrides, operatorNodes, presentationOverrides, operatorLinks, next)
-    graph = applyLayoutOverrides(graph, pinnedPositions, portSides, portOrders, portOffsets, parentOverrides, operatorNodes, presentationOverrides, operatorLinks, next)
+    void persistOperatorLayout(
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      edgeRoutes,
+      parentOverrides,
+      operatorNodes,
+      presentationOverrides,
+      operatorLinks,
+      next,
+    )
+    graph = applyLayoutOverrides(
+      graph,
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      parentOverrides,
+      operatorNodes,
+      presentationOverrides,
+      operatorLinks,
+      next,
+    )
     serverLayout = undefined
     groupEditorOpen = false
     groupDraft = null
@@ -1625,15 +2172,29 @@
     if (!operatorGroups.some((group) => group.id === removedId)) return
     const nextGroups = operatorGroups
       .filter((group) => group.id !== removedId)
-      .map((group) => group.parent === removedId ? { ...group, parent: undefined } : group)
-    const nextNodes = operatorNodes.map((node) => node.parent === removedId ? { ...node, parent: undefined } : node)
+      .map((group) => (group.parent === removedId ? { ...group, parent: undefined } : group))
+    const nextNodes = operatorNodes.map((node) =>
+      node.parent === removedId ? { ...node, parent: undefined } : node,
+    )
     const nextParents = { ...parentOverrides }
-    for (const [id, parent] of Object.entries(nextParents)) if (parent === removedId) nextParents[id] = null
+    for (const [id, parent] of Object.entries(nextParents))
+      if (parent === removedId) nextParents[id] = null
     delete nextParents[removedId]
     operatorGroups = nextGroups
     operatorNodes = nextNodes
     parentOverrides = nextParents
-    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes, nextParents, nextNodes, presentationOverrides, operatorLinks, nextGroups)
+    void persistOperatorLayout(
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+      edgeRoutes,
+      nextParents,
+      nextNodes,
+      presentationOverrides,
+      operatorLinks,
+      nextGroups,
+    )
     groupEditorOpen = false
     groupDraft = null
     groupManagerOpen = false
@@ -1760,7 +2321,9 @@
     const sg = graph.subgraphs?.find((s) => s.id === sgId)
     if (!sg) return
 
-    const parents = new Map((graph.subgraphs ?? []).map((candidate) => [candidate.id, candidate.parent]))
+    const parents = new Map(
+      (graph.subgraphs ?? []).map((candidate) => [candidate.id, candidate.parent]),
+    )
     const belongsToSubgraph = (nodeParent?: string) => {
       let parent = nodeParent
       while (parent) {
@@ -1980,7 +2543,11 @@
   {#if layoutEdit && selectedLayoutNode && ['node', 'subgraph'].includes(selectedLayoutType ?? '')}
     <div class="parent-editor">
       <strong>Container</strong>
-      <span>{graph?.nodes.find((node) => node.id === selectedLayoutNode)?.label ?? graph?.subgraphs?.find((subgraph) => subgraph.id === selectedLayoutNode)?.label ?? selectedLayoutNode}</span>
+      <span
+        >{graph?.nodes.find((node) => node.id === selectedLayoutNode)?.label ??
+    graph?.subgraphs?.find((subgraph) => subgraph.id === selectedLayoutNode)?.label ??
+    selectedLayoutNode}</span
+      >
       <select
         aria-label="Parent container"
         value={effectiveParent(selectedLayoutNode)}
@@ -1991,24 +2558,62 @@
           <option value={parent.id}>{parent.label ?? parent.id}</option>
         {/each}
       </select>
+      <strong>Space around block</strong>
+      <div class="spacing-pickers">
+        {#each ['top', 'right', 'bottom', 'left'] as side}
+          <label
+            >{side}
+            <input
+              type="number"
+              min="0"
+              max="1000"
+              step="10"
+              value={selectedBlockSpacing(side as keyof BlockSpacing)}
+              onchange={(event) => setSelectedBlockSpacing(side as keyof BlockSpacing, event.currentTarget.value)}
+            >
+          </label>
+        {/each}
+      </div>
     </div>
   {/if}
   {#if layoutEdit && objectEditorOpen && objectDraft}
     <div class="object-editor">
       <div class="object-editor-title">
-        <strong>{operatorNodes.some((node) => node.id === objectDraft?.id) ? 'Edit operator block' : graph?.nodes.some((node) => node.id === objectDraft?.id) ? 'Edit block appearance' : 'Add block'}</strong>
-        <button onclick={() => { objectEditorOpen = false; objectDraft = null }} aria-label="Close object editor">×</button>
+        <strong
+          >{operatorNodes.some((node) => node.id === objectDraft?.id)
+    ? 'Edit operator block'
+    : graph?.nodes.some((node) => node.id === objectDraft?.id)
+      ? 'Edit block appearance'
+      : 'Add block'}</strong
+        >
+        <button
+          onclick={() => {
+    objectEditorOpen = false
+    objectDraft = null
+  }}
+          aria-label="Close object editor"
+        >
+          ×
+        </button>
       </div>
-      <label>Object source
-        <select value={objectSource} onchange={(event) => changeObjectSource(event.currentTarget.value as typeof objectSource)}>
+      <label
+        >Object source
+        <select
+          value={objectSource}
+          onchange={(event) => changeObjectSource(event.currentTarget.value as typeof objectSource)}
+        >
           <option value="Manual">Manual documentation</option>
           <option value="NetBox">NetBox inventory</option>
           <option value="Existing object">Existing topology object</option>
         </select>
       </label>
       {#if objectSource === 'Existing object'}
-        <label>Referenced object
-          <select value={objectDraft.reference?.nodeId ?? ''} onchange={(event) => chooseExistingObject(event.currentTarget.value)}>
+        <label
+          >Referenced object
+          <select
+            value={objectDraft.reference?.nodeId ?? ''}
+            onchange={(event) => chooseExistingObject(event.currentTarget.value)}
+          >
             <option value="">Choose an existing block</option>
             {#each graph?.nodes.filter((node) => node.id !== objectDraft?.id && !node.metadata?.operatorObject) ?? [] as node}
               <option value={node.id}>{nodeLabel(node)}</option>
@@ -2016,16 +2621,30 @@
           </select>
         </label>
       {/if}
-      <label>Text inside block {#if presentationOverrides[objectDraft.id]?.label}<span class="override-marker">overridden</span>{/if}
+      <label
+        >Text inside block
+        {#if presentationOverrides[objectDraft.id]?.label}
+          <span class="override-marker">overridden</span>
+        {/if}
         <textarea
           rows="5"
           value={objectDraft.label.join('\n')}
-          oninput={(event) => { if (objectDraft) objectDraft.label = event.currentTarget.value.split('\n') }}
+          oninput={(event) => {
+    if (objectDraft) objectDraft.label = event.currentTarget.value.split('\n')
+  }}
         ></textarea>
-        {#if presentationOverrides[objectDraft.id]?.label}<button class="field-reset" onclick={() => resetPresentationField('label')}>Reset text to source</button>{/if}
+        {#if presentationOverrides[objectDraft.id]?.label}
+          <button class="field-reset" onclick={() => resetPresentationField('label')}>
+            Reset text to source
+          </button>
+        {/if}
       </label>
-      <label>Icon {#if presentationOverrides[objectDraft.id]?.type}<span class="override-marker">overridden</span>{/if}
-        <input bind:value={iconQuery} placeholder="Search icons" />
+      <label
+        >Icon
+        {#if presentationOverrides[objectDraft.id]?.type}
+          <span class="override-marker">overridden</span>
+        {/if}
+        <input bind:value={iconQuery} placeholder="Search icons">
         <select bind:value={objectDraft.type}>
           {#if !filteredIconTypes().some(([value]) => value === objectDraft?.type)}
             <option value={objectDraft.type}>{objectDraft.type}</option>
@@ -2034,70 +2653,155 @@
             <option value={icon[0]}>{icon[1]}</option>
           {/each}
         </select>
-        {#if presentationOverrides[objectDraft.id]?.type}<button class="field-reset" onclick={() => resetPresentationField('type')}>Reset icon to source</button>{/if}
+        {#if presentationOverrides[objectDraft.id]?.type}
+          <button class="field-reset" onclick={() => resetPresentationField('type')}>
+            Reset icon to source
+          </button>
+        {/if}
       </label>
-      <label>Tenant
-        <input bind:value={objectDraft.tenant} placeholder="MSP, admiral, ing…" />
+      <div class="service-icon-editor">
+        <strong>Service icon</strong>
+        {#if objectDraft.icon}
+          <img src={objectDraft.icon} alt="Selected service icon">
+          <button
+            onclick={() => {
+    if (objectDraft) objectDraft.icon = undefined
+  }}
+          >
+            Remove custom icon
+          </button>
+        {/if}
+        <div class="service-icon-list">
+          {#each serviceIcons as item}
+            <button
+              class:chosen={objectDraft.icon === item.icon}
+              onclick={() => {
+    if (objectDraft) objectDraft.icon = item.icon
+  }}
+              title={item.label}
+              aria-label={`Use ${item.label} icon`}
+            >
+              <img src={item.icon} alt=""><span>{item.label}</span>
+            </button>
+          {/each}
+        </div>
+        <label
+          >Upload from computer (SVG, PNG, JPEG, WebP, ICO)
+          <input
+            type="file"
+            accept=".svg,.png,.jpg,.jpeg,.webp,.ico,image/svg+xml,image/png,image/jpeg,image/webp,image/x-icon"
+            onchange={(event) => void uploadObjectIcon(event.currentTarget.files?.[0])}
+          >
+        </label>
+        <label
+          >Import HTTPS image to local storage
+          <input type="url" bind:value={iconImportUrl} placeholder="https://example.com/icon.svg">
+        </label>
+        <button onclick={() => void importObjectIconUrl()}>Import icon</button>
+        {#if iconImportError}
+          <span class="editor-error">{iconImportError}</span>
+        {/if}
+        {#if presentationOverrides[objectDraft.id]?.icon}
+          <button class="field-reset" onclick={() => resetPresentationField('icon')}>
+            Reset service icon to source
+          </button>
+        {/if}
+      </div>
+      <label
+        >Tenant
+        <input bind:value={objectDraft.tenant} placeholder="MSP, admiral, ing…">
       </label>
-      <label>Operator notes
-        <textarea rows="3" bind:value={objectDraft.notes} placeholder="Purpose, owner or operational note"></textarea>
+      <label
+        >Operator notes
+        <textarea
+          rows="3"
+          bind:value={objectDraft.notes}
+          placeholder="Purpose, owner or operational note"
+        ></textarea>
       </label>
-      <label>Container {#if Object.hasOwn(parentOverrides, objectDraft.id)}<span class="override-marker">overridden</span>{/if}
+      <label
+        >Container
+        {#if Object.hasOwn(parentOverrides, objectDraft.id)}
+          <span class="override-marker">overridden</span>
+        {/if}
         <select
           value={objectDraft.parent ?? ''}
-          onchange={(event) => { if (objectDraft) objectDraft.parent = event.currentTarget.value || undefined }}
+          onchange={(event) => {
+    if (objectDraft) objectDraft.parent = event.currentTarget.value || undefined
+  }}
         >
           <option value="">Top level</option>
           {#each availableParentsFor(objectDraft.id) as parent}
             <option value={parent.id}>{parent.label ?? parent.id}</option>
           {/each}
         </select>
-        {#if Object.hasOwn(parentOverrides, objectDraft.id)}<button class="field-reset" onclick={() => resetPresentationField('parent')}>Reset container to source</button>{/if}
+        {#if Object.hasOwn(parentOverrides, objectDraft.id)}
+          <button class="field-reset" onclick={() => resetPresentationField('parent')}>
+            Reset container to source
+          </button>
+        {/if}
       </label>
       {#if objectSource === 'NetBox'}
-      <fieldset class="binding-editor">
-        <legend>NetBox data binding</legend>
-        {#if objectDraft.binding}
-          <div class="binding-current">
-            <strong>{objectDraft.binding.objectName}</strong>
-            <span>{objectDraft.binding.kind} · ID {objectDraft.binding.objectId}</span>
-            <button onclick={unlinkObjectBinding}>Unlink</button>
-          </div>
-        {/if}
-        {#if bindingSources.length > 0}
-          <div class="binding-grid">
-            <label>Source
-              <select bind:value={bindingSourceId}>
-                {#each bindingSources as source}<option value={source.id}>{source.name}</option>{/each}
-              </select>
-            </label>
-            <label>Object type
-              <select bind:value={bindingKind}>
-                <option value="virtual-machine">Virtual machine</option>
-                <option value="device">Device</option>
-                <option value="ip-address">IP address</option>
-                <option value="prefix">Prefix / network</option>
-              </select>
-            </label>
-          </div>
-          <div class="binding-search">
-            <input bind:value={bindingQuery} placeholder="Name, IP or object ID" onkeydown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void searchBindingObjects() } }} />
-            <button onclick={searchBindingObjects} disabled={bindingLoading}>{bindingLoading ? 'Searching…' : 'Search'}</button>
-          </div>
-          {#if bindingResults.length > 0}
-            <div class="binding-results">
-              {#each bindingResults as result}
-                <button onclick={() => bindObject(result)}>
-                  <strong>{result.name}</strong><span>{result.label.slice(1).join(' · ')}</span>
-                </button>
-              {/each}
+        <fieldset class="binding-editor">
+          <legend>NetBox data binding</legend>
+          {#if objectDraft.binding}
+            <div class="binding-current">
+              <strong>{objectDraft.binding.objectName}</strong>
+              <span>{objectDraft.binding.kind} · ID {objectDraft.binding.objectId}</span>
+              <button onclick={unlinkObjectBinding}>Unlink</button>
             </div>
           {/if}
-        {:else if !bindingError}
-          <div class="empty-editor-state">No NetBox data source is configured.</div>
-        {/if}
-        {#if bindingError}<div class="editor-error">{bindingError}</div>{/if}
-      </fieldset>
+          {#if bindingSources.length > 0}
+            <div class="binding-grid">
+              <label
+                >Source
+                <select bind:value={bindingSourceId}>
+                  {#each bindingSources as source}
+                    <option value={source.id}>{source.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <label
+                >Object type
+                <select bind:value={bindingKind}>
+                  <option value="virtual-machine">Virtual machine</option>
+                  <option value="device">Device</option>
+                  <option value="ip-address">IP address</option>
+                  <option value="prefix">Prefix / network</option>
+                </select>
+              </label>
+            </div>
+            <div class="binding-search">
+              <input
+                bind:value={bindingQuery}
+                placeholder="Name, IP or object ID"
+                onkeydown={(event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      void searchBindingObjects()
+    }
+  }}
+              >
+              <button onclick={searchBindingObjects} disabled={bindingLoading}>
+                {bindingLoading ? 'Searching…' : 'Search'}
+              </button>
+            </div>
+            {#if bindingResults.length > 0}
+              <div class="binding-results">
+                {#each bindingResults as result}
+                  <button onclick={() => bindObject(result)}>
+                    <strong>{result.name}</strong><span>{result.label.slice(1).join(' · ')}</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          {:else if !bindingError}
+            <div class="empty-editor-state">No NetBox data source is configured.</div>
+          {/if}
+          {#if bindingError}
+            <div class="editor-error">{bindingError}</div>
+          {/if}
+        </fieldset>
       {/if}
       <div class="object-editor-actions">
         {#if operatorNodes.some((node) => node.id === objectDraft?.id)}
@@ -2113,10 +2817,21 @@
   {#if layoutEdit && linkEditorOpen && linkDraft}
     <div class="object-editor link-editor">
       <div class="object-editor-title">
-        <strong>{operatorLinks.some((link) => link.id === linkDraft?.id) ? 'Edit connection' : 'Add connection'}</strong>
-        <button onclick={() => { linkEditorOpen = false; linkDraft = null }} aria-label="Close connection editor">×</button>
+        <strong
+          >{operatorLinks.some((link) => link.id === linkDraft?.id) ? 'Edit connection' : 'Add connection'}</strong
+        >
+        <button
+          onclick={() => {
+    linkEditorOpen = false
+    linkDraft = null
+  }}
+          aria-label="Close connection editor"
+        >
+          ×
+        </button>
       </div>
-      <label>Source
+      <label
+        >Source
         <select bind:value={linkDraft.from}>
           <option value="">Choose a block</option>
           {#each graph?.nodes ?? [] as node}
@@ -2124,7 +2839,8 @@
           {/each}
         </select>
       </label>
-      <label>Destination
+      <label
+        >Destination
         <select bind:value={linkDraft.to}>
           <option value="">Choose a block</option>
           {#each graph?.nodes ?? [] as node}
@@ -2132,67 +2848,195 @@
           {/each}
         </select>
       </label>
-      <label>Connection label
-        <input bind:value={linkDraft.label} />
+      <label
+        >Connection label
+        <input bind:value={linkDraft.label}>
       </label>
       <div class="side-pickers">
-        <label>Tenant <input bind:value={linkDraft.tenant} placeholder="MSP, admiral, ing…" /></label>
-        <label>Operator notes <input bind:value={linkDraft.notes} placeholder="Purpose or operational note" /></label>
+        <label>Tenant <input bind:value={linkDraft.tenant} placeholder="MSP, admiral, ing…"></label>
+        <label
+          >Operator notes
+          <input bind:value={linkDraft.notes} placeholder="Purpose or operational note"></label
+        >
       </div>
       <div class="side-pickers">
-        <label>Relationship
+        <label
+          >Relationship
           <select bind:value={linkDraft.relationship}>
-            <option value="network">Network</option><option value="management">Management</option><option value="dependency">Dependency</option><option value="traffic">Traffic flow</option><option value="documentation">Documentation</option>
+            <option value="network">Network</option>
+            <option value="management">Management</option>
+            <option value="dependency">Dependency</option>
+            <option value="traffic">Traffic flow</option>
+            <option value="documentation">Documentation</option>
           </select>
         </label>
-        <label>Direction
+        <label
+          >Direction
           <select bind:value={linkDraft.direction}>
-            <option value="forward">Source → destination</option><option value="back">Source ← destination</option><option value="both">Bidirectional</option><option value="none">Undirected</option>
+            <option value="forward">Source → destination</option>
+            <option value="back">Source ← destination</option>
+            <option value="both">Bidirectional</option>
+            <option value="none">Undirected</option>
           </select>
         </label>
       </div>
       <div class="side-pickers">
-        <label>Source side
+        <label
+          >Source side
           <select bind:value={linkDraft.fromSide}>
-            <option value="right">Right</option><option value="left">Left</option><option value="top">Top</option><option value="bottom">Bottom</option>
+            <option value="right">Right</option>
+            <option value="left">Left</option>
+            <option value="top">Top</option>
+            <option value="bottom">Bottom</option>
           </select>
         </label>
-        <label>Destination side
+        <label
+          >Destination side
           <select bind:value={linkDraft.toSide}>
-            <option value="left">Left</option><option value="right">Right</option><option value="top">Top</option><option value="bottom">Bottom</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+            <option value="top">Top</option>
+            <option value="bottom">Bottom</option>
           </select>
         </label>
       </div>
       <button onclick={autoPlaceLinkSides}>Choose sides from current placement</button>
-      {#if linkDraftError}<div class="editor-error">{linkDraftError}</div>{/if}
+      {#if linkDraftError}
+        <div class="editor-error">{linkDraftError}</div>
+      {/if}
       <div class="object-editor-actions">
         {#if operatorLinks.some((link) => link.id === linkDraft?.id)}
           <button class="danger" onclick={deleteLinkDraft}>Delete connection</button>
         {/if}
-        <button class="primary" disabled={!linkDraft.from || !linkDraft.to || linkDraft.from === linkDraft.to} onclick={saveLinkDraft}>Create connection</button>
+        <button
+          class="primary"
+          disabled={!linkDraft.from || !linkDraft.to || linkDraft.from === linkDraft.to}
+          onclick={saveLinkDraft}
+        >
+          Create connection
+        </button>
+      </div>
+    </div>
+  {/if}
+  {#if layoutEdit && appearanceEditorOpen && appearanceDraft}
+    <div class="object-editor link-editor">
+      <div class="object-editor-title">
+        <strong>Connection appearance and anchors</strong>
+        <button
+          onclick={() => {
+    appearanceEditorOpen = false
+    appearanceDraft = null
+  }}
+          aria-label="Close connection appearance"
+        >
+          ×
+        </button>
+      </div>
+      <div class="side-pickers">
+        <label>Color <input type="color" bind:value={appearanceDraft.color}></label>
+        <label
+          >Width
+          <input
+            type="number"
+            min="1"
+            max="12"
+            step="0.5"
+            bind:value={appearanceDraft.width}
+          ></label
+        >
+      </div>
+      <div class="side-pickers">
+        <label
+          >Line style
+          <select bind:value={appearanceDraft.preset}>
+            <option value="solid">Solid</option>
+            <option value="dashed">Dashed</option>
+            <option value="dotted">Dotted</option>
+            <option value="dash-dot">Dash-dot</option>
+            <option value="long-dash">Long dashes</option>
+            <option value="double">Double</option>
+          </select>
+        </label>
+        <label
+          >Passing blocks
+          <select bind:value={appearanceDraft.routePolicy}>
+            <option value="avoid">Curve around blocks</option>
+            <option value="under">Pass under blocks</option>
+          </select>
+        </label>
+      </div>
+      <label
+        >Source point
+        <select bind:value={appearanceDraft.from}>
+          {#each appearancePorts('from') as port}
+            <option value={port.id}>{port.label.trim() || port.id}</option>
+          {/each}
+        </select>
+      </label>
+      <label
+        >Destination point
+        <select bind:value={appearanceDraft.to}>
+          {#each appearancePorts('to') as port}
+            <option value={port.id}>{port.label.trim() || port.id}</option>
+          {/each}
+        </select>
+      </label>
+      <p class="editor-help">
+        Several connections may select the same point. Each line keeps its own color, width and
+        style.
+      </p>
+      <div class="object-editor-actions">
+        <button class="primary" onclick={saveSelectedAppearance}>Save connection</button>
       </div>
     </div>
   {/if}
   {#if layoutEdit && groupEditorOpen && groupDraft}
     <div class="object-editor group-editor">
       <div class="object-editor-title">
-        <strong>{operatorGroups.some((group) => group.id === groupDraft?.id) ? 'Edit group' : 'Add group'}</strong>
-        <button onclick={() => { groupEditorOpen = false; groupDraft = null }} aria-label="Close group editor">×</button>
+        <strong
+          >{operatorGroups.some((group) => group.id === groupDraft?.id) ? 'Edit group' : 'Add group'}</strong
+        >
+        <button
+          onclick={() => {
+    groupEditorOpen = false
+    groupDraft = null
+  }}
+          aria-label="Close group editor"
+        >
+          ×
+        </button>
       </div>
-      <label>Group name <input bind:value={groupDraft.label} /></label>
-      <label>Tenant <input bind:value={groupDraft.tenant} placeholder="MSP, admiral, ing…" /></label>
-      <label>Operator notes <textarea rows="3" bind:value={groupDraft.notes} placeholder="Purpose, owner or operational note"></textarea></label>
-      <label>Parent container
-        <select value={groupDraft.parent ?? ''} onchange={(event) => { if (groupDraft) groupDraft.parent = event.currentTarget.value || undefined }}>
+      <label>Group name <input bind:value={groupDraft.label}></label>
+      <label>Tenant <input bind:value={groupDraft.tenant} placeholder="MSP, admiral, ing…"></label>
+      <label
+        >Operator notes
+        <textarea
+          rows="3"
+          bind:value={groupDraft.notes}
+          placeholder="Purpose, owner or operational note"
+        ></textarea></label
+      >
+      <label
+        >Parent container
+        <select
+          value={groupDraft.parent ?? ''}
+          onchange={(event) => {
+    if (groupDraft) groupDraft.parent = event.currentTarget.value || undefined
+  }}
+        >
           <option value="">Top level</option>
           {#each availableParentsFor(groupDraft.id) as parent}
             <option value={parent.id}>{parent.label ?? parent.id}</option>
           {/each}
         </select>
       </label>
-      <label>Internal layout
+      <label
+        >Internal layout
         <select bind:value={groupDraft.direction}>
-          <option value="LR">Left to right</option><option value="RL">Right to left</option><option value="TB">Top to bottom</option><option value="BT">Bottom to top</option>
+          <option value="LR">Left to right</option>
+          <option value="RL">Right to left</option>
+          <option value="TB">Top to bottom</option>
+          <option value="BT">Bottom to top</option>
         </select>
       </label>
       <div class="object-editor-actions">
@@ -2207,7 +3051,14 @@
     <div class="object-editor group-manager">
       <div class="object-editor-title">
         <strong>Container groups</strong>
-        <button onclick={() => { groupManagerOpen = false }} aria-label="Close group manager">×</button>
+        <button
+          onclick={() => {
+    groupManagerOpen = false
+  }}
+          aria-label="Close group manager"
+        >
+          ×
+        </button>
       </div>
       {#if operatorGroups.length === 0}
         <div class="empty-editor-state">No operator groups</div>
@@ -2215,8 +3066,16 @@
         <div class="group-list">
           {#each operatorGroups as group}
             <div class="group-list-row">
-              <button class="group-name" onclick={() => startEditGroup(group)}>{group.label}</button>
-              <button class="danger" onclick={() => deleteOperatorGroup(group.id)} aria-label={`Delete ${group.label}`}>Delete</button>
+              <button class="group-name" onclick={() => startEditGroup(group)}>
+                {group.label}
+              </button>
+              <button
+                class="danger"
+                onclick={() => deleteOperatorGroup(group.id)}
+                aria-label={`Delete ${group.label}`}
+              >
+                Delete
+              </button>
             </div>
           {/each}
         </div>
@@ -2244,25 +3103,73 @@
           {layoutEdit ? '✓' : '↔'}
         </button>
         {#if layoutEdit}
-          <button onclick={startAddObject} title="Add standalone block" aria-label="Add standalone block">
+          <button
+            onclick={startAddObject}
+            title="Add standalone block"
+            aria-label="Add standalone block"
+          >
             <PlusIcon size={18} />
           </button>
-          <button onclick={startAddLink} title="Connect two blocks" aria-label="Connect two blocks">⛓</button>
-          <button onclick={startAddGroup} title="Add container group" aria-label="Add container group">▣</button>
-          <button onclick={() => { groupManagerOpen = !groupManagerOpen }} class:active={groupManagerOpen} title="Manage container groups" aria-label="Manage container groups">▤</button>
+          <button onclick={startAddLink} title="Connect two blocks" aria-label="Connect two blocks">
+            ⛓
+          </button>
+          <button
+            onclick={startAddGroup}
+            title="Add container group"
+            aria-label="Add container group"
+          >
+            ▣
+          </button>
+          <button
+            onclick={() => {
+    groupManagerOpen = !groupManagerOpen
+  }}
+            class:active={groupManagerOpen}
+            title="Manage container groups"
+            aria-label="Manage container groups"
+          >
+            ▤
+          </button>
         {/if}
         {#if layoutEdit && selectedLayoutType === 'node' && selectedLayoutNode}
-          <button onclick={startEditSelectedObject} title="Edit selected block" aria-label="Edit selected block">
+          <button
+            onclick={startEditSelectedObject}
+            title="Edit selected block"
+            aria-label="Edit selected block"
+          >
             <PencilSimpleIcon size={18} />
           </button>
         {/if}
-        {#if layoutEdit && selectedLayoutType === 'edge' && selectedLayoutLinkId && operatorLinks.some((link) => link.id === selectedLayoutLinkId)}
-          <button onclick={startEditSelectedLink} title="Edit selected connection" aria-label="Edit selected connection">
+        {#if layoutEdit &&
+    selectedLayoutType === 'edge' &&
+    selectedLayoutLinkId &&
+    operatorLinks.some((link) => link.id === selectedLayoutLinkId)}
+          <button
+            onclick={startEditSelectedLink}
+            title="Edit selected connection"
+            aria-label="Edit selected connection"
+          >
             <PencilSimpleIcon size={18} />
           </button>
         {/if}
-        {#if layoutEdit && selectedLayoutType === 'subgraph' && selectedLayoutNode && operatorGroups.some((group) => group.id === selectedLayoutNode)}
-          <button onclick={startEditSelectedGroup} title="Edit selected group" aria-label="Edit selected group">
+        {#if layoutEdit && selectedLayoutType === 'edge' && selectedLayoutLinkId}
+          <button
+            onclick={startEditSelectedAppearance}
+            title="Connection appearance, routing and shared points"
+            aria-label="Connection appearance and shared points"
+          >
+            ◒
+          </button>
+        {/if}
+        {#if layoutEdit &&
+    selectedLayoutType === 'subgraph' &&
+    selectedLayoutNode &&
+    operatorGroups.some((group) => group.id === selectedLayoutNode)}
+          <button
+            onclick={startEditSelectedGroup}
+            title="Edit selected group"
+            aria-label="Edit selected group"
+          >
             <PencilSimpleIcon size={18} />
           </button>
         {/if}
@@ -2316,7 +3223,10 @@
         </button>
       {/if}
       <button
-        onclick={() => { layersOpen = !layersOpen; dataHealthOpen = false }}
+        onclick={() => {
+    layersOpen = !layersOpen
+    dataHealthOpen = false
+  }}
         title="Information layers"
         aria-label="Information layers"
         class:active={layersOpen}
@@ -2324,7 +3234,10 @@
         <StackIcon size={18} />
       </button>
       <button
-        onclick={() => { pathExplorerOpen = !pathExplorerOpen; dataHealthOpen = false }}
+        onclick={() => {
+    pathExplorerOpen = !pathExplorerOpen
+    dataHealthOpen = false
+  }}
         title="Trace traffic path"
         aria-label="Trace traffic path"
         class:active={pathExplorerOpen}
@@ -2332,7 +3245,11 @@
         <PathIcon size={18} />
       </button>
       <button
-        onclick={() => { dataHealthOpen = !dataHealthOpen; layersOpen = false; pathExplorerOpen = false }}
+        onclick={() => {
+    dataHealthOpen = !dataHealthOpen
+    layersOpen = false
+    pathExplorerOpen = false
+  }}
         title="Data freshness and reconciliation"
         aria-label="Data freshness and reconciliation"
         class:active={dataHealthOpen}
@@ -2417,12 +3334,15 @@
     <div class="data-health-panel">
       <div class="layers-title">Data health</div>
       <div class="data-health-summary">
-        <span class:healthy={reconciliationIssues.length === 0} class:warning={reconciliationIssues.length > 0}>
+        <span
+          class:healthy={reconciliationIssues.length === 0}
+          class:warning={reconciliationIssues.length > 0}
+        >
           {reconciliationIssues.length === 0
-            ? 'Sources agree'
-            : reconciliationIssues.length === 1
-              ? '1 discrepancy'
-              : `${reconciliationIssues.length} discrepancies`}
+    ? 'Sources agree'
+    : reconciliationIssues.length === 1
+      ? '1 discrepancy'
+      : `${reconciliationIssues.length} discrepancies`}
         </span>
       </div>
       {#each dataFreshness as item}
@@ -2455,22 +3375,34 @@
   {#if pathExplorerOpen}
     <div class="path-panel">
       <div class="layers-title">Traffic path</div>
-      <label>Source
+      <label
+        >Source
         <select bind:value={pathSourceId}>
           <option value="">Select source</option>
-          {#each pathNodes as item}<option value={item.id}>{item.label}</option>{/each}
+          {#each pathNodes as item}
+            <option value={item.id}>{item.label}</option>
+          {/each}
         </select>
       </label>
-      <label>Destination
+      <label
+        >Destination
         <select bind:value={pathDestinationId}>
           <option value="">Select destination</option>
-          {#each pathNodes as item}<option value={item.id}>{item.label}</option>{/each}
+          {#each pathNodes as item}
+            <option value={item.id}>{item.label}</option>
+          {/each}
         </select>
       </label>
-      <label>Traffic flow
-        <select value={pathFlowId} onchange={(event) => selectTrafficFlow(event.currentTarget.value)}>
+      <label
+        >Traffic flow
+        <select
+          value={pathFlowId}
+          onchange={(event) => selectTrafficFlow(event.currentTarget.value)}
+        >
           <option value="">Select operational flow</option>
-          {#each availableTrafficFlows as flow}<option value={flow.id}>{flow.label}</option>{/each}
+          {#each availableTrafficFlows as flow}
+            <option value={flow.id}>{flow.label}</option>
+          {/each}
         </select>
       </label>
       {#if !readOnly}
@@ -2490,29 +3422,40 @@
               {#if customTrafficFlows.some((item) => item.id === flow.id)}
                 <button title="Move up" onclick={() => moveCustomFlow(flow.id, -1)}>↑</button>
                 <button title="Move down" onclick={() => moveCustomFlow(flow.id, 1)}>↓</button>
-                <button title={flow.enabled === false ? 'Enable' : 'Disable'} onclick={() => toggleCustomFlow(flow)}>
+                <button
+                  title={flow.enabled === false ? 'Enable' : 'Disable'}
+                  onclick={() => toggleCustomFlow(flow)}
+                >
                   {flow.enabled === false ? '○' : '●'}
                 </button>
                 <button title="Duplicate" onclick={() => duplicateCustomFlow(flow)}>⧉</button>
                 <button title="Delete" onclick={() => deleteCustomFlow(flow.id)}>×</button>
               {:else}
-                <button title="Create an editable copy" onclick={() => editFlowDraft(flow)}>Import</button>
+                <button title="Create an editable copy" onclick={() => editFlowDraft(flow)}>
+                  Import
+                </button>
               {/if}
             </div>
           {/each}
           {#if flowDraft}
             <div class="flow-draft">
               <label>Name <input bind:value={flowDraft.label}></label>
-              <label>Source
+              <label
+                >Source
                 <select bind:value={flowDraft.source}>
                   <option value="">Select source</option>
-                  {#each pathNodes as item}<option value={item.id}>{item.label}</option>{/each}
+                  {#each pathNodes as item}
+                    <option value={item.id}>{item.label}</option>
+                  {/each}
                 </select>
               </label>
-              <label>Destination
+              <label
+                >Destination
                 <select bind:value={flowDraft.destination}>
                   <option value="">Select destination</option>
-                  {#each pathNodes as item}<option value={item.id}>{item.label}</option>{/each}
+                  {#each pathNodes as item}
+                    <option value={item.id}>{item.label}</option>
+                  {/each}
                 </select>
               </label>
               <div class="flow-colors">
@@ -2521,21 +3464,24 @@
               </div>
               <fieldset>
                 <legend>Primary data-path links</legend>
-                <small>Select links in traffic order. Leave empty to use the calculated shortest path.</small>
+                <small
+                  >Select links in traffic order. Leave empty to use the calculated shortest
+                  path.</small
+                >
                 {#each graph.links as link}
                   <label class="flow-link-option">
                     <input
                       type="checkbox"
                       checked={flowDraft.primaryLinkIds?.includes(link.id)}
                       onchange={(event) => {
-                        const current = flowDraft?.primaryLinkIds ?? []
-                        if (!flowDraft) return
-                        flowDraft.primaryLinkIds = event.currentTarget.checked
-                          ? [...current, link.id]
-                          : current.filter((id) => id !== link.id)
-                        if (event.currentTarget.checked)
-                          flowDraft.controlLinkIds = (flowDraft.controlLinkIds ?? []).filter((id) => id !== link.id)
-                      }}
+    const current = flowDraft?.primaryLinkIds ?? []
+    if (!flowDraft) return
+    flowDraft.primaryLinkIds = event.currentTarget.checked
+      ? [...current, link.id]
+      : current.filter((id) => id !== link.id)
+    if (event.currentTarget.checked)
+      flowDraft.controlLinkIds = (flowDraft.controlLinkIds ?? []).filter((id) => id !== link.id)
+  }}
                     >
                     {flowLinkLabel(link)}
                   </label>
@@ -2550,14 +3496,14 @@
                       type="checkbox"
                       checked={flowDraft.controlLinkIds?.includes(link.id)}
                       onchange={(event) => {
-                        const current = flowDraft?.controlLinkIds ?? []
-                        if (!flowDraft) return
-                        flowDraft.controlLinkIds = event.currentTarget.checked
-                          ? [...current, link.id]
-                          : current.filter((id) => id !== link.id)
-                        if (event.currentTarget.checked)
-                          flowDraft.primaryLinkIds = (flowDraft.primaryLinkIds ?? []).filter((id) => id !== link.id)
-                      }}
+    const current = flowDraft?.controlLinkIds ?? []
+    if (!flowDraft) return
+    flowDraft.controlLinkIds = event.currentTarget.checked
+      ? [...current, link.id]
+      : current.filter((id) => id !== link.id)
+    if (event.currentTarget.checked)
+      flowDraft.primaryLinkIds = (flowDraft.primaryLinkIds ?? []).filter((id) => id !== link.id)
+  }}
                     >
                     {flowLinkLabel(link)}
                   </label>
@@ -2578,7 +3524,9 @@
               <div class="path-hop">
                 <span class="decision {hop.decision.toLowerCase()}">{hop.decision}</span>
                 <span>{hop.label}</span>
-                {#if index < trafficPath.hops.length - 1}<span class="path-arrow">→</span>{/if}
+                {#if index < trafficPath.hops.length - 1}
+                  <span class="path-arrow">→</span>
+                {/if}
               </div>
             {/each}
             {#if controlPlanePath.linkIds.size > 0}
@@ -2734,7 +3682,7 @@
   .parent-editor {
     position: absolute;
     right: 64px;
-    bottom: 16px;
+    bottom: 64px;
     z-index: 7;
     display: grid;
     gap: 6px;
@@ -2764,6 +3712,24 @@
     border-radius: 6px;
   }
 
+  .spacing-pickers {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .spacing-pickers label {
+    display: grid;
+    gap: 3px;
+    text-transform: capitalize;
+  }
+  .spacing-pickers input {
+    width: 100%;
+    min-width: 0;
+    padding: 5px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 5px;
+  }
+
   .object-editor {
     position: absolute;
     right: 64px;
@@ -2772,6 +3738,8 @@
     display: grid;
     gap: 10px;
     width: min(360px, calc(100% - 96px));
+    max-height: calc(100% - 32px);
+    overflow-y: auto;
     padding: 14px;
     color: var(--color-text, #111827);
     background: var(--color-bg-elevated, #ffffff);
@@ -2818,10 +3786,65 @@
     font-weight: 400;
   }
 
-  .object-editor textarea { resize: vertical; }
-  .override-marker { color: #b45309; font-size: 10px; font-weight: 700; text-transform: uppercase; }
-  .object-editor .field-reset { justify-self: start; padding: 4px 7px; color: #b45309; background: transparent; border: 1px solid #f59e0b; border-radius: 5px; cursor: pointer; font-size: 10px; }
-  .object-editor-actions { justify-content: flex-end; }
+  .object-editor textarea {
+    resize: vertical;
+  }
+  .service-icon-editor {
+    display: grid;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .service-icon-editor > img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+  }
+  .service-icon-list {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+  }
+  .service-icon-list button {
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+    min-width: 0;
+    padding: 5px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 10px;
+  }
+  .service-icon-list button.chosen {
+    border-color: var(--primary, #2563eb);
+    background: #dbeafe;
+  }
+  .service-icon-list img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+  }
+  .override-marker {
+    color: #b45309;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .object-editor .field-reset {
+    justify-self: start;
+    padding: 4px 7px;
+    color: #b45309;
+    background: transparent;
+    border: 1px solid #f59e0b;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 10px;
+  }
+  .object-editor-actions {
+    justify-content: flex-end;
+  }
   .object-editor-actions button {
     padding: 7px 10px;
     border: 1px solid var(--border, #cbd5e1);
@@ -2834,12 +3857,34 @@
     background: var(--primary, #2563eb);
     border-color: var(--primary, #2563eb);
   }
-  .object-editor-actions button.danger { color: #b91c1c; margin-right: auto; }
-  .side-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-  .editor-error { color: #b91c1c; font-size: 0.75rem; }
-  .empty-editor-state { color: var(--color-text-muted, #64748b); font-size: 0.8rem; }
-  .group-list { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
-  .group-list-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .object-editor-actions button.danger {
+    color: #b91c1c;
+    margin-right: auto;
+  }
+  .side-pickers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  .editor-error {
+    color: #b91c1c;
+    font-size: 0.75rem;
+  }
+  .empty-editor-state {
+    color: var(--color-text-muted, #64748b);
+    font-size: 0.8rem;
+  }
+  .group-list {
+    display: grid;
+    gap: 6px;
+    max-height: 280px;
+    overflow: auto;
+  }
+  .group-list-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
   .group-list-row button {
     padding: 7px 9px;
     border: 1px solid var(--border, #cbd5e1);
@@ -2847,19 +3892,81 @@
     background: var(--color-bg, #ffffff);
     cursor: pointer;
   }
-  .group-list-row .group-name { overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-  .group-list-row .danger { color: #b91c1c; }
-  .binding-editor { display: grid; gap: 8px; margin: 0; padding: 10px; border: 1px solid var(--border, #cbd5e1); border-radius: 8px; }
-  .binding-editor legend { padding: 0 5px; font-size: 12px; font-weight: 700; }
-  .binding-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .binding-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
-  .binding-search input, .binding-search button, .binding-current button { padding: 7px 9px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--color-bg, #fff); }
-  .binding-results { display: grid; gap: 5px; max-height: 180px; overflow: auto; }
-  .binding-results button { display: grid; gap: 2px; padding: 7px 9px; text-align: left; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--color-bg, #fff); cursor: pointer; }
-  .binding-results span, .binding-current span { color: var(--color-text-muted, #64748b); font-size: 11px; }
-  .binding-current { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; }
-  .binding-current span { grid-column: 1; }
-  .binding-current button { grid-column: 2; grid-row: 1 / span 2; cursor: pointer; }
+  .group-list-row .group-name {
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .group-list-row .danger {
+    color: #b91c1c;
+  }
+  .binding-editor {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 8px;
+  }
+  .binding-editor legend {
+    padding: 0 5px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .binding-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .binding-search {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+  .binding-search input,
+  .binding-search button,
+  .binding-current button {
+    padding: 7px 9px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 6px;
+    background: var(--color-bg, #fff);
+  }
+  .binding-results {
+    display: grid;
+    gap: 5px;
+    max-height: 180px;
+    overflow: auto;
+  }
+  .binding-results button {
+    display: grid;
+    gap: 2px;
+    padding: 7px 9px;
+    text-align: left;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 6px;
+    background: var(--color-bg, #fff);
+    cursor: pointer;
+  }
+  .binding-results span,
+  .binding-current span {
+    color: var(--color-text-muted, #64748b);
+    font-size: 11px;
+  }
+  .binding-current {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+    align-items: center;
+  }
+  .binding-current span {
+    grid-column: 1;
+  }
+  .binding-current button {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    cursor: pointer;
+  }
 
   .layers-panel {
     position: absolute;
@@ -2938,9 +4045,21 @@
     border-radius: 5px;
     cursor: pointer;
   }
-  .flow-editor { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border, #e5e7eb); }
-  .flow-editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-  .flow-editor-actions button, .flow-editor-row button {
+  .flow-editor {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border, #e5e7eb);
+  }
+  .flow-editor-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .flow-editor-actions button,
+  .flow-editor-row button {
     padding: 4px 6px;
     color: var(--color-text, #0f172a);
     background: var(--color-bg, #ffffff);
@@ -2948,15 +4067,60 @@
     border-radius: 4px;
     cursor: pointer;
   }
-  .flow-editor-row { display: flex; align-items: center; gap: 4px; }
-  .flow-editor-row .flow-name { flex: 1; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-  .flow-draft { display: grid; gap: 6px; margin-top: 4px; padding: 8px; background: var(--color-bg-subtle, #f8fafc); border: 1px solid var(--border, #e5e7eb); border-radius: 6px; }
-  .flow-draft input:not([type='checkbox']):not([type='color']) { min-width: 0; padding: 5px 7px; border: 1px solid var(--border, #cbd5e1); border-radius: 4px; }
-  .flow-draft fieldset { max-height: 130px; overflow: auto; margin: 0; border: 1px solid var(--border, #cbd5e1); border-radius: 4px; }
-  .flow-draft .flow-link-option { display: flex; grid-template-columns: none; margin-top: 3px; }
-  .flow-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .flow-colors label { display: flex; grid-template-columns: none; justify-content: space-between; }
-  .flow-editor-actions .primary { color: #ffffff; background: var(--primary, #2563eb); border-color: var(--primary, #2563eb); }
+  .flow-editor-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .flow-editor-row .flow-name {
+    flex: 1;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .flow-draft {
+    display: grid;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 8px;
+    background: var(--color-bg-subtle, #f8fafc);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 6px;
+  }
+  .flow-draft input:not([type="checkbox"]):not([type="color"]) {
+    min-width: 0;
+    padding: 5px 7px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 4px;
+  }
+  .flow-draft fieldset {
+    max-height: 130px;
+    overflow: auto;
+    margin: 0;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 4px;
+  }
+  .flow-draft .flow-link-option {
+    display: flex;
+    grid-template-columns: none;
+    margin-top: 3px;
+  }
+  .flow-colors {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .flow-colors label {
+    display: flex;
+    grid-template-columns: none;
+    justify-content: space-between;
+  }
+  .flow-editor-actions .primary {
+    color: #ffffff;
+    background: var(--primary, #2563eb);
+    border-color: var(--primary, #2563eb);
+  }
 
   .data-health-panel {
     position: absolute;
@@ -2975,10 +4139,18 @@
     font-size: 11px;
   }
 
-  .data-health-summary { margin: 8px 0; }
-  .data-health-summary span { font-weight: 700; }
-  .data-health-summary .healthy { color: #15803d; }
-  .data-health-summary .warning { color: #b45309; }
+  .data-health-summary {
+    margin: 8px 0;
+  }
+  .data-health-summary span {
+    font-weight: 700;
+  }
+  .data-health-summary .healthy {
+    color: #15803d;
+  }
+  .data-health-summary .warning {
+    color: #b45309;
+  }
   .freshness-row {
     display: flex;
     justify-content: space-between;
@@ -2986,8 +4158,14 @@
     padding: 5px 0;
     border-top: 1px solid var(--border, #e5e7eb);
   }
-  .freshness-row span { color: var(--color-text-muted, #64748b); }
-  .issue-list { display: grid; gap: 8px; margin-top: 10px; }
+  .freshness-row span {
+    color: var(--color-text-muted, #64748b);
+  }
+  .issue-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+  }
   .issue-card {
     display: grid;
     gap: 2px;
@@ -3001,11 +4179,21 @@
     border-radius: 4px;
     cursor: pointer;
   }
-  .issue-card:hover { background: color-mix(in srgb, #f59e0b 16%, var(--color-bg, #ffffff)); }
-  .issue-card.mismatch { border-left-color: #dc2626; }
-  .issue-card.mismatch:hover { background: color-mix(in srgb, #dc2626 12%, var(--color-bg, #ffffff)); }
-  .issue-card.unverified { border-left-color: #d97706; }
-  .issue-card span { color: var(--color-text-muted, #64748b); }
+  .issue-card:hover {
+    background: color-mix(in srgb, #f59e0b 16%, var(--color-bg, #ffffff));
+  }
+  .issue-card.mismatch {
+    border-left-color: #dc2626;
+  }
+  .issue-card.mismatch:hover {
+    background: color-mix(in srgb, #dc2626 12%, var(--color-bg, #ffffff));
+  }
+  .issue-card.unverified {
+    border-left-color: #d97706;
+  }
+  .issue-card span {
+    color: var(--color-text-muted, #64748b);
+  }
 
   .path-panel label {
     display: grid;
@@ -3053,13 +4241,27 @@
     font-weight: 700;
   }
 
-  .decision.allow { background: #16a34a; }
-  .decision.block { background: #dc2626; }
-  .decision.nat { background: #ea580c; }
-  .decision.vpn { background: #7c3aed; }
-  .decision.control { background: #8b5cf6; }
-  .decision.unknown { background: #64748b; }
-  .path-arrow { color: var(--color-text-muted, #64748b); }
+  .decision.allow {
+    background: #16a34a;
+  }
+  .decision.block {
+    background: #dc2626;
+  }
+  .decision.nat {
+    background: #ea580c;
+  }
+  .decision.vpn {
+    background: #7c3aed;
+  }
+  .decision.control {
+    background: #8b5cf6;
+  }
+  .decision.unknown {
+    background: #64748b;
+  }
+  .path-arrow {
+    color: var(--color-text-muted, #64748b);
+  }
   .path-empty {
     margin-top: 12px;
     padding-top: 10px;

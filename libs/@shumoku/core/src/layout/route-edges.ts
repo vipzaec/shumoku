@@ -189,7 +189,12 @@ function detourAroundObstacles(
     // place every endpoint so the default Bezier is the clearest route.  Do
     // not replace those curves with an orthogonal obstacle detour merely
     // because a sampled curve grazes adjacent card geometry.
-    if (edge.link.metadata?.['routeMode'] === 'smooth') continue
+    if (edge.link.metadata?.['routePolicy'] === 'under') continue
+    if (
+      edge.link.metadata?.['routePolicy'] !== 'avoid' &&
+      edge.link.metadata?.['routeMode'] === 'smooth'
+    )
+      continue
     if (!findBezierObstacle(edge, nodes, subgraphs)) continue
     const points = routeViaGrid(edge, nodes)
     if (!points) continue

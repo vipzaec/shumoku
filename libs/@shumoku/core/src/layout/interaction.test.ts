@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Link } from '../models/types.js'
-import { isPortLinked, linkExists } from './interaction.js'
+import type { Link, Node, Subgraph } from '../models/types.js'
+import { isPortLinked, linkExists, rebalanceSubgraphs } from './interaction.js'
 
 const link = (id: string, fromN: string, fromP: string, toN: string, toP: string): Link => ({
   id,
@@ -43,5 +43,35 @@ describe('linkExists vs isPortLinked', () => {
     // Try a brand-new link from sw3 onto sw1:eth0 (already in use).
     expect(linkExists(links, 'sw3', 'eth0', 'sw1', 'eth0')).toBe(false)
     expect(isPortLinked(links, 'sw1', 'eth0')).toBe(true)
+  })
+})
+
+describe('outer spacing', () => {
+  it('reserves each requested side between a child block and its parent contour', () => {
+    const nodes = new Map<string, Node>([
+      [
+        'vm',
+        {
+          id: 'vm',
+          label: 'VM',
+          spec: { kind: 'hardware', type: 'server' },
+          parent: 'host',
+          position: { x: 200, y: 200 },
+          size: { width: 100, height: 80 },
+          style: { outerSpacing: { left: 90, right: 10, top: 35, bottom: 5 } },
+        },
+      ],
+    ])
+    const subgraphs = new Map<string, Subgraph>([['host', { id: 'host', label: 'ESXi' }]])
+    rebalanceSubgraphs(nodes, subgraphs, new Map(), {
+      subgraphPadding: 20,
+      subgraphLabelHeight: 28,
+    })
+    const bounds = subgraphs.get('host')?.bounds
+    expect(bounds).toBeDefined()
+    expect(bounds?.x).toBe(40)
+    expect(bounds?.y).toBe(77)
+    expect(bounds?.width).toBe(240)
+    expect(bounds?.height).toBe(188)
   })
 })

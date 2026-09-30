@@ -45,46 +45,100 @@ export const OperatorLayoutSchema = z.object({
   portOffsets: z.record(z.string(), z.number().min(0).max(1)),
   edgeRoutes: z.record(z.string(), z.array(z.object({ x: z.number(), y: z.number() }))),
   parentOverrides: z.record(z.string(), z.string().nullable()).optional(),
-  operatorNodes: z.array(z.object({
-    id: z.string(),
-    label: z.array(z.string()),
-    parent: z.string().optional(),
-    type: z.string(),
-    tenant: z.string().optional(),
-    notes: z.string().optional(),
-    origin: z.enum(['Manual', 'NetBox', 'Existing object']).optional(),
-    reference: z.object({ nodeId: z.string(), nodeName: z.string() }).optional(),
-    binding: z.object({
-      dataSourceId: z.string(),
-      kind: z.string(),
-      objectId: z.string(),
-      objectName: z.string(),
-    }).optional(),
-  })).optional(),
-  presentationOverrides: z.record(z.string(), z.object({
-    label: z.array(z.string()).optional(),
-    type: z.string().optional(),
-  })).optional(),
-  operatorLinks: z.array(z.object({
-    id: z.string(),
-    from: z.string(),
-    to: z.string(),
-    label: z.string(),
-    relationship: z.enum(['network', 'management', 'dependency', 'traffic', 'documentation']).optional(),
-    direction: z.enum(['none', 'forward', 'back', 'both']).optional(),
-    tenant: z.string().optional(),
-    notes: z.string().optional(),
-    fromSide: z.enum(['top', 'bottom', 'left', 'right']),
-    toSide: z.enum(['top', 'bottom', 'left', 'right']),
-  })).optional(),
-  operatorGroups: z.array(z.object({
-    id: z.string(),
-    label: z.string(),
-    parent: z.string().optional(),
-    direction: z.enum(['TB', 'BT', 'LR', 'RL']),
-    tenant: z.string().optional(),
-    notes: z.string().optional(),
-  })).optional(),
+  operatorNodes: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.array(z.string()),
+        parent: z.string().optional(),
+        type: z.string(),
+        icon: z.string().max(750000).optional(),
+        tenant: z.string().optional(),
+        notes: z.string().optional(),
+        origin: z.enum(['Manual', 'NetBox', 'Existing object']).optional(),
+        reference: z.object({ nodeId: z.string(), nodeName: z.string() }).optional(),
+        binding: z
+          .object({
+            dataSourceId: z.string(),
+            kind: z.string(),
+            objectId: z.string(),
+            objectName: z.string(),
+          })
+          .optional(),
+      }),
+    )
+    .optional(),
+  presentationOverrides: z
+    .record(
+      z.string(),
+      z.object({
+        label: z.array(z.string()).optional(),
+        type: z.string().optional(),
+        icon: z.string().max(750000).optional(),
+      }),
+    )
+    .optional(),
+  operatorLinks: z
+    .array(
+      z.object({
+        id: z.string(),
+        from: z.string(),
+        to: z.string(),
+        label: z.string(),
+        relationship: z
+          .enum(['network', 'management', 'dependency', 'traffic', 'documentation'])
+          .optional(),
+        direction: z.enum(['none', 'forward', 'back', 'both']).optional(),
+        tenant: z.string().optional(),
+        notes: z.string().optional(),
+        fromSide: z.enum(['top', 'bottom', 'left', 'right']),
+        toSide: z.enum(['top', 'bottom', 'left', 'right']),
+      }),
+    )
+    .optional(),
+  operatorGroups: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        parent: z.string().optional(),
+        direction: z.enum(['TB', 'BT', 'LR', 'RL']),
+        tenant: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .optional(),
+  blockSpacingOverrides: z
+    .record(
+      z.string(),
+      z.object({
+        top: z.number().min(0).max(1000).optional(),
+        right: z.number().min(0).max(1000).optional(),
+        bottom: z.number().min(0).max(1000).optional(),
+        left: z.number().min(0).max(1000).optional(),
+      }),
+    )
+    .optional(),
+  linkAppearanceOverrides: z
+    .record(
+      z.string(),
+      z.object({
+        color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+        width: z.number().min(1).max(12),
+        preset: z.enum(['solid', 'dashed', 'dotted', 'dash-dot', 'long-dash', 'double']),
+        routePolicy: z.enum(['avoid', 'under']),
+      }),
+    )
+    .optional(),
+  linkPortOverrides: z
+    .record(
+      z.string(),
+      z.object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+      }),
+    )
+    .optional(),
 })
 
 export const ObservationSummarySchema = z.object({

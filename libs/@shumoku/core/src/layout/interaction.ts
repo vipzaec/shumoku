@@ -11,7 +11,7 @@
  */
 
 import { newId } from '../ids.js'
-import type { Link, NetworkGraph, Node, NodePort, Subgraph } from '../models/types.js'
+import type { BlockSpacing, Link, NetworkGraph, Node, NodePort, Subgraph } from '../models/types.js'
 import { createEngine, resolveNodeSize } from './engine/index.js'
 import { portLabelBox } from './port-geometry.js'
 import type { ResolvedEdge, ResolvedPort } from './resolved-types.js'
@@ -19,6 +19,32 @@ import { routeEdges } from './route-edges.js'
 
 /** Minimum gap between nodes during collision resolution */
 const DEFAULT_NODE_GAP = 8
+
+function spacedRect(
+  rect: { x: number; y: number; w: number; h: number },
+  spacing?: BlockSpacing,
+): { x: number; y: number; w: number; h: number } {
+  const left = Math.max(0, spacing?.left ?? 0)
+  const right = Math.max(0, spacing?.right ?? 0)
+  const top = Math.max(0, spacing?.top ?? 0)
+  const bottom = Math.max(0, spacing?.bottom ?? 0)
+  return {
+    x: rect.x + (right - left) / 2,
+    y: rect.y + (bottom - top) / 2,
+    w: rect.w + left + right,
+    h: rect.h + top + bottom,
+  }
+}
+
+function unspacePosition(
+  position: { x: number; y: number },
+  spacing?: BlockSpacing,
+): { x: number; y: number } {
+  return {
+    x: position.x - (Math.max(0, spacing?.right ?? 0) - Math.max(0, spacing?.left ?? 0)) / 2,
+    y: position.y - (Math.max(0, spacing?.bottom ?? 0) - Math.max(0, spacing?.top ?? 0)) / 2,
+  }
+}
 
 /**
  * Process-wide engine used for the free helpers below
@@ -71,7 +97,12 @@ export function collectObstacles(
     if (nid === excludeId) continue
     if (!n.position) continue
     const size = resolveNodeSize(n)
-    obstacles.push({ x: n.position.x, y: n.position.y, w: size.width, h: size.height })
+    obstacles.push(
+      spacedRect(
+        { x: n.position.x, y: n.position.y, w: size.width, h: size.height },
+        n.style?.outerSpacing,
+      ),
+    )
   }
 
   if (subgraphs) {
@@ -79,7 +110,7 @@ export function collectObstacles(
       if (sgId === excludeId) continue
       if (!sg.bounds) continue
       if (excludeParent && isChildOf(excludeParent, sgId, subgraphs)) continue
-      obstacles.push(boundsToRect(sg.bounds))
+      obstacles.push(spacedRect(boundsToRect(sg.bounds), sg.style?.outerSpacing))
     }
   }
 
@@ -117,7 +148,8 @@ export function resolveNodePosition(
   if (!node) return { x, y }
   const size = resolveNodeSize(node)
   const obstacles = collectObstacles(id, node.parent, nodes, subgraphs)
-  return resolvePosition({ x, y, w: size.width, h: size.height }, obstacles, gap)
+  const spaced = spacedRect({ x, y, w: size.width, h: size.height }, node.style?.outerSpacing)
+  return unspacePosition(resolvePosition(spaced, obstacles, gap), node.style?.outerSpacing)
 }
 
 /**
@@ -143,11 +175,11 @@ export function placeNode(
 ): { x: number; y: number } {
   const size = resolveNodeSize(node)
   const obstacles = collectObstacles(node.id, node.parent, graph.nodes, graph.subgraphs)
-  return resolvePosition(
+  const spaced = spacedRect(
     { x: initial.x, y: initial.y, w: size.width, h: size.height },
-    obstacles,
-    gap,
+    node.style?.outerSpacing,
   )
+  return unspacePosition(resolvePosition(spaced, obstacles, gap), node.style?.outerSpacing)
 }
 
 /** Check if parentId is sgId or a descendant of sgId */
@@ -275,10 +307,11 @@ export function rebalanceSubgraphs(
         const size = resolveNodeSize(n)
         const hw = size.width / 2
         const hh = size.height / 2
-        minX = Math.min(minX, n.position.x - hw)
-        minY = Math.min(minY, n.position.y - hh)
-        maxX = Math.max(maxX, n.position.x + hw)
-        maxY = Math.max(maxY, n.position.y + hh)
+        const spacing = n.style?.outerSpacing
+        minX = Math.min(minX, n.position.x - hw - Math.max(0, spacing?.left ?? 0))
+        minY = Math.min(minY, n.position.y - hh - Math.max(0, spacing?.top ?? 0))
+        maxX = Math.max(maxX, n.position.x + hw + Math.max(0, spacing?.right ?? 0))
+        maxY = Math.max(maxY, n.position.y + hh + Math.max(0, spacing?.bottom ?? 0))
         // A port label belongs to the node and must remain inside the same
         // container. Include its real rendered box in the hull calculation.
         for (const port of ports.values()) {
@@ -295,10 +328,17 @@ export function rebalanceSubgraphs(
         if (child.parent !== sgId) continue
         if (!child.bounds) continue
         hasChildren = true
-        minX = Math.min(minX, child.bounds.x)
-        minY = Math.min(minY, child.bounds.y)
-        maxX = Math.max(maxX, child.bounds.x + child.bounds.width)
-        maxY = Math.max(maxY, child.bounds.y + child.bounds.height)
+        const spacing = child.style?.outerSpacing
+        minX = Math.min(minX, child.bounds.x - Math.max(0, spacing?.left ?? 0))
+        minY = Math.min(minY, child.bounds.y - Math.max(0, spacing?.top ?? 0))
+        maxX = Math.max(
+          maxX,
+          child.bounds.x + child.bounds.width + Math.max(0, spacing?.right ?? 0),
+        )
+        maxY = Math.max(
+          maxY,
+          child.bounds.y + child.bounds.height + Math.max(0, spacing?.bottom ?? 0),
+        )
       }
 
       if (!hasChildren) continue
@@ -333,8 +373,8 @@ export function rebalanceSubgraphs(
         const other = subgraphs.get(otherId)
         if (!other?.bounds || other.parent !== parentId) continue
 
-        const a = boundsToRect(sg.bounds)
-        const b = boundsToRect(other.bounds)
+        const a = spacedRect(boundsToRect(sg.bounds), sg.style?.outerSpacing)
+        const b = spacedRect(boundsToRect(other.bounds), other.style?.outerSpacing)
         const resolved = defaultEngine().resolveAgainstObstacles(b, [a], DEFAULT_NODE_GAP)
         const dx = resolved.x - b.x
         const dy = resolved.y - b.y
@@ -361,10 +401,11 @@ export function rebalanceSubgraphs(
       if (!node.position) continue
       const size = resolveNodeSize(node)
       const obstacles = collectObstacles(nodeId, node.parent, nodes, subgraphs)
-      const resolved = resolvePosition(
+      const spaced = spacedRect(
         { x: node.position.x, y: node.position.y, w: size.width, h: size.height },
-        obstacles,
+        node.style?.outerSpacing,
       )
+      const resolved = unspacePosition(resolvePosition(spaced, obstacles), node.style?.outerSpacing)
       if (resolved.x !== node.position.x || resolved.y !== node.position.y) {
         const dx = resolved.x - node.position.x
         const dy = resolved.y - node.position.y

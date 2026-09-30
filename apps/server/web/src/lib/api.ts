@@ -94,13 +94,24 @@ export const dataSources = {
     return data
   },
 
-  listBindableObjects: async (id: string, kind: string, query = '', objectId = ''): Promise<Array<{ id: string; kind: string; name: string; label: string[] }>> => {
+  listBindableObjects: async (
+    id: string,
+    kind: string,
+    query = '',
+    objectId = '',
+  ): Promise<Array<{ id: string; kind: string; name: string; label: string[] }>> => {
     const params = new URLSearchParams({ kind })
     if (query) params.set('q', query)
     if (objectId) params.set('objectId', objectId)
-    const response = await fetch(`${BASE_URL}/datasources/${encodeURIComponent(id)}/bindable-objects?${params}`)
-    const payload = await response.json().catch(() => ({})) as { error?: string; objects?: Array<{ id: string; kind: string; name: string; label: string[] }> }
-    if (!response.ok) throw new ApiError(payload.error ?? `HTTP error ${response.status}`, response.status)
+    const response = await fetch(
+      `${BASE_URL}/datasources/${encodeURIComponent(id)}/bindable-objects?${params}`,
+    )
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string
+      objects?: Array<{ id: string; kind: string; name: string; label: string[] }>
+    }
+    if (!response.ok)
+      throw new ApiError(payload.error ?? `HTTP error ${response.status}`, response.status)
     return payload.objects ?? []
   },
 
@@ -927,6 +938,20 @@ export const topologies = {
           portOrders: Record<string, number>
           portOffsets: Record<string, number>
           edgeRoutes: Record<string, Array<{ x: number; y: number }>>
+          blockSpacingOverrides?: Record<
+            string,
+            { top?: number; right?: number; bottom?: number; left?: number }
+          >
+          linkAppearanceOverrides?: Record<
+            string,
+            {
+              color: string
+              width: number
+              preset: 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash' | 'double'
+              routePolicy: 'avoid' | 'under'
+            }
+          >
+          linkPortOverrides?: Record<string, { from?: string; to?: string }>
         }
       },
     ) => {

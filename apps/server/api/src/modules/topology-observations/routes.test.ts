@@ -120,6 +120,19 @@ describe('topology display settings', () => {
       portOrders: { 'firewall:wan': 0 },
       portOffsets: { 'firewall:wan': 0.5 },
       edgeRoutes: {},
+      blockSpacingOverrides: { firewall: { left: 48 } },
+      linkAppearanceOverrides: {
+        ingress: { color: '#1d4ed8', width: 3, preset: 'dashed', routePolicy: 'avoid' },
+      },
+      linkPortOverrides: { ingress: { to: 'wan' } },
+      operatorNodes: [
+        {
+          id: 'operator-1',
+          label: ['Custom service'],
+          type: 'generic',
+          icon: 'data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E',
+        },
+      ],
     }
     const response = await app(observations).request('/topologies/topology-1/display-settings', {
       method: 'PUT',

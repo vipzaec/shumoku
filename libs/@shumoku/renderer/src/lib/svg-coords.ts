@@ -162,10 +162,10 @@ type Point = { x: number; y: number }
  * crisp. Extracted from `SvgEdge.svelte` so weathermap overlays and
  * other consumers can reuse the exact same rounding logic.
  */
-export function polylinePath(pts: Point[]): string {
+export function polylinePath(pts: Point[], cornerRadius = 6): string {
   if (pts.length === 0) return ''
   if (pts.length === 1) return `M ${pts[0]?.x ?? 0} ${pts[0]?.y ?? 0}`
-  const r = 6
+  const r = Math.max(0, cornerRadius)
   let d = `M ${pts[0]?.x ?? 0} ${pts[0]?.y ?? 0}`
   for (let i = 1; i < pts.length - 1; i++) {
     const prev = pts[i - 1]

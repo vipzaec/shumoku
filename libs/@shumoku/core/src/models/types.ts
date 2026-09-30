@@ -136,6 +136,15 @@ export interface NodeStyle {
   fontSize?: number
   fontWeight?: 'normal' | 'bold'
   opacity?: number
+  /** Reserved clear space outside this block, independently on each side. */
+  outerSpacing?: BlockSpacing
+}
+
+export interface BlockSpacing {
+  top?: number
+  right?: number
+  bottom?: number
+  left?: number
 }
 
 // ============================================
@@ -978,6 +987,8 @@ export interface SubgraphStyle {
   labelFontSize?: number
   /** Padding inside this subgraph (like CSS padding) */
   padding?: number
+  /** Reserved clear space outside this container, independently on each side. */
+  outerSpacing?: BlockSpacing
   /** Horizontal spacing between nodes in this subgraph */
   nodeSpacing?: number
   /** Vertical spacing between layers in this subgraph */

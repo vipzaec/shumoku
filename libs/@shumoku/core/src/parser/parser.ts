@@ -109,6 +109,7 @@ export interface YamlNodeStyle {
   fontSize?: number
   fontWeight?: string
   opacity?: number
+  outerSpacing?: { top?: number; right?: number; bottom?: number; left?: number }
 }
 
 export interface YamlNode {
@@ -194,6 +195,7 @@ export interface YamlSubgraphStyle {
   labelPosition?: string
   labelFontSize?: number
   padding?: number
+  outerSpacing?: { top?: number; right?: number; bottom?: number; left?: number }
   nodeSpacing?: number
   rankSpacing?: number
 }
@@ -287,6 +289,12 @@ export interface YamlNetworkInput {
 }
 
 const stringOrLines = z.union([z.string(), z.array(z.string())])
+const blockSpacingSchema = z.object({
+  top: z.number().nonnegative().optional(),
+  right: z.number().nonnegative().optional(),
+  bottom: z.number().nonnegative().optional(),
+  left: z.number().nonnegative().optional(),
+})
 const nodeStyleSchema: z.ZodType<YamlNodeStyle> = z.looseObject({
   fill: z.string().optional(),
   stroke: z.string().optional(),
@@ -296,6 +304,7 @@ const nodeStyleSchema: z.ZodType<YamlNodeStyle> = z.looseObject({
   fontSize: z.number().optional(),
   fontWeight: z.string().optional(),
   opacity: z.number().optional(),
+  outerSpacing: blockSpacingSchema.optional(),
 })
 const nodeSchema: z.ZodType<YamlNode> = z.looseObject({
   id: z.string().optional().describe('Stable node identifier; a fallback is generated if omitted'),
@@ -367,6 +376,7 @@ const subgraphStyleSchema: z.ZodType<YamlSubgraphStyle> = z.looseObject({
   labelPosition: z.string().optional(),
   labelFontSize: z.number().optional(),
   padding: z.number().optional(),
+  outerSpacing: blockSpacingSchema.optional(),
   nodeSpacing: z.number().optional(),
   rankSpacing: z.number().optional(),
 })
