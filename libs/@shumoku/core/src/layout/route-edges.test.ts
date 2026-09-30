@@ -84,6 +84,22 @@ describe('routeEdges — obstacle avoidance', () => {
     const edges = await routeEdges(nodes, ports, [link('source:out', 'target:in')])
     expect([...edges.values()][0]?.route).toBeUndefined()
   })
+
+  test('lets each link choose whether to pass under or avoid a blocking node', async () => {
+    const nodes = new Map([['middle', obstacle('middle', 200, 100)]])
+    const passing = {
+      ...link('source:out', 'target:in'),
+      metadata: { routePolicy: 'under' },
+    }
+    const avoiding = {
+      ...link('source:out', 'target:in'),
+      metadata: { routeMode: 'smooth', routePolicy: 'avoid' },
+    }
+    const under = await routeEdges(nodes, ports, [passing])
+    const around = await routeEdges(nodes, ports, [avoiding])
+    expect([...under.values()][0]?.route).toBeUndefined()
+    expect([...around.values()][0]?.route?.points?.length).toBeGreaterThan(2)
+  })
 })
 
 describe('routeEdges — lane offset', () => {
