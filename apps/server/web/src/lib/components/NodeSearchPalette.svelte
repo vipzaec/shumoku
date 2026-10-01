@@ -92,7 +92,7 @@
     <Command.Group heading="Nodes">
       {#each allNodes as node (node.id)}
         <Command.Item
-          value={node.label}
+          value={[node.label, node.id, ...node.searchAliases].join(' ')}
           keywords={[
             node.id,
             node.spec?.type ?? '',
