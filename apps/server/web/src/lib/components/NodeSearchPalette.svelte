@@ -5,6 +5,8 @@
   interface NodeEntry {
     id: string
     label: string
+    searchAliases: string[]
+    context?: string
     spec?: {
       type?: string
       vendor?: string
@@ -37,9 +39,15 @@
         : node.label?.trim() || node.id
       const type = specDeviceType(node.spec)
       const hardware = node.spec?.kind === 'hardware' ? node.spec : undefined
+      const displayName =
+        typeof node.metadata?.displayName === 'string' ? node.metadata.displayName : ''
+      const context =
+        typeof node.metadata?.searchContext === 'string' ? node.metadata.searchContext : ''
       return {
         id: node.id,
         label,
+        searchAliases: [displayName, context].filter(Boolean),
+        context,
         spec: {
           type,
           vendor: hardware?.vendor,
@@ -85,13 +93,20 @@
       {#each allNodes as node (node.id)}
         <Command.Item
           value={node.label}
-          keywords={[node.id, node.spec?.type ?? '', node.spec?.vendor ?? '', node.spec?.model ?? '']}
+          keywords={[
+            node.id,
+            node.spec?.type ?? '',
+            node.spec?.vendor ?? '',
+            node.spec?.model ?? '',
+            ...node.searchAliases,
+          ]}
           onSelect={() => handleSelect(node.id)}
         >
           <span>{node.label}</span>
-          {#if node.spec?.vendor || node.spec?.model || node.spec?.type}
+          {#if node.context || node.spec?.vendor || node.spec?.model || node.spec?.type}
             <Command.Shortcut>
-              {[node.spec?.vendor, node.spec?.model, node.spec?.type].filter(Boolean).join(' / ')}
+              {node.context ||
+                [node.spec?.vendor, node.spec?.model, node.spec?.type].filter(Boolean).join(' / ')}
             </Command.Shortcut>
           {/if}
         </Command.Item>
