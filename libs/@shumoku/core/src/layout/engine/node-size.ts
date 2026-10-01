@@ -39,6 +39,7 @@ interface NodeLike {
   label?: string | string[]
   spec?: NodeSpec
   size?: Size
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -46,6 +47,11 @@ interface NodeLike {
  * port-lane allowance. Pure on the node's content.
  */
 export function nodeBodySize(node: NodeLike, text: TextMeasurer): Size {
+  // A boundary port belongs to its enclosing subgraph. It is a connection
+  // point, not a card, so the ordinary minimum card footprint does not apply.
+  if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') {
+    return { width: 12, height: 12 }
+  }
   const labelLines = Array.isArray(node.label) ? node.label : node.label ? [node.label] : []
   const specType = node.spec?.kind !== 'service' ? node.spec?.type : undefined
   const hasIcon = !!(specType && getDeviceIcon(specType))
@@ -91,6 +97,9 @@ function portSlotWidth(maxLabelPx: number): number {
  * gets a narrow top lane and a wide bottom lane.
  */
 export function nodeFootprint(node: NodeLike, portsBySide: PortsBySide, text: TextMeasurer): Size {
+  if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') {
+    return { width: 12, height: 12 }
+  }
   const body = nodeBodySize(node, text)
 
   const widest = (ports: { label?: string }[]): number =>

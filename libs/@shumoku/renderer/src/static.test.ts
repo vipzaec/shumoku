@@ -10,6 +10,37 @@ import { describe, expect, it } from 'vitest'
 import { renderSvgString } from './static.js'
 
 describe('renderSvgString', () => {
+  it('draws a shared boundary port without an inner LAN card', () => {
+    const boundary: Node = {
+      id: 'vm-lan',
+      label: [],
+      parent: 'vm',
+      position: { x: 10, y: 70 },
+      metadata: { presentationRole: 'subgraph-boundary-port' },
+      ports: [{ id: 'lan', label: 'LAN', connectors: [] }],
+    }
+    const port: ResolvedPort = {
+      id: 'vm-lan:lan',
+      nodeId: boundary.id,
+      label: 'LAN',
+      side: 'left',
+      absolutePosition: { x: 10, y: 70 },
+      size: { width: 8, height: 8 },
+    }
+    const layout: ResolvedLayout = {
+      nodes: new Map([[boundary.id, boundary]]),
+      ports: new Map([[port.id, port]]),
+      edges: new Map(),
+      subgraphs: new Map([
+        ['vm', { id: 'vm', label: 'VM', bounds: { x: 10, y: 0, width: 200, height: 140 } }],
+      ]),
+      bounds: { x: 0, y: 0, width: 220, height: 150 },
+    }
+    const svg = renderSvgString(layout)
+    expect(svg).toContain('data-port="vm-lan:lan"')
+    expect(svg).not.toContain('data-id="vm-lan"')
+  })
+
   it('draws group titles above nodes with a background halo', () => {
     const group: Subgraph = {
       id: 'group',

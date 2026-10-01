@@ -95,6 +95,7 @@ export function collectObstacles(
 
   for (const [nid, n] of nodes) {
     if (nid === excludeId) continue
+    if (n.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
     if (!n.position) continue
     const size = resolveNodeSize(n)
     obstacles.push(
@@ -302,6 +303,7 @@ export function rebalanceSubgraphs(
 
       for (const n of nodes.values()) {
         if (n.parent !== sgId) continue
+        if (n.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
         if (!n.position) continue
         hasChildren = true
         const size = resolveNodeSize(n)
@@ -399,6 +401,7 @@ export function rebalanceSubgraphs(
     let moved = false
     for (const [nodeId, node] of nodes) {
       if (!node.position) continue
+      if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
       const size = resolveNodeSize(node)
       const obstacles = collectObstacles(nodeId, node.parent, nodes, subgraphs)
       const spaced = spacedRect(
@@ -445,6 +448,36 @@ export function rebalanceSubgraphs(
   }
   // Final recompute so the hulls reflect the post-converge state.
   recomputeHulls()
+  // Boundary connectors do not enlarge the VM container. Seat their single
+  // shared port on its actual outline after the container has settled.
+  for (const [nodeId, node] of nodes) {
+    if (node.metadata?.['presentationRole'] !== 'subgraph-boundary-port' || !node.parent) continue
+    const bounds = subgraphs.get(node.parent)?.bounds
+    if (!bounds) continue
+    const boundaryPort = node.ports?.[0]
+    const side = boundaryPort?.placement?.side ?? 'left'
+    const rawOffset = boundaryPort?.placement?.offset ?? 0.5
+    const offset = Math.max(0.08, Math.min(0.92, rawOffset))
+    const point = {
+      x:
+        side === 'left'
+          ? bounds.x
+          : side === 'right'
+            ? bounds.x + bounds.width
+            : bounds.x + bounds.width * offset,
+      y:
+        side === 'top'
+          ? bounds.y
+          : side === 'bottom'
+            ? bounds.y + bounds.height
+            : bounds.y + bounds.height * offset,
+    }
+    nodes.set(nodeId, { ...node, position: point })
+    for (const [portId, port] of ports) {
+      if (port.nodeId !== nodeId) continue
+      ports.set(portId, { ...port, absolutePosition: point, side })
+    }
+  }
 }
 
 export async function moveNode(

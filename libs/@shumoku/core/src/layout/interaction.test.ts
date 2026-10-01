@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Link, Node, Subgraph } from '../models/types.js'
 import { isPortLinked, linkExists, rebalanceSubgraphs } from './interaction.js'
+import type { ResolvedPort } from './resolved-types.js'
+import { routeEdges } from './route-edges.js'
 
 const link = (id: string, fromN: string, fromP: string, toN: string, toP: string): Link => ({
   id,
@@ -73,5 +75,91 @@ describe('outer spacing', () => {
     expect(bounds?.y).toBe(77)
     expect(bounds?.width).toBe(240)
     expect(bounds?.height).toBe(188)
+  })
+})
+
+describe('shared subgraph boundary port', () => {
+  it('places one LAN point on the VM outline and routes every service from it', async () => {
+    const boundary: Node = {
+      id: 'vm-lan',
+      label: '',
+      parent: 'vm',
+      position: { x: 100, y: 130 },
+      metadata: { presentationRole: 'subgraph-boundary-port' },
+      ports: [
+        { id: 'lan', label: 'LAN', connectors: [], placement: { side: 'left', offset: 0.5 } },
+      ],
+    }
+    const service = (id: string, y: number): Node => ({
+      id,
+      label: id,
+      parent: 'vm',
+      position: { x: 250, y },
+      size: { width: 100, height: 60 },
+    })
+    const nodes = new Map<string, Node>([
+      [boundary.id, boundary],
+      ['app', service('app', 110)],
+      ['db', service('db', 210)],
+      [
+        'segment',
+        {
+          id: 'segment',
+          label: 'LAN segment',
+          position: { x: 0, y: 160 },
+          size: { width: 80, height: 60 },
+        },
+      ],
+    ])
+    const subgraphs = new Map<string, Subgraph>([['vm', { id: 'vm', label: 'VM' }]])
+    const lanPort: ResolvedPort = {
+      id: 'vm-lan:lan',
+      nodeId: 'vm-lan',
+      label: 'LAN',
+      side: 'left',
+      absolutePosition: { x: 100, y: 130 },
+      size: { width: 8, height: 8 },
+    }
+    const ports = new Map<string, ResolvedPort>([
+      [lanPort.id, lanPort],
+      ...[
+        ['segment:p', 'segment', 0, 160, 'right'],
+        ['app:p', 'app', 200, 110, 'left'],
+        ['db:p', 'db', 200, 210, 'left'],
+      ].map(
+        ([id, nodeId, x, y, side]) =>
+          [
+            id as string,
+            {
+              id: id as string,
+              nodeId: nodeId as string,
+              label: '',
+              absolutePosition: { x: x as number, y: y as number },
+              side: side as ResolvedPort['side'],
+              size: { width: 8, height: 8 },
+            } as ResolvedPort,
+          ] as const,
+      ),
+    ])
+    rebalanceSubgraphs(nodes, subgraphs, ports)
+    const box = subgraphs.get('vm')?.bounds
+    expect(box).toBeDefined()
+    if (!box) throw new Error('VM boundary missing')
+    expect(ports.get('vm-lan:lan')?.absolutePosition.x).toBe(box?.x)
+    expect(ports.get('vm-lan:lan')?.absolutePosition.y).toBe(box.y + box.height / 2)
+    const links = [
+      link('ingress', 'segment', 'p', 'vm-lan', 'lan'),
+      link('app', 'vm-lan', 'lan', 'app', 'p'),
+      link('db', 'vm-lan', 'lan', 'db', 'p'),
+    ]
+    const edges = await routeEdges(nodes, ports, links, subgraphs)
+    expect(edges.size).toBe(3)
+    expect(edges.get('app')?.fromPortId).toBe('vm-lan:lan')
+    expect(edges.get('db')?.fromPortId).toBe('vm-lan:lan')
+    expect(edges.get('app')?.fromLateralOffset).toBeUndefined()
+    expect(edges.get('db')?.fromLateralOffset).toBeUndefined()
+    expect(edges.get('ingress')?.toPort.side).toBe('left')
+    expect(edges.get('app')?.fromPort.side).toBe('right')
+    expect(edges.get('db')?.fromPort.side).toBe('right')
   })
 })

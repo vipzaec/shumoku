@@ -523,6 +523,7 @@ export function renderSvgString(layout: ResolvedLayout, options?: StaticRenderOp
 
   // Nodes + ports
   for (const node of layout.nodes.values()) {
+    if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
     parts.push(renderNode(node, colors))
   }
   for (const port of layout.ports.values()) {

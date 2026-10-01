@@ -327,7 +327,7 @@
 
     <!-- Nodes layer -->
     {#each nodes.values() as node (node.id)}
-      {#if !hideNode?.(node)}
+      {#if !hideNode?.(node) && node.metadata?.['presentationRole'] !== 'subgraph-boundary-port'}
         <SvgNode
           {node}
           {colors}

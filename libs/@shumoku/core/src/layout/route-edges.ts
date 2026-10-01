@@ -127,12 +127,28 @@ export async function routeEdges(
     const fromPort = ports.get(fromPortId)
     const toPort = ports.get(toPortId)
     if (!fromPort || !toPort) continue
+    // A shared point sits on a container outline. Its external links leave
+    // outward while links to services inside the same container leave inward.
+    const fromNode = nodes.get(fromNodeId)
+    const toNode = nodes.get(toNodeId)
+    const inward = (side: ResolvedPort['side']): ResolvedPort['side'] =>
+      ({ left: 'right', right: 'left', top: 'bottom', bottom: 'top' })[side] as ResolvedPort['side']
+    const fromBoundary = fromNode?.metadata?.['presentationRole'] === 'subgraph-boundary-port'
+    const toBoundary = toNode?.metadata?.['presentationRole'] === 'subgraph-boundary-port'
+    const routedFromPort =
+      fromBoundary && toNode?.parent === fromNode.parent
+        ? { ...fromPort, side: inward(fromPort.side) }
+        : fromPort
+    const routedToPort =
+      toBoundary && fromNode?.parent === toNode.parent
+        ? { ...toPort, side: inward(toPort.side) }
+        : toPort
     edges.set(linkId, {
       id: linkId,
       fromPortId,
       toPortId,
-      fromPort,
-      toPort,
+      fromPort: routedFromPort,
+      toPort: routedToPort,
       fromNodeId,
       toNodeId,
       fromEndpoint: link.from,
@@ -151,6 +167,16 @@ export async function routeEdges(
   // underneath a device after manual placement.
   void assignBusRoutes
   assignLaneOffsets(edges)
+  // Multiple links on a container boundary represent one physical/logical
+  // interface. Keep every stroke anchored to precisely the same point.
+  for (const edge of edges.values()) {
+    if (nodes.get(edge.fromNodeId)?.metadata?.['presentationRole'] === 'subgraph-boundary-port') {
+      edge.fromLateralOffset = undefined
+    }
+    if (nodes.get(edge.toNodeId)?.metadata?.['presentationRole'] === 'subgraph-boundary-port') {
+      edge.toLateralOffset = undefined
+    }
+  }
   detourAroundObstacles(edges, nodes, subgraphs ?? new Map())
   return edges
 }

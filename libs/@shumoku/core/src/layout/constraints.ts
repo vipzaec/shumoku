@@ -168,6 +168,7 @@ export function verifyLayoutConstraints(layout: ResolvedLayout): ConstraintRepor
   const nodeBoxes: BoxSpec[] = []
   for (const [id, node] of layout.nodes) {
     if (!node.position) continue
+    if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
     const size = resolveNodeSize(node)
     nodeBoxes.push({
       id,
@@ -181,6 +182,7 @@ export function verifyLayoutConstraints(layout: ResolvedLayout): ConstraintRepor
   const members = new Map<string, string[]>()
   for (const [id, node] of layout.nodes) {
     if (!node.parent) continue
+    if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
     const list = members.get(node.parent)
     if (list) list.push(id)
     else members.set(node.parent, [id])
