@@ -319,7 +319,9 @@
         oncontextmenu={(id, e) => onctx?.(id, 'edge', e)}
         {preventContextMenuDefault}
         routeEdit={interactive}
-        {onrouteadd} {onroutemove} {onrouteremove}
+        {onrouteadd}
+        {onroutemove}
+        {onrouteremove}
       />
     {/each}
 
@@ -361,6 +363,11 @@
         oncontextmenu={(id, e) => onctx?.(id, 'port', e)}
         {preventContextMenuDefault}
       />
+    {/each}
+
+    <!-- Keep container titles above edges and ports; the text halo masks crossings. -->
+    {#each subgraphs.values() as subgraph (subgraph.id)}
+      <SvgSubgraph {subgraph} {colors} {theme} titleOnly />
     {/each}
 
     {#if linkPreview}

@@ -4,11 +4,38 @@ import {
   type Node,
   type ResolvedLayout,
   type ResolvedPort,
+  type Subgraph,
 } from '@shumoku/core'
 import { describe, expect, it } from 'vitest'
 import { renderSvgString } from './static.js'
 
 describe('renderSvgString', () => {
+  it('draws group titles above nodes with a background halo', () => {
+    const group: Subgraph = {
+      id: 'group',
+      label: 'Group title',
+      bounds: { x: 0, y: 0, width: 220, height: 140 },
+    }
+    const node: Node = {
+      id: 'node',
+      label: 'Node',
+      parent: group.id,
+      position: { x: 100, y: 80 },
+      size: { width: 80, height: 50 },
+    }
+    const layout: ResolvedLayout = {
+      nodes: new Map([[node.id, node]]),
+      ports: new Map(),
+      edges: new Map(),
+      subgraphs: new Map([[group.id, group]]),
+      bounds: { x: 0, y: 0, width: 220, height: 140 },
+    }
+    const svg = renderSvgString(layout)
+    expect(svg.indexOf('<g class="subgraph"')).toBeLessThan(svg.indexOf('<g class="node"'))
+    expect(svg.indexOf('<g class="node"')).toBeLessThan(svg.indexOf('class="subgraph-label"'))
+    expect(svg).toContain('paint-order="stroke fill"')
+  })
+
   it('renders a legacy resolved port whose label is missing', () => {
     const port: ResolvedPort = {
       id: 'node:legacy-port',

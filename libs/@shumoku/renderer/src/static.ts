@@ -449,8 +449,12 @@ function renderSubgraph(sg: Subgraph, theme: Theme, colors: RenderColors): strin
 
   return `<g class="subgraph" data-id="${esc(sg.id)}"${sheetAttributes}>
   <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="12" ry="12" fill="${surface.fill}" stroke="${surface.stroke}" stroke-width="${strokeWidth}"${dasharray ? ` stroke-dasharray="${dasharray}"` : ''}/>
-  <text x="${bx + 10}" y="${by + 20}" class="subgraph-label" text-anchor="start" fill="${surface.text}">${esc(sg.label)}</text>
 </g>`
+}
+
+function renderSubgraphTitle(sg: Subgraph, theme: Theme, colors: RenderColors): string {
+  const surface = resolveSurface(theme, colors, sg.style)
+  return `<text x="${(sg.bounds?.x ?? 0) + 10}" y="${(sg.bounds?.y ?? 0) + 20}" class="subgraph-label" text-anchor="start" fill="${surface.text}" stroke="${surface.fill}" stroke-width="8" stroke-linejoin="round" paint-order="stroke fill" pointer-events="none">${esc(sg.label)}</text>`
 }
 
 // ============================================================================
@@ -523,6 +527,11 @@ export function renderSvgString(layout: ResolvedLayout, options?: StaticRenderOp
   }
   for (const port of layout.ports.values()) {
     parts.push(renderPort(port, colors))
+  }
+
+  // Match the interactive canvas: group names remain legible over crossing links.
+  for (const sg of layout.subgraphs.values()) {
+    parts.push(renderSubgraphTitle(sg, theme, colors))
   }
 
   parts.push('</svg>')

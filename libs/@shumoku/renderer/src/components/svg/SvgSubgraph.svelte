@@ -10,6 +10,7 @@
     theme,
     selected = false,
     interactive = false,
+    titleOnly = false,
     overlay,
     ondragstart,
     ondragmove,
@@ -23,6 +24,7 @@
     theme?: Theme
     selected?: boolean
     interactive?: boolean
+    titleOnly?: boolean
     overlay?: SubgraphOverlaySnippet
     ondragstart?: (sgId: string) => void
     ondragmove?: (sgId: string, x: number, y: number) => void
@@ -74,57 +76,65 @@
   })
 </script>
 
-<g class="subgraph" class:selected data-id={subgraph.id}>
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <rect
-    class="subgraph-bg"
-    x={subgraph.bounds?.x ?? 0}
-    y={subgraph.bounds?.y ?? 0}
-    width={subgraph.bounds?.width ?? 0}
-    height={subgraph.bounds?.height ?? 0}
-    rx="12"
-    ry="12"
-    fill={resolved().fill}
-    stroke={selected ? '#3b82f6' : resolved().stroke}
-    stroke-width={selected ? 3 : strokeWidth}
-    stroke-dasharray={selected ? undefined : (strokeDasharray || undefined)}
-    onclick={(e) => { e.stopPropagation(); onselect?.(subgraph.id, e) }}
-    oncontextmenu={(e) => { if (preventContextMenuDefault) e.preventDefault(); onselect?.(subgraph.id, e); onctx?.(subgraph.id, e) }}
-    use:elementDrag={() => ({
+{#if !titleOnly}
+  <g class="subgraph" class:selected data-id={subgraph.id}>
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+    <rect
+      class="subgraph-bg"
+      x={subgraph.bounds?.x ?? 0}
+      y={subgraph.bounds?.y ?? 0}
+      width={subgraph.bounds?.width ?? 0}
+      height={subgraph.bounds?.height ?? 0}
+      rx="12"
+      ry="12"
+      fill={resolved().fill}
+      stroke={selected ? '#3b82f6' : resolved().stroke}
+      stroke-width={selected ? 3 : strokeWidth}
+      stroke-dasharray={selected ? undefined : (strokeDasharray || undefined)}
+      onclick={(e) => { e.stopPropagation(); onselect?.(subgraph.id, e) }}
+      oncontextmenu={(e) => { if (preventContextMenuDefault) e.preventDefault(); onselect?.(subgraph.id, e); onctx?.(subgraph.id, e) }}
+      use:elementDrag={() => ({
       filter: (e) => e.button === 0 && interactive,
       onStart: () => ondragstart?.(subgraph.id),
       onDrag: (dx, dy) => ondragmove?.(subgraph.id, (subgraph.bounds?.x ?? 0) + dx, (subgraph.bounds?.y ?? 0) + dy),
       onEnd: () => ondragend?.(subgraph.id),
     })}
-  />
-  {@render overlay?.(subgraph, overlayContext)}
-  <!-- The title strip stays clickable even when child nodes cover the body. -->
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <rect
-    class="subgraph-select-handle"
-    x={subgraph.bounds?.x ?? 0}
-    y={subgraph.bounds?.y ?? 0}
-    width={subgraph.bounds?.width ?? 0}
-    height={Math.min(32, subgraph.bounds?.height ?? 0)}
-    fill="transparent"
-    pointer-events="all"
-    onclick={(e) => { e.stopPropagation(); onselect?.(subgraph.id, e) }}
-    oncontextmenu={(e) => { if (preventContextMenuDefault) e.preventDefault(); onselect?.(subgraph.id, e); onctx?.(subgraph.id, e) }}
-    use:elementDrag={() => ({
+    />
+    {@render overlay?.(subgraph, overlayContext)}
+    <!-- The title strip stays clickable even when child nodes cover the body. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+    <rect
+      class="subgraph-select-handle"
+      x={subgraph.bounds?.x ?? 0}
+      y={subgraph.bounds?.y ?? 0}
+      width={subgraph.bounds?.width ?? 0}
+      height={Math.min(32, subgraph.bounds?.height ?? 0)}
+      fill="transparent"
+      pointer-events="all"
+      onclick={(e) => { e.stopPropagation(); onselect?.(subgraph.id, e) }}
+      oncontextmenu={(e) => { if (preventContextMenuDefault) e.preventDefault(); onselect?.(subgraph.id, e); onctx?.(subgraph.id, e) }}
+      use:elementDrag={() => ({
       filter: (e) => e.button === 0 && interactive,
       onStart: () => ondragstart?.(subgraph.id),
       onDrag: (dx, dy) => ondragmove?.(subgraph.id, (subgraph.bounds?.x ?? 0) + dx, (subgraph.bounds?.y ?? 0) + dy),
       onEnd: () => ondragend?.(subgraph.id),
     })}
-  />
+    />
+  </g>
+{:else}
+  <!-- Draw titles last, so a crossing edge cannot obscure the group name. -->
   <text
     x={(subgraph.bounds?.x ?? 0) + 10}
     y={(subgraph.bounds?.y ?? 0) + 20}
     class="subgraph-label"
     text-anchor="start"
     fill={resolved().text}
+    stroke={resolved().fill}
+    stroke-width="8"
+    stroke-linejoin="round"
+    paint-order="stroke fill"
     pointer-events="none"
   >
     {subgraph.label}
   </text>
-</g>
+{/if}
