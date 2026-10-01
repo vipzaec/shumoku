@@ -12,6 +12,7 @@
     selected = false,
     interactive = false,
     linked = false,
+    boundary = false,
     overlay,
     onlinkstart,
     onlinkend,
@@ -28,6 +29,7 @@
     selected?: boolean
     interactive?: boolean
     linked?: boolean
+    boundary?: boolean
     overlay?: PortOverlaySnippet
     onlinkstart?: (portId: string, x: number, y: number) => void
     onlinkend?: (portId: string) => void
@@ -47,6 +49,7 @@
 
   const px = $derived(port.absolutePosition.x)
   const py = $derived(port.absolutePosition.y)
+  const hitSize = $derived(boundary ? 48 : 24)
   // Coupling seam ports (HA / stack) render as an elongated bar along the
   // facing edge with the label INSIDE — the stack-port look. Everything else
   // keeps the small tab + chip.
@@ -164,11 +167,12 @@
   <!-- Hit area (CSS controls pointer-events via .interactive) -->
   <rect
     class="port-hit {linked ? 'linked' : ''} {dragging ? 'dragging' : ''}"
-    x={px - 12}
-    y={py - 12}
-    width={24}
-    height={24}
+    x={px - hitSize / 2}
+    y={py - hitSize / 2}
+    width={hitSize}
+    height={hitSize}
     fill="transparent"
+    style="touch-action: none"
     {onpointerdown}
     {onpointermove}
     {onpointerup}

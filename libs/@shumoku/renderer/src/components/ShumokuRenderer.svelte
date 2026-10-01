@@ -26,6 +26,7 @@
     specDeviceType,
   } from '@shumoku/core'
   import { untrack } from 'svelte'
+  import { projectBoundaryPort } from '../lib/boundary-port-placement'
 
   /** Shared sizing engine for this renderer. */
   const engine = createEngine()
@@ -134,7 +135,13 @@
      * the next layout pass keeps it there. `order` is currently not
      * computed by the renderer — order-within-side is a follow-up.
      */
-    onportmove?: (nodeId: string, portId: string, side: 'top' | 'bottom' | 'left' | 'right', order: number, offset: number) => void
+    onportmove?: (
+      nodeId: string,
+      portId: string,
+      side: 'top' | 'bottom' | 'left' | 'right',
+      order: number,
+      offset: number,
+    ) => void
     onrouteadd?: (id: string, x: number, y: number, index: number) => void
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
@@ -242,6 +249,12 @@
     toX: number
     toY: number
   } | null>(null)
+  let portDragGuide = $state<{
+    bounds: { x: number; y: number; width: number; height: number }
+    side: 'top' | 'bottom' | 'left' | 'right'
+    offset: number
+  } | null>(null)
+  let portRouteGeneration = 0
 
   const linkedPorts = $derived.by(() => {
     const ids = new Set<string>()
@@ -796,28 +809,69 @@
    * skip the callback so the host's commit() doesn't dirty undo /
    * cache for a no-op.
    */
+  function handlePortDragMove(portId: string, screenX: number, screenY: number) {
+    const port = ports.get(portId)
+    const node = port && nodes.get(port.nodeId)
+    const group = node?.parent ? subgraphs.get(node.parent) : undefined
+    if (
+      node?.metadata?.['presentationRole'] !== 'subgraph-boundary-port' ||
+      !group?.bounds ||
+      !port
+    )
+      return
+    const placement = projectBoundaryPort(
+      group.bounds,
+      screenToSvg(screenX, screenY),
+      port.side,
+      false,
+    )
+    portDragGuide = { bounds: group.bounds, side: placement.side, offset: placement.offset }
+    ports.set(portId, { ...port, side: placement.side, absolutePosition: placement.point })
+    nodes.set(node.id, { ...node, position: placement.point })
+    const generation = ++portRouteGeneration
+    void routeEdges(nodes, ports, links, subgraphs).then((routed) => {
+      if (generation === portRouteGeneration) replaceMap(edges, routed)
+    })
+  }
+
   function handlePortDragEnd(portId: string, screenX: number, screenY: number) {
+    ++portRouteGeneration
+    portDragGuide = null
     if (!onportmove) return
     const port = ports.get(portId)
     if (!port) return
     const node = nodes.get(port.nodeId)
     if (!node?.position) return
     const { x, y } = screenToSvg(screenX, screenY)
-    const newSide = detectClickSide(
-      x,
-      y,
-      node as typeof node & { position: { x: number; y: number } },
-    )
+    const groupBounds =
+      node.metadata?.['presentationRole'] === 'subgraph-boundary-port'
+        ? subgraphs.get(node.parent ?? '')?.bounds
+        : undefined
+    const boundaryPlacement = groupBounds
+      ? projectBoundaryPort(groupBounds, { x, y }, port.side, true)
+      : null
+    const newSide =
+      boundaryPlacement?.side ??
+      detectClickSide(x, y, node as typeof node & { position: { x: number; y: number } })
     const axis = newSide === 'top' || newSide === 'bottom' ? 'x' : 'y'
     const siblings = [...ports.values()]
-      .filter((candidate) => candidate.nodeId === port.nodeId && candidate.id !== port.id && candidate.side === newSide)
+      .filter(
+        (candidate) =>
+          candidate.nodeId === port.nodeId &&
+          candidate.id !== port.id &&
+          candidate.side === newSide,
+      )
       .sort((a, b) => a.absolutePosition[axis] - b.absolutePosition[axis])
     const pointer = axis === 'x' ? x : y
-    const newOrder = siblings.filter((candidate) => candidate.absolutePosition[axis] < pointer).length
+    const newOrder = siblings.filter(
+      (candidate) => candidate.absolutePosition[axis] < pointer,
+    ).length
     const size = resolveNodeSize(node)
-    const start = axis === 'x' ? node.position.x - size.width / 2 : node.position.y - size.height / 2
+    const start =
+      axis === 'x' ? node.position.x - size.width / 2 : node.position.y - size.height / 2
     const length = axis === 'x' ? size.width : size.height
-    const offset = Math.max(0.04, Math.min(0.96, (pointer - start) / length))
+    const offset =
+      boundaryPlacement?.offset ?? Math.max(0.04, Math.min(0.96, (pointer - start) / length))
     // Bare port id used by external API — SvgPort sees the resolved
     // `nodeId:portId` form; strip the prefix back to the raw port id
     // that lives on `NodePort.id`.
@@ -852,6 +906,7 @@
     {nodeOverlay}
     {portOverlay}
     linkPreview={linkDrag}
+    {portDragGuide}
     bind:svgEl={svgElement}
     ondragstart={handleDragStart}
     ondragmove={handleDragMove}
@@ -861,6 +916,7 @@
     onaddport={handleAddPort}
     onlinkstart={handleLinkStart}
     onlinkend={handleLinkEnd}
+    onportdragmove={handlePortDragMove}
     onportdragend={handlePortDragEnd}
     {onlabeledit}
     onrouteadd={(id, x, y) => {

@@ -26,6 +26,7 @@
     nodeOverlay,
     portOverlay,
     linkPreview = null,
+    portDragGuide = null,
     svgEl = $bindable<SVGSVGElement | null>(null),
     // Optional rendering filter — predicate that returns true for
     // nodes the host wants hidden from this canvas (e.g. the editor's
@@ -63,6 +64,11 @@
     selection?: Set<string>
     linkedPorts?: Set<string>
     linkPreview?: { fromX: number; fromY: number; toX: number; toY: number } | null
+    portDragGuide?: {
+      bounds: { x: number; y: number; width: number; height: number }
+      side: 'top' | 'bottom' | 'left' | 'right'
+      offset: number
+    } | null
     svgEl?: SVGSVGElement | null
     hideNode?: (node: Node) => boolean
     ondragstart?: (id: string) => void
@@ -345,6 +351,30 @@
       {/if}
     {/each}
 
+    {#if interactive && portDragGuide}
+      <!-- 5% landing marks appear only while moving a boundary port. -->
+      <g pointer-events="none" aria-hidden="true">
+        {#each Array.from({ length: 17 }, (_, index) => (index + 2) / 20) as fraction}
+          <circle
+            cx={portDragGuide.side === 'left'
+              ? portDragGuide.bounds.x
+              : portDragGuide.side === 'right'
+                ? portDragGuide.bounds.x + portDragGuide.bounds.width
+                : portDragGuide.bounds.x + portDragGuide.bounds.width * fraction}
+            cy={portDragGuide.side === 'top'
+              ? portDragGuide.bounds.y
+              : portDragGuide.side === 'bottom'
+                ? portDragGuide.bounds.y + portDragGuide.bounds.height
+                : portDragGuide.bounds.y + portDragGuide.bounds.height * fraction}
+            r={Math.round(portDragGuide.offset * 20) / 20 === fraction ? 5 : 3}
+            fill={Math.round(portDragGuide.offset * 20) / 20 === fraction ? '#2563eb' : '#ffffff'}
+            stroke="#2563eb"
+            stroke-width="1.5"
+          />
+        {/each}
+      </g>
+    {/if}
+
     <!-- Ports layer (above nodes so they're always clickable) -->
     {#each ports.values() as port (port.id)}
       <SvgPort
@@ -353,6 +383,7 @@
         selected={selection.has(port.id)}
         {interactive}
         linked={linkedPorts.has(port.id)}
+        boundary={nodes.get(port.nodeId)?.metadata?.['presentationRole'] === 'subgraph-boundary-port'}
         overlay={portOverlay}
         {onlinkstart}
         {onlinkend}
