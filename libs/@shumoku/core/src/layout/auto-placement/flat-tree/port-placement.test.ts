@@ -44,6 +44,36 @@ function makeNodes(): Map<string, Node> {
 }
 
 describe('placePorts', () => {
+  it('keeps free connection points visible on ordinary nodes and group boundaries', () => {
+    const nodes = makeNodes()
+    const sw1 = nodes.get('sw1')
+    if (!sw1) throw new Error('Missing switch fixture')
+    sw1.ports = [
+      { id: 'spare', label: 'LAN', connectors: [], placement: { side: 'right', offset: 0.5 } },
+    ]
+    nodes.set('group-boundary', {
+      id: 'group-boundary',
+      label: 'Group boundary',
+      parent: 'group',
+      position: { x: 60, y: 100 },
+      size: { width: 0, height: 0 },
+      metadata: { presentationRole: 'subgraph-boundary-port' },
+      ports: [{ id: 'anchor', label: '', connectors: [], placement: { side: 'left' } }],
+    })
+
+    const ports = placePorts(nodes, [], 'LR')
+    expect(ports.get('sw1:spare')).toMatchObject({
+      nodeId: 'sw1',
+      label: 'LAN',
+      side: 'right',
+      absolutePosition: { x: 290, y: 100 },
+    })
+    expect(ports.get('group-boundary:anchor')).toMatchObject({
+      nodeId: 'group-boundary',
+      side: 'left',
+    })
+  })
+
   it('places ports on correct sides for TB direction', () => {
     const nodes = makeNodes()
     const links: Link[] = [
