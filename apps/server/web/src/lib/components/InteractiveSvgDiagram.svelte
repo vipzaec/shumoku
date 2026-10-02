@@ -1078,7 +1078,7 @@
           label: [group.label],
           parent: group.id,
           position,
-          metadata: { presentationRole: 'subgraph-boundary-port', operatorObject: true },
+          metadata: { presentationRole: 'subgraph-boundary-port', source: 'operator' },
           ports: [
             {
               id: 'anchor',
@@ -2114,7 +2114,7 @@
     appearanceEditorOpen = true
   }
 
-  function saveSelectedAppearance() {
+  function saveSelectedAppearance(clearManualRoute = false) {
     if (!appearanceDraft || !graph) return
     const source = baseGraph ?? graph
     const link =
@@ -2146,7 +2146,16 @@
     if (Object.keys(selectedPorts).length) nextPorts[link.id] = selectedPorts
     else delete nextPorts[link.id]
     const nextRoutes = { ...edgeRoutes }
-    if (appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid') {
+    const prior = linkAppearanceOverrides[link.id]
+    const priorShape =
+      prior?.routeShape ?? (link.metadata?.['routeShape'] === 'straight' ? 'straight' : 'bent')
+    const priorPolicy =
+      prior?.routePolicy ?? (link.metadata?.['routePolicy'] === 'under' ? 'under' : 'avoid')
+    if (
+      clearManualRoute ||
+      appearanceDraft.routeShape !== priorShape ||
+      appearanceDraft.routePolicy !== priorPolicy
+    ) {
       delete nextRoutes[link.id]
     }
     edgeRoutes = nextRoutes
@@ -2169,9 +2178,18 @@
     appearanceDraft.routePolicy = policy
   }
 
-  function selectedLinkAppearance(): LinkAppearance | undefined {
+  function selectedLinkAppearance():
+    | Pick<LinkAppearance, 'routeShape' | 'routePolicy'>
+    | undefined {
     if (!selectedLayoutLinkId) return undefined
-    return linkAppearanceOverrides[selectedLayoutLinkId]
+    const saved = linkAppearanceOverrides[selectedLayoutLinkId]
+    if (saved) return saved
+    const link = graph?.links.find((candidate) => candidate.id === selectedLayoutLinkId)
+    if (!link) return undefined
+    return {
+      routeShape: link.metadata?.['routeShape'] === 'straight' ? 'straight' : 'bent',
+      routePolicy: link.metadata?.['routePolicy'] === 'under' ? 'under' : 'avoid',
+    }
   }
 
   function setSelectedLinkRouting(
@@ -2183,7 +2201,7 @@
     if (!appearanceDraft) return
     appearanceDraft.routeShape = shape
     appearanceDraft.routePolicy = policy
-    saveSelectedAppearance()
+    saveSelectedAppearance(true)
   }
 
   function selectStrokePreset(preset: LinkAppearance['preset']) {
@@ -3294,7 +3312,7 @@
         style.
       </p>
       <div class="object-editor-actions">
-        <button class="primary" onclick={saveSelectedAppearance}>Save connection</button>
+        <button class="primary" onclick={() => saveSelectedAppearance()}>Save connection</button>
       </div>
     </div>
   {/if}

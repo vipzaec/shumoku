@@ -268,6 +268,7 @@ function routeViaGrid(edge: ResolvedEdge, nodes: Map<string, Node>): RoutePoint[
   const obstacles: RouteRect[] = []
   for (const [id, node] of nodes) {
     if (id === edge.fromNodeId || id === edge.toNodeId) continue
+    if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
     const b = nodeBounds(node)
     if (b)
       obstacles.push({
@@ -389,6 +390,7 @@ function findBezierObstacle(
   }
   for (const [nodeId, node] of nodes) {
     if (nodeId === edge.fromNodeId || nodeId === edge.toNodeId) continue
+    if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
     const bbox = nodeBounds(node)
     if (!bbox) continue
     if (samples.some((s) => pointInRect(s.x, s.y, bbox))) grow(bbox)
