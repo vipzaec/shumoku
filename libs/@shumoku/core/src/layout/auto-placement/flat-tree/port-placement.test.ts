@@ -50,6 +50,7 @@ describe('placePorts', () => {
     if (!sw1) throw new Error('Missing switch fixture')
     sw1.ports = [
       { id: 'spare', label: 'LAN', connectors: [], placement: { side: 'right', offset: 0.5 } },
+      { id: 'unnamed', label: '', connectors: [] },
     ]
     nodes.set('group-boundary', {
       id: 'group-boundary',
@@ -68,6 +69,7 @@ describe('placePorts', () => {
       side: 'right',
       absolutePosition: { x: 290, y: 100 },
     })
+    expect(ports.get('sw1:unnamed')).toMatchObject({ nodeId: 'sw1', side: 'left' })
     expect(ports.get('group-boundary:anchor')).toMatchObject({
       nodeId: 'group-boundary',
       side: 'left',

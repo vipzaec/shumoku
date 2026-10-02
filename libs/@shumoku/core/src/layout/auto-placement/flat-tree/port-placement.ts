@@ -310,6 +310,7 @@ function reseatPortsByGeometry(
   nodes: Map<string, Node>,
 ): PortAssignment[] {
   return assignments.map((a) => {
+    if (a.peerNodeId === a.nodeId) return a
     if (getPortPlacement(nodes.get(a.nodeId), a.portId)?.side) return a
     const here = nodes.get(a.nodeId)?.position
     const peer = nodes.get(a.peerNodeId)?.position
