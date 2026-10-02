@@ -282,6 +282,9 @@ function renderEdge(edge: ResolvedEdge, colors: RenderColors): string {
   // to the standard port-anchored Bezier.
   const continuation = continuationGeometry(edge)
   const pathD =
+    (edge.link.metadata?.['routeShape'] === 'straight' && edge.fromPort && edge.toPort
+      ? `M ${edge.fromPort.absolutePosition.x} ${edge.fromPort.absolutePosition.y} L ${edge.toPort.absolutePosition.x} ${edge.toPort.absolutePosition.y}`
+      : null) ??
     continuation?.path ??
     (edge.route
       ? polylinePath(edge.route.points, edge.link.metadata?.['routePolicy'] === 'avoid' ? 12 : 6)

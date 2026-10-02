@@ -54,7 +54,10 @@
   // are drawn as right-angle segments with rounded corners.
   const continuation = $derived(continuationGeometry(edge))
   const pathD = $derived(
-    continuation?.path ??
+    (edge.link.metadata?.['routeShape'] === 'straight' && edge.fromPort && edge.toPort
+      ? `M ${edge.fromPort.absolutePosition.x} ${edge.fromPort.absolutePosition.y} L ${edge.toPort.absolutePosition.x} ${edge.toPort.absolutePosition.y}`
+      : null) ??
+      continuation?.path ??
       (edge.route
         ? polylinePath(edge.route.points, edge.link.metadata?.['routePolicy'] === 'avoid' ? 12 : 6)
         : edge.fromPort && edge.toPort

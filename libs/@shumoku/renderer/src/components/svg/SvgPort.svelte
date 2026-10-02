@@ -60,12 +60,10 @@
   const ph = $derived(couplingBar ? (onSide ? barLen : 14) : port.size.height)
   const labelPos = $derived(computePortLabelPosition(port))
 
-  // Generated semantic links still use ports internally so the router can fan
-  // parallel paths apart. A zero-width label marks those routing-only anchors:
-  // keep them available in edit mode, but do not clutter operational views.
+  // Every connection point stays visible in both view and edit modes, including
+  // generated anchors without a label. Operators need to see where a line ends.
   const meaningfulLabel = $derived((port.label ?? '').replace(/[\u200b-\u200d\ufeff]/g, '').trim())
   const hasLabel = $derived(meaningfulLabel.length > 0)
-  const showPortBox = $derived(interactive || hasLabel || couplingBar)
   const verticalLabel = $derived(
     port.labelOrientation === 'vertical' && (port.side === 'top' || port.side === 'bottom'),
   )
@@ -178,21 +176,18 @@
     {onpointerup}
   />
 
-  {#if showPortBox}
-    <!-- Unlabelled generated ports are routing anchors, not visual content. -->
-    <rect
-      class="port-box"
-      x={px - pw / 2 - (selected || hovered ? 2 : 0)}
-      y={py - ph / 2 - (selected || hovered ? 2 : 0)}
-      width={pw + (selected || hovered ? 4 : 0)}
-      height={ph + (selected || hovered ? 4 : 0)}
-      fill={selected ? colors.selection : hovered ? '#3b82f6' : colors.portFill}
-      stroke={selected ? colors.selection : hovered ? '#2563eb' : colors.portStroke}
-      stroke-width={selected || hovered ? 2 : 1}
-      rx={couplingBar ? 4 : 2}
-      pointer-events="none"
-    />
-  {/if}
+  <rect
+    class="port-box"
+    x={px - pw / 2 - (selected || hovered ? 2 : 0)}
+    y={py - ph / 2 - (selected || hovered ? 2 : 0)}
+    width={pw + (selected || hovered ? 4 : 0)}
+    height={ph + (selected || hovered ? 4 : 0)}
+    fill={selected ? colors.selection : hovered ? '#3b82f6' : colors.portFill}
+    stroke={selected ? colors.selection : hovered ? '#2563eb' : colors.portStroke}
+    stroke-width={selected || hovered ? 2 : 1}
+    rx={couplingBar ? 4 : 2}
+    pointer-events="none"
+  />
 
   {@render overlay?.(port, overlayContext)}
 

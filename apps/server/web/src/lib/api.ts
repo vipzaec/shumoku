@@ -948,10 +948,12 @@ export const topologies = {
               color: string
               width: number
               preset: 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash' | 'double'
+              routeShape?: 'straight' | 'bent'
               routePolicy: 'avoid' | 'under'
             }
           >
           linkPortOverrides?: Record<string, { from?: string; to?: string }>
+          portPresentationOverrides?: Record<string, { label?: string; description?: string }>
         }
       },
     ) => {

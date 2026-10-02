@@ -159,10 +159,12 @@ export interface OperatorLayoutState {
       color: string
       width: number
       preset: 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash' | 'double'
+      routeShape?: 'straight' | 'bent'
       routePolicy: 'avoid' | 'under'
     }
   >
   linkPortOverrides?: Record<string, { from?: string; to?: string }>
+  portPresentationOverrides?: Record<string, { label?: string; description?: string }>
 }
 
 function rowToTopology(row: TopologyRow): Topology {
@@ -550,6 +552,7 @@ export class TopologyService {
         blockSpacingOverrides: {},
         linkAppearanceOverrides: {},
         linkPortOverrides: {},
+        portPresentationOverrides: {},
       }
     try {
       const value = JSON.parse(row.payload_json) as Partial<OperatorLayoutState>
@@ -567,6 +570,7 @@ export class TopologyService {
         blockSpacingOverrides: value.blockSpacingOverrides ?? {},
         linkAppearanceOverrides: value.linkAppearanceOverrides ?? {},
         linkPortOverrides: value.linkPortOverrides ?? {},
+        portPresentationOverrides: value.portPresentationOverrides ?? {},
       }
     } catch {
       return {
@@ -583,6 +587,7 @@ export class TopologyService {
         blockSpacingOverrides: {},
         linkAppearanceOverrides: {},
         linkPortOverrides: {},
+        portPresentationOverrides: {},
       }
     }
   }

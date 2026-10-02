@@ -122,9 +122,18 @@ describe('topology display settings', () => {
       edgeRoutes: {},
       blockSpacingOverrides: { firewall: { left: 48 } },
       linkAppearanceOverrides: {
-        ingress: { color: '#1d4ed8', width: 3, preset: 'dashed', routePolicy: 'avoid' },
+        ingress: {
+          color: '#1d4ed8',
+          width: 3,
+          preset: 'dashed',
+          routeShape: 'bent',
+          routePolicy: 'avoid',
+        },
       },
       linkPortOverrides: { ingress: { to: 'wan' } },
+      portPresentationOverrides: {
+        'firewall:wan': { label: 'WAN', description: 'Internet uplink' },
+      },
       operatorNodes: [
         {
           id: 'operator-1',

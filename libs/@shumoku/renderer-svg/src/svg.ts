@@ -1251,24 +1251,26 @@ ${fg}
     const fromPort = fromNode?.ports?.get(fromEndpoint.port)
     const toPort = toNode?.ports?.get(toEndpoint.port)
     const basePath =
-      fromNode && toNode && fromPort && toPort
-        ? bezierEdgePath(
-            {
-              absolutePosition: {
-                x: fromNode.position.x + fromPort.position.x,
-                y: fromNode.position.y + fromPort.position.y,
+      link.metadata?.['routeShape'] === 'straight'
+        ? straightLineFromPoints(points)
+        : fromNode && toNode && fromPort && toPort
+          ? bezierEdgePath(
+              {
+                absolutePosition: {
+                  x: fromNode.position.x + fromPort.position.x,
+                  y: fromNode.position.y + fromPort.position.y,
+                },
+                side: fromPort.side,
               },
-              side: fromPort.side,
-            },
-            {
-              absolutePosition: {
-                x: toNode.position.x + toPort.position.x,
-                y: toNode.position.y + toPort.position.y,
+              {
+                absolutePosition: {
+                  x: toNode.position.x + toPort.position.x,
+                  y: toNode.position.y + toPort.position.y,
+                },
+                side: toPort.side,
               },
-              side: toPort.side,
-            },
-          )
-        : straightLineFromPoints(points)
+            )
+          : straightLineFromPoints(points)
     let result = this.renderLinkLine(id, basePath, stroke, strokeWidth, dasharray, markerEnd, type)
 
     // Center label and VLANs

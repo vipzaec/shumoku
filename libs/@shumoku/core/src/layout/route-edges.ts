@@ -211,6 +211,7 @@ function detourAroundObstacles(
 ): void {
   for (const edge of edges.values()) {
     if (edge.route) continue // bus / lane / preassigned routes are explicit
+    if (edge.link.metadata?.['routeShape'] === 'straight') continue
     // Some logical views (for example a monotone DNAT fan-out) deliberately
     // place every endpoint so the default Bezier is the clearest route.  Do
     // not replace those curves with an orthogonal obstacle detour merely

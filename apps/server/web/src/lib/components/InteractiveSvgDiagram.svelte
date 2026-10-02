@@ -260,12 +260,31 @@
     color: string
     width: number
     preset: 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash' | 'double'
+    routeShape: 'straight' | 'bent'
     routePolicy: 'avoid' | 'under'
   }
+  const strokePresets = [
+    { id: 'solid', label: 'Solid', dash: '' },
+    { id: 'dashed', label: 'Dashed', dash: '8 5' },
+    { id: 'dotted', label: 'Dotted', dash: '1 5' },
+    { id: 'dash-dot', label: 'Dash-dot', dash: '10 4 2 4' },
+    { id: 'long-dash', label: 'Long dashes', dash: '16 6' },
+    { id: 'double', label: 'Double', dash: '' },
+  ] as const
   type LinkPorts = { from?: string; to?: string }
+  type PortPresentation = { label?: string; description?: string }
+  const defaultBlockSpacing: BlockSpacing = { top: 20, right: 20, bottom: 20, left: 20 }
   let blockSpacingOverrides = $state<Record<string, BlockSpacing>>({})
   let linkAppearanceOverrides = $state<Record<string, LinkAppearance>>({})
   let linkPortOverrides = $state<Record<string, LinkPorts>>({})
+  let portPresentationOverrides = $state<Record<string, PortPresentation>>({})
+  let portEditorOpen = $state(false)
+  let portDraft = $state<{
+    nodeId: string
+    portId: string
+    label: string
+    description: string
+  } | null>(null)
   let appearanceEditorOpen = $state(false)
   let appearanceDraft = $state<(LinkAppearance & LinkPorts & { id: string }) | null>(null)
   let objectEditorOpen = $state(false)
@@ -676,6 +695,7 @@
     blockSpacingOverrides?: Record<string, BlockSpacing>
     linkAppearanceOverrides?: Record<string, LinkAppearance>
     linkPortOverrides?: Record<string, LinkPorts>
+    portPresentationOverrides?: Record<string, PortPresentation>
   }
 
   const pinStorageKey = $derived(`shumoku-layout-pins:${topologyId}`)
@@ -860,6 +880,7 @@
     spacing: Record<string, BlockSpacing> = blockSpacingOverrides,
     appearances: Record<string, LinkAppearance> = linkAppearanceOverrides,
     linkPorts: Record<string, LinkPorts> = linkPortOverrides,
+    portPresentations: Record<string, PortPresentation> = portPresentationOverrides,
   ) {
     if (!topologyId || readOnly) return
     await api.topologies.displaySettings.set(topologyId, {
@@ -877,6 +898,7 @@
         blockSpacingOverrides: spacing,
         linkAppearanceOverrides: appearances,
         linkPortOverrides: linkPorts,
+        portPresentationOverrides: portPresentations,
       },
     })
   }
@@ -912,7 +934,11 @@
               strokeWidth: appearance.width,
               strokeDasharray: dash,
             },
-            metadata: { ...link.metadata, routePolicy: appearance.routePolicy },
+            metadata: {
+              ...link.metadata,
+              routePolicy: appearance.routePolicy,
+              routeShape: appearance.routeShape ?? 'bent',
+            },
           }
         : {}),
     } as T
@@ -932,21 +958,9 @@
     spacing: Record<string, BlockSpacing> = blockSpacingOverrides,
     appearances: Record<string, LinkAppearance> = linkAppearanceOverrides,
     linkPorts: Record<string, LinkPorts> = linkPortOverrides,
+    portPresentations: Record<string, PortPresentation> = portPresentationOverrides,
   ): NetworkGraph {
-    if (
-      Object.keys(pins).length === 0 &&
-      Object.keys(sides).length === 0 &&
-      Object.keys(parents).length === 0 &&
-      manualNodes.length === 0 &&
-      Object.keys(overrides).length === 0 &&
-      manualLinks.length === 0 &&
-      manualGroups.length === 0 &&
-      Object.keys(spacing).length === 0 &&
-      Object.keys(appearances).length === 0 &&
-      Object.keys(linkPorts).length === 0
-    )
-      return source
-    const mergedNodes = [
+    const mergedNodes: NetworkGraph['nodes'] = [
       ...source.nodes,
       ...manualNodes
         .filter((manual) => !source.nodes.some((node) => node.id === manual.id))
@@ -999,7 +1013,7 @@
       })
       operatorPorts.set(link.to, toPorts)
     }
-    const mergedSubgraphs = [
+    const mergedSubgraphs: NonNullable<NetworkGraph['subgraphs']> = [
       ...(source.subgraphs ?? []),
       ...manualGroups
         .filter((manual) => !(source.subgraphs ?? []).some((group) => group.id === manual.id))
@@ -1057,30 +1071,50 @@
             : {}),
           ...(Object.hasOwn(parents, node.id) ? { parent: parents[node.id] ?? undefined } : {}),
           ...(pins[node.id] ? { position: pins[node.id] } : {}),
-          ...(spacing[node.id] ? { style: { ...node.style, outerSpacing: spacing[node.id] } } : {}),
-          ...(node.ports || operatorPorts.has(node.id)
-            ? {
-                ports: [
-                  ...(node.ports ?? []).filter((port) => !port.id.startsWith('operator-link-')),
-                  ...(operatorPorts.get(node.id) ?? []),
-                ].map((port) => {
-                  const side = sides[`${node.id}:${port.id}`]
-                  const order = orders[`${node.id}:${port.id}`]
-                  const offset = offsets[`${node.id}:${port.id}`]
-                  return side || order !== undefined || offset !== undefined
-                    ? {
-                        ...port,
-                        placement: {
-                          ...port.placement,
-                          ...(side ? { side } : {}),
-                          ...(order !== undefined ? { order } : {}),
-                          ...(offset !== undefined ? { offset } : {}),
-                        },
-                      }
-                    : port
-                }),
-              }
-            : {}),
+          style: {
+            ...node.style,
+            outerSpacing: {
+              ...defaultBlockSpacing,
+              ...node.style?.outerSpacing,
+              ...spacing[node.id],
+            },
+          },
+          ports: [
+            ...(node.ports ?? []).filter((port) => !port.id.startsWith('operator-link-')),
+            ...(operatorPorts.get(node.id) ?? []),
+            ...(!node.ports?.length && !operatorPorts.has(node.id)
+              ? [
+                  {
+                    id: 'operator-anchor',
+                    label: '',
+                    connectors: [],
+                    placement: { side: 'left' as const, offset: 0.5 },
+                  },
+                ]
+              : []),
+          ].map((port) => {
+            const side = sides[`${node.id}:${port.id}`]
+            const order = orders[`${node.id}:${port.id}`]
+            const offset = offsets[`${node.id}:${port.id}`]
+            const presentation = portPresentations[`${node.id}:${port.id}`]
+            return {
+              ...port,
+              ...(presentation?.label !== undefined ? { label: presentation.label } : {}),
+              ...(presentation?.description !== undefined
+                ? { notes: presentation.description }
+                : {}),
+              ...(side || order !== undefined || offset !== undefined
+                ? {
+                    placement: {
+                      ...port.placement,
+                      ...(side ? { side } : {}),
+                      ...(order !== undefined ? { order } : {}),
+                      ...(offset !== undefined ? { offset } : {}),
+                    },
+                  }
+                : {}),
+            }
+          }),
         }
       }),
       links: [
@@ -1114,9 +1148,14 @@
       ],
       subgraphs: mergedSubgraphs.map((subgraph) => ({
         ...subgraph,
-        ...(spacing[subgraph.id]
-          ? { style: { ...subgraph.style, outerSpacing: spacing[subgraph.id] } }
-          : {}),
+        style: {
+          ...subgraph.style,
+          outerSpacing: {
+            ...defaultBlockSpacing,
+            ...subgraph.style?.outerSpacing,
+            ...spacing[subgraph.id],
+          },
+        },
         ...(Object.hasOwn(parents, subgraph.id)
           ? { parent: parents[subgraph.id] ?? undefined }
           : {}),
@@ -1193,7 +1232,8 @@
             (saved.operatorGroups?.length ?? 0) > 0 ||
             Object.keys(saved.blockSpacingOverrides ?? {}).length > 0 ||
             Object.keys(saved.linkAppearanceOverrides ?? {}).length > 0 ||
-            Object.keys(saved.linkPortOverrides ?? {}).length > 0)
+            Object.keys(saved.linkPortOverrides ?? {}).length > 0 ||
+            Object.keys(saved.portPresentationOverrides ?? {}).length > 0)
         const pins = serverHasLayout ? saved.nodePositions : localPins
         const sides = serverHasLayout ? saved.portSides : localSides
         const orders = serverHasLayout ? (saved.portOrders ?? {}) : {}
@@ -1206,6 +1246,7 @@
         const spacing = saved?.blockSpacingOverrides ?? {}
         const appearances = saved?.linkAppearanceOverrides ?? {}
         const linkPorts = saved?.linkPortOverrides ?? {}
+        const portPresentations = saved?.portPresentationOverrides ?? {}
         edgeRoutes = saved?.edgeRoutes ?? {}
         pinnedPositions = pins
         portSides = sides
@@ -1219,6 +1260,7 @@
         blockSpacingOverrides = spacing
         linkAppearanceOverrides = appearances
         linkPortOverrides = linkPorts
+        portPresentationOverrides = portPresentations
         if (
           !serverHasLayout &&
           (Object.keys(localPins).length > 0 || Object.keys(localSides).length > 0)
@@ -1239,20 +1281,13 @@
           spacing,
           appearances,
           linkPorts,
+          portPresentations,
         )
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
-        serverLayout =
-          Object.keys(pins).length ||
-          Object.keys(sides).length ||
-          Object.keys(parents).length ||
-          manualNodes.length ||
-          Object.keys(overrides).length ||
-          Object.keys(spacing).length ||
-          Object.keys(appearances).length ||
-          Object.keys(linkPorts).length
-            ? undefined
-            : res.resolved
+        // The shared default spacing and visible fallback points change every
+        // resolved hull; the server snapshot does not contain those edits.
+        serverLayout = undefined
         hasGraph = true
       }
       building = res.stale === true
@@ -1320,6 +1355,8 @@
       selectedLayoutLinkId = type === 'edge' ? id : null
       selectedLayoutNode = id
       selectedLayoutType = type
+      if (type === 'port' && id) startEditPort(id)
+      else portEditorOpen = false
       selectedLayoutPinIds =
         type === 'node'
           ? id && pinnedPositions[id]
@@ -1334,6 +1371,41 @@
     if (type === 'node') emitNodeSelect(id)
     else if (type === 'edge') emitLinkSelect(id)
     else if (type === 'subgraph') emitSubgraphSelect(id)
+  }
+
+  function startEditPort(resolvedId: string) {
+    const node = graph?.nodes.find((candidate) =>
+      candidate.ports?.some((port) => `${candidate.id}:${port.id}` === resolvedId),
+    )
+    const port = node?.ports?.find((candidate) => `${node.id}:${candidate.id}` === resolvedId)
+    if (!node || !port) return
+    portDraft = {
+      nodeId: node.id,
+      portId: port.id,
+      label: port.label,
+      description: portPresentationOverrides[resolvedId]?.description ?? port.notes ?? '',
+    }
+    portEditorOpen = true
+  }
+
+  function savePortDraft() {
+    if (!graph || !portDraft) return
+    const key = `${portDraft.nodeId}:${portDraft.portId}`
+    portPresentationOverrides = {
+      ...portPresentationOverrides,
+      [key]: { label: portDraft.label.trim(), description: portDraft.description.trim() },
+    }
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
+    graph = applyLayoutOverrides(
+      baseGraph ?? graph,
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+    )
+    serverLayout = undefined
+    portEditorOpen = false
+    portDraft = null
   }
 
   function pinnedNodeIdsInSubgraph(subgraphId: string): string[] {
@@ -1473,7 +1545,7 @@
       blockSpacingOverrides[selectedLayoutNode]?.[side] ??
       node?.style?.outerSpacing?.[side] ??
       group?.style?.outerSpacing?.[side] ??
-      0
+      20
     )
   }
 
@@ -1981,6 +2053,8 @@
       color: saved?.color ?? link.style?.stroke ?? '#475569',
       width: saved?.width ?? link.style?.strokeWidth ?? 3,
       preset: saved?.preset ?? preset,
+      routeShape:
+        saved?.routeShape ?? (link.metadata?.['routeShape'] === 'straight' ? 'straight' : 'bent'),
       routePolicy:
         saved?.routePolicy ?? (link.metadata?.['routePolicy'] === 'under' ? 'under' : 'avoid'),
       from: linkPortOverrides[link.id]?.from ?? link.from.port,
@@ -2009,6 +2083,7 @@
         color: appearanceDraft.color,
         width: Math.min(12, Math.max(1, Number(appearanceDraft.width) || 3)),
         preset: appearanceDraft.preset,
+        routeShape: appearanceDraft.routeShape,
         routePolicy: appearanceDraft.routePolicy,
       },
     }
@@ -2019,13 +2094,49 @@
     }
     if (Object.keys(selectedPorts).length) nextPorts[link.id] = selectedPorts
     else delete nextPorts[link.id]
+    const nextRoutes = { ...edgeRoutes }
+    if (appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid') {
+      delete nextRoutes[link.id]
+    }
+    edgeRoutes = nextRoutes
     linkAppearanceOverrides = nextAppearance
     linkPortOverrides = nextPorts
-    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, nextRoutes)
     graph = applyLayoutOverrides(source, pinnedPositions, portSides, portOrders, portOffsets)
     serverLayout = undefined
     appearanceEditorOpen = false
     appearanceDraft = null
+  }
+
+  function selectRouteShape(shape: LinkAppearance['routeShape']) {
+    if (appearanceDraft) appearanceDraft.routeShape = shape
+  }
+
+  function selectRoutePolicy(policy: LinkAppearance['routePolicy']) {
+    if (!appearanceDraft) return
+    appearanceDraft.routeShape = 'bent'
+    appearanceDraft.routePolicy = policy
+  }
+
+  function selectedLinkAppearance(): LinkAppearance | undefined {
+    if (!selectedLayoutLinkId) return undefined
+    return linkAppearanceOverrides[selectedLayoutLinkId]
+  }
+
+  function setSelectedLinkRouting(
+    shape: LinkAppearance['routeShape'],
+    policy: LinkAppearance['routePolicy'],
+  ) {
+    if (!selectedLayoutLinkId) return
+    startEditSelectedAppearance()
+    if (!appearanceDraft) return
+    appearanceDraft.routeShape = shape
+    appearanceDraft.routePolicy = policy
+    saveSelectedAppearance()
+  }
+
+  function selectStrokePreset(preset: LinkAppearance['preset']) {
+    if (appearanceDraft) appearanceDraft.preset = preset
   }
 
   function appearancePorts(side: 'from' | 'to') {
@@ -2398,6 +2509,16 @@
   // --- Tooltip content: live metrics-aware for links ---
 
   function buildTooltip(hovered: HoveredElement, g: NetworkGraph): string {
+    if (hovered.kind === 'port') {
+      for (const node of g.nodes) {
+        const port = node.ports?.find((candidate) => `${node.id}:${candidate.id}` === hovered.id)
+        if (!port) continue
+        const description = portPresentationOverrides[hovered.id]?.description ?? port.notes
+        const name = port.label || 'Connection point'
+        return `<strong>${escapeHtml(name)}</strong>${description ? `<br>${escapeHtml(description)}` : ''}`
+      }
+      return '<strong>Connection point</strong>'
+    }
     if (hovered.kind === 'node') {
       return `<strong>${escapeHtml(nodeLabelById(g.nodes, hovered.id))}</strong>`
     }
@@ -2463,12 +2584,21 @@
   // --- Keyboard shortcut for search palette ---
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && portEditorOpen) {
+      portEditorOpen = false
+      portDraft = null
+      viewer?.clearSelection()
+      handleSelect(null, null)
+      e.preventDefault()
+      return
+    }
     if (
       e.key === 'Escape' &&
       layoutEdit &&
       !objectEditorOpen &&
       !linkEditorOpen &&
-      !groupEditorOpen
+      !groupEditorOpen &&
+      !appearanceEditorOpen
     ) {
       if (selectedLayoutNode || selectedLayoutLinkId || selectedLayoutPinIds.length > 0) {
         viewer?.clearSelection()
@@ -2958,6 +3088,32 @@
       </div>
     </div>
   {/if}
+  {#if layoutEdit && portEditorOpen && portDraft}
+    <div class="object-editor port-editor">
+      <div class="object-editor-title">
+        <strong>Connection point</strong>
+        <button
+          aria-label="Close connection point editor"
+          title="Close"
+          onclick={() => { portEditorOpen = false; portDraft = null }}
+        >
+          ×
+        </button>
+      </div>
+      <label>Label <input bind:value={portDraft.label} placeholder="LAN, WAN, API…"></label>
+      <label
+        >Description
+        <textarea
+          bind:value={portDraft.description}
+          rows="2"
+          placeholder="Purpose of this connection point"
+        ></textarea></label
+      >
+      <div class="object-editor-actions">
+        <button class="primary" onclick={savePortDraft}>Save point</button>
+      </div>
+    </div>
+  {/if}
   {#if layoutEdit && appearanceEditorOpen && appearanceDraft}
     <div class="object-editor link-editor">
       <div class="object-editor-title">
@@ -2985,25 +3141,86 @@
           ></label
         >
       </div>
-      <div class="side-pickers">
-        <label
-          >Line style
-          <select bind:value={appearanceDraft.preset}>
-            <option value="solid">Solid</option>
-            <option value="dashed">Dashed</option>
-            <option value="dotted">Dotted</option>
-            <option value="dash-dot">Dash-dot</option>
-            <option value="long-dash">Long dashes</option>
-            <option value="double">Double</option>
-          </select>
-        </label>
-        <label
-          >Passing blocks
-          <select bind:value={appearanceDraft.routePolicy}>
-            <option value="avoid">Curve around blocks</option>
-            <option value="under">Pass under blocks</option>
-          </select>
-        </label>
+      <div class="line-type-field">
+        <span>Path</span>
+        <div class="line-type-picker" role="group" aria-label="Connection path">
+          <button
+            type="button"
+            class:active={appearanceDraft.routeShape === 'straight'}
+            aria-label="Straight line"
+            aria-pressed={appearanceDraft.routeShape === 'straight'}
+            title="Straight line"
+            onclick={() => selectRouteShape('straight')}
+          >
+            <svg viewBox="0 0 48 24" aria-hidden="true"><path d="M4 12 L44 12" /></svg>
+          </button>
+          <button
+            type="button"
+            class:active={appearanceDraft.routeShape === 'bent'}
+            aria-label="Line with bends"
+            aria-pressed={appearanceDraft.routeShape === 'bent'}
+            title="Line with bends"
+            onclick={() => selectRouteShape('bent')}
+          >
+            <svg viewBox="0 0 48 24" aria-hidden="true">
+              <path d="M4 19 C18 19 15 5 27 5 S36 16 44 5" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="line-type-field">
+        <span>Stroke</span>
+        <div class="line-type-picker" role="group" aria-label="Connection stroke">
+          {#each strokePresets as preset}
+            <button
+              type="button"
+              class:active={appearanceDraft.preset === preset.id}
+              aria-label={preset.label}
+              aria-pressed={appearanceDraft.preset === preset.id}
+              title={preset.label}
+              onclick={() => selectStrokePreset(preset.id)}
+            >
+              <svg viewBox="0 0 48 24" aria-hidden="true">
+                {#if preset.id === 'double'}
+                  <path d="M4 9 L44 9 M4 15 L44 15" />
+                {:else}
+                  <path d="M4 12 L44 12" stroke-dasharray={preset.dash || undefined} />
+                {/if}
+              </svg>
+            </button>
+          {/each}
+        </div>
+      </div>
+      <div class="line-type-field">
+        <span>At blocks</span>
+        <div class="line-type-picker" role="group" aria-label="Connection at blocks">
+          <button
+            type="button"
+            class:active={appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid'}
+            aria-label="Go around blocks"
+            aria-pressed={appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid'}
+            title="Go around blocks"
+            onclick={() => selectRoutePolicy('avoid')}
+          >
+            <svg viewBox="0 0 48 24" aria-hidden="true">
+              <rect x="20" y="7" width="8" height="10" rx="1" />
+              <path d="M3 12 H10 Q14 12 14 7 V4 H34 V7 Q34 12 38 12 H45" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class:active={appearanceDraft.routePolicy === 'under' || appearanceDraft.routeShape === 'straight'}
+            aria-label="Pass through blocks"
+            aria-pressed={appearanceDraft.routePolicy === 'under' || appearanceDraft.routeShape === 'straight'}
+            title="Pass through blocks"
+            onclick={() => selectRoutePolicy('under')}
+          >
+            <svg viewBox="0 0 48 24" aria-hidden="true">
+              <rect x="20" y="7" width="8" height="10" rx="1" />
+              <path d="M3 12 H45" />
+            </svg>
+          </button>
+        </div>
       </div>
       <label
         >Source point
@@ -3218,18 +3435,36 @@
         {/if}
         {#if layoutEdit && selectedLayoutLinkId}
           <button
-            onclick={() => selectedLayoutLinkId && saveRoute(selectedLayoutLinkId, null)}
-            class:active={!Object.hasOwn(edgeRoutes, selectedLayoutLinkId)}
-            title="Automatically route selected link around nodes"
+            onclick={() => setSelectedLinkRouting('bent', 'avoid')}
+            class:active={(selectedLinkAppearance()?.routeShape ?? 'bent') === 'bent' && (selectedLinkAppearance()?.routePolicy ?? 'avoid') === 'avoid' && !Object.hasOwn(edgeRoutes, selectedLayoutLinkId)}
+            title="Route selected connection around blocks"
+            aria-label="Route selected connection around blocks"
           >
-            Auto
+            <svg class="route-control-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="9" y="8" width="6" height="8" rx="1" />
+              <path d="M2 12h3c2 0 2-7 7-7s5 7 7 7h3" />
+            </svg>
           </button>
           <button
-            onclick={() => selectedLayoutLinkId && saveRoute(selectedLayoutLinkId, [])}
-            class:active={Object.hasOwn(edgeRoutes, selectedLayoutLinkId) && edgeRoutes[selectedLayoutLinkId]?.length === 0}
-            title="Draw selected link directly between its ports"
+            onclick={() => setSelectedLinkRouting('bent', 'under')}
+            class:active={selectedLinkAppearance()?.routePolicy === 'under' && selectedLinkAppearance()?.routeShape !== 'straight'}
+            title="Let selected connection pass through blocks"
+            aria-label="Let selected connection pass through blocks"
           >
-            Straight
+            <svg class="route-control-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="9" y="8" width="6" height="8" rx="1" />
+              <path d="M2 12h20" />
+            </svg>
+          </button>
+          <button
+            onclick={() => setSelectedLinkRouting('straight', 'under')}
+            class:active={selectedLinkAppearance()?.routeShape === 'straight'}
+            title="Draw selected connection as a straight line"
+            aria-label="Draw selected connection as a straight line"
+          >
+            <svg class="route-control-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 18 22 6" />
+            </svg>
           </button>
           {#if (edgeRoutes[selectedLayoutLinkId]?.length ?? 0) > 0}
             <span class="route-mode" title="Drag bends to adjust the manual route">Manual</span>
@@ -3918,6 +4153,50 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
+  }
+  .line-type-field {
+    display: grid;
+    gap: 5px;
+    font-size: 0.78rem;
+  }
+  .line-type-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .line-type-picker button {
+    width: 48px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    padding: 3px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 6px;
+    background: var(--color-bg, #fff);
+    color: var(--color-text, #334155);
+    cursor: pointer;
+  }
+  .line-type-picker button.active {
+    border-color: #2563eb;
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+  .line-type-picker svg {
+    width: 40px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+  }
+  .route-control-icon {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .editor-error {
     color: #b91c1c;

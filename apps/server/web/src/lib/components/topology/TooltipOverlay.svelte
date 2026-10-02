@@ -11,7 +11,7 @@
   import type { NetworkGraph } from '@shumoku/core'
   import type { Snippet } from 'svelte'
 
-  export type ElementKind = 'node' | 'subgraph' | 'link'
+  export type ElementKind = 'node' | 'subgraph' | 'link' | 'port'
 
   export interface HoveredElement {
     kind: ElementKind
@@ -56,6 +56,14 @@
 
   function classify(target: EventTarget | null): HoveredElement | null {
     if (!(target instanceof Element)) return null
+    const port = target.closest<SVGGElement>('g.port[data-port]')
+    if (port)
+      return {
+        kind: 'port',
+        id: port.getAttribute('data-port') ?? '',
+        screenX: 0,
+        screenY: 0,
+      }
     const node = target.closest<SVGGElement>('g.node[data-id]')
     if (node)
       return {
@@ -84,6 +92,13 @@
   }
 
   function defaultLabel(h: HoveredElement): string {
+    if (h.kind === 'port') {
+      for (const node of graph.nodes) {
+        const port = node.ports?.find((candidate) => `${node.id}:${candidate.id}` === h.id)
+        if (port) return port.label || 'Connection point'
+      }
+      return h.id
+    }
     if (h.kind === 'node') {
       const n = graph.nodes.find((x) => x.id === h.id)
       return n?.label && typeof n.label === 'string' ? n.label : h.id
