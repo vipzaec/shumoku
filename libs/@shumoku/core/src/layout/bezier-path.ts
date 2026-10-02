@@ -12,9 +12,9 @@
  * the same whether they're rendered live in the editor or exported as
  * SVG/PNG from the CLI/server.
  *
- * Tangent magnitude scales with the distance along the port normal,
- * but stays short and capped. When a node moves close to or behind a
- * port, long tangents make a line turn back on itself.
+ * Tangents scale with the available distance along each endpoint's own
+ * port normal. As a block approaches or passes that normal, its tangent
+ * shrinks to zero instead of pulling the curve back on itself.
  *
  * No obstacle avoidance — by design, in exchange for predictable,
  * solver-free output. If the curve crosses an unrelated node body it
@@ -27,12 +27,20 @@ export type PortSide = 'top' | 'bottom' | 'left' | 'right'
 /**
  * Minimum / maximum "stalk" length in pixels.
  *
- * A compact minimum and hard maximum keep the visible turn close to each
- * attached block instead of stretching the tangent across the link span.
+ * Preserve the generous original curve on well-separated blocks. The
+ * minimum is soft: a short or reversed approach must be allowed to reach
+ * zero, otherwise a moved block makes the curve turn backwards.
  */
-export const MIN_REACH = 8
-export const MAX_REACH = 44
-export const REACH_RATIO = 0.16
+export const MIN_REACH = 12
+export const MAX_REACH = 320
+export const REACH_RATIO = 0.6
+
+export function bezierTangentReach(side: PortSide, dx: number, dy: number): number {
+  const available = projectAlongNormal(side, dx, dy)
+  const preferred = clamp(available * REACH_RATIO, MIN_REACH, MAX_REACH)
+  // The nominal minimum cannot exceed the actual forward clearance.
+  return Math.min(preferred, available * REACH_RATIO)
+}
 
 /**
  * Build a cubic-Bezier SVG path `d` string from one port to another.
@@ -62,10 +70,8 @@ export function bezierEdgePath(
   const [bShiftX, bShiftY] = lateralShift(toSide, to.lateralOffset ?? 0)
   const a = { x: from.absolutePosition.x + aShiftX, y: from.absolutePosition.y + aShiftY }
   const b = { x: to.absolutePosition.x + bShiftX, y: to.absolutePosition.y + bShiftY }
-  const normalGap = projectAlongNormal(fromSide, b.x - a.x, b.y - a.y)
-  const reach = clamp(normalGap * REACH_RATIO, MIN_REACH, MAX_REACH)
-  const [ax, ay] = tangentOffset(fromSide, reach)
-  const [bx, by] = tangentOffset(toSide, reach)
+  const [ax, ay] = tangentOffset(fromSide, bezierTangentReach(fromSide, b.x - a.x, b.y - a.y))
+  const [bx, by] = tangentOffset(toSide, bezierTangentReach(toSide, a.x - b.x, a.y - b.y))
   return `M ${a.x} ${a.y} C ${a.x + ax} ${a.y + ay} ${b.x + bx} ${b.y + by} ${b.x} ${b.y}`
 }
 
@@ -136,10 +142,8 @@ export function bezierOffsetPath(
 
   const fromSide = from.side ?? 'bottom'
   const toSide = to.side ?? 'top'
-  const normalGap = projectAlongNormal(fromSide, dx, dy)
-  const reach = clamp(normalGap * REACH_RATIO, MIN_REACH, MAX_REACH)
-  const [ax, ay] = tangentOffset(fromSide, reach)
-  const [bx, by] = tangentOffset(toSide, reach)
+  const [ax, ay] = tangentOffset(fromSide, bezierTangentReach(fromSide, dx, dy))
+  const [bx, by] = tangentOffset(toSide, bezierTangentReach(toSide, -dx, -dy))
 
   const p0x = a.x + nx
   const p0y = a.y + ny

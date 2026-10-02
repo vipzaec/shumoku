@@ -20,7 +20,7 @@ test('lateralOffset=0 matches the no-offset path verbatim', () => {
   expect(bezierEdgePath({ ...a, lateralOffset: 0 }, b)).toBe(bezierEdgePath(a, b))
 })
 
-test('control reach stays compact when nodes are far apart or moved behind a port', () => {
+test('original smooth reach stays on distant nodes and shrinks when a node moves behind a port', () => {
   const from = { absolutePosition: { x: 0, y: 0 }, side: 'right' as const }
   const far = parseSvgPath(
     bezierEdgePath(from, { absolutePosition: { x: 800, y: 150 }, side: 'left' }),
@@ -28,8 +28,24 @@ test('control reach stays compact when nodes are far apart or moved behind a por
   const reversed = parseSvgPath(
     bezierEdgePath(from, { absolutePosition: { x: -50, y: 150 }, side: 'left' }),
   )
-  expect(far[2]).toBe(44)
-  expect(reversed[2]).toBe(8)
+  expect(far[2]).toBe(320)
+  expect(reversed[2]).toBe(0)
+})
+
+test('each end reduces its own radius as the opposite block approaches its normal', () => {
+  const from = { absolutePosition: { x: 0, y: 0 }, side: 'right' as const }
+  const far = parseSvgPath(
+    bezierEdgePath(from, { absolutePosition: { x: 300, y: 100 }, side: 'top' }),
+  )
+  const near = parseSvgPath(
+    bezierEdgePath(from, { absolutePosition: { x: 10, y: 100 }, side: 'top' }),
+  )
+  expect(far[2]).toBe(180)
+  expect(near[2]).toBe(6)
+  // The target still has 100 units of vertical clearance, so its own
+  // tangent stays smooth instead of inheriting the source's short reach.
+  expect(far[5]).toBe(40)
+  expect(near[5]).toBe(40)
 })
 
 test('positive fromLateralOffset on a bottom port shifts the source rightward', () => {

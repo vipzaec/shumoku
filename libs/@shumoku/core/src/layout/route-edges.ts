@@ -42,7 +42,7 @@
  */
 
 import type { Bounds, Link, Node, Subgraph } from '../models/types.js'
-import { MAX_REACH, MIN_REACH, REACH_RATIO } from './bezier-path.js'
+import { bezierTangentReach } from './bezier-path.js'
 import { getLinkWidth } from './link-utils.js'
 import type { ResolvedEdge, ResolvedPort } from './resolved-types.js'
 
@@ -404,15 +404,6 @@ function sampleBezier(edge: ResolvedEdge): Array<{ x: number; y: number }> {
   const tp = edge.toPort.absolutePosition
   const dx = tp.x - fp.x
   const dy = tp.y - fp.y
-  const normalGap =
-    edge.fromPort.side === 'top'
-      ? -dy
-      : edge.fromPort.side === 'bottom'
-        ? dy
-        : edge.fromPort.side === 'left'
-          ? -dx
-          : dx
-  const cpDist = Math.min(MAX_REACH, Math.max(MIN_REACH, normalGap * REACH_RATIO))
   const normal = (side: ResolvedPort['side']): { x: number; y: number } => {
     if (side === 'top') return { x: 0, y: -1 }
     if (side === 'bottom') return { x: 0, y: 1 }
@@ -421,8 +412,10 @@ function sampleBezier(edge: ResolvedEdge): Array<{ x: number; y: number }> {
   }
   const fn = normal(edge.fromPort.side)
   const tn = normal(edge.toPort.side)
-  const c1 = { x: fp.x + fn.x * cpDist, y: fp.y + fn.y * cpDist }
-  const c2 = { x: tp.x + tn.x * cpDist, y: tp.y + tn.y * cpDist }
+  const fromReach = bezierTangentReach(edge.fromPort.side, dx, dy)
+  const toReach = bezierTangentReach(edge.toPort.side, -dx, -dy)
+  const c1 = { x: fp.x + fn.x * fromReach, y: fp.y + fn.y * fromReach }
+  const c2 = { x: tp.x + tn.x * toReach, y: tp.y + tn.y * toReach }
   const out: Array<{ x: number; y: number }> = []
   for (let i = 0; i <= DETOUR_SAMPLES; i++) {
     const t = i / DETOUR_SAMPLES
