@@ -28,7 +28,7 @@ test('control reach stays compact when nodes are far apart or moved behind a por
   const reversed = parseSvgPath(
     bezierEdgePath(from, { absolutePosition: { x: -50, y: 150 }, side: 'left' }),
   )
-  expect(far[2]).toBe(100)
+  expect(far[2]).toBe(44)
   expect(reversed[2]).toBe(8)
 })
 

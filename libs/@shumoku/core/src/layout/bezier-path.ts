@@ -27,12 +27,12 @@ export type PortSide = 'top' | 'bottom' | 'left' | 'right'
 /**
  * Minimum / maximum "stalk" length in pixels.
  *
- * A compact minimum and hard maximum prevent a curve from looping back
- * as its endpoints move, while still giving long links a soft bend.
+ * A compact minimum and hard maximum keep the visible turn close to each
+ * attached block instead of stretching the tangent across the link span.
  */
 export const MIN_REACH = 8
-export const MAX_REACH = 100
-export const REACH_RATIO = 0.25
+export const MAX_REACH = 44
+export const REACH_RATIO = 0.16
 
 /**
  * Build a cubic-Bezier SVG path `d` string from one port to another.
