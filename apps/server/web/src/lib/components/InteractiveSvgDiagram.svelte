@@ -1039,10 +1039,61 @@
           },
         })),
     ]
-    const validNodeIds = new Set(mergedNodes.map((node) => node.id))
+    // A group is also a connection-capable block. Give every container that
+    // lacks a real boundary interface one stable point on its outline.
+    const groupParents = new Map(mergedSubgraphs.map((group) => [group.id, group.parent]))
+    const belongsToGroup = (parent: string | undefined, groupId: string): boolean => {
+      const seen = new Set<string>()
+      while (parent && !seen.has(parent)) {
+        if (parent === groupId) return true
+        seen.add(parent)
+        parent = groupParents.get(parent)
+      }
+      return false
+    }
+    const groupBoundaryNodes: NetworkGraph['nodes'] = mergedSubgraphs
+      .filter(
+        (group) =>
+          !mergedNodes.some(
+            (node) =>
+              node.parent === group.id &&
+              node.metadata?.['presentationRole'] === 'subgraph-boundary-port',
+          ),
+      )
+      .map((group) => {
+        const positions = mergedNodes
+          .filter((node) => belongsToGroup(node.parent, group.id))
+          .flatMap((node) => (node.position ? [node.position] : []))
+        const position = positions.length
+          ? {
+              x: positions.reduce((sum, point) => sum + point.x, 0) / positions.length,
+              y: positions.reduce((sum, point) => sum + point.y, 0) / positions.length,
+            }
+          : {
+              x: (group.bounds?.x ?? 0) + (group.bounds?.width ?? 0) / 2,
+              y: (group.bounds?.y ?? 0) + (group.bounds?.height ?? 0) / 2,
+            }
+        return {
+          id: `operator-group-boundary:${group.id}`,
+          label: [group.label],
+          parent: group.id,
+          position,
+          metadata: { presentationRole: 'subgraph-boundary-port', operatorObject: true },
+          ports: [
+            {
+              id: 'anchor',
+              label: '',
+              connectors: [],
+              placement: { side: 'left', offset: 0.5 },
+            },
+          ],
+        }
+      })
+    const nodesWithBoundaries = [...mergedNodes, ...groupBoundaryNodes]
+    const validNodeIds = new Set(nodesWithBoundaries.map((node) => node.id))
     return {
       ...source,
-      nodes: mergedNodes.map((node) => {
+      nodes: nodesWithBoundaries.map((node) => {
         const manual = manualNodes.find((candidate) => candidate.id === node.id)
         return {
           ...node,

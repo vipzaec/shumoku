@@ -20,6 +20,18 @@ test('lateralOffset=0 matches the no-offset path verbatim', () => {
   expect(bezierEdgePath({ ...a, lateralOffset: 0 }, b)).toBe(bezierEdgePath(a, b))
 })
 
+test('control reach stays compact when nodes are far apart or moved behind a port', () => {
+  const from = { absolutePosition: { x: 0, y: 0 }, side: 'right' as const }
+  const far = parseSvgPath(
+    bezierEdgePath(from, { absolutePosition: { x: 800, y: 150 }, side: 'left' }),
+  )
+  const reversed = parseSvgPath(
+    bezierEdgePath(from, { absolutePosition: { x: -50, y: 150 }, side: 'left' }),
+  )
+  expect(far[2]).toBe(100)
+  expect(reversed[2]).toBe(8)
+})
+
 test('positive fromLateralOffset on a bottom port shifts the source rightward', () => {
   const a = { absolutePosition: { x: 0, y: 0 }, side: 'bottom' as const }
   const b = { absolutePosition: { x: 0, y: 100 }, side: 'top' as const }

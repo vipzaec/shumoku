@@ -12,12 +12,9 @@
  * the same whether they're rendered live in the editor or exported as
  * SVG/PNG from the CLI/server.
  *
- * Tangent magnitude scales with **the distance along the port normal**
- * (the rank-axis gap), not the straight-line Euclidean distance. That
- * keeps the curve "shooting straight" out of the port for a sizeable
- * fraction of the gap before bending sideways — endpoints read as
- * straight stalks while the curvature concentrates in the middle.
- * Network-diagram convention.
+ * Tangent magnitude scales with the distance along the port normal,
+ * but stays short and capped. When a node moves close to or behind a
+ * port, long tangents make a line turn back on itself.
  *
  * No obstacle avoidance — by design, in exchange for predictable,
  * solver-free output. If the curve crosses an unrelated node body it
@@ -30,15 +27,12 @@ export type PortSide = 'top' | 'bottom' | 'left' | 'right'
 /**
  * Minimum / maximum "stalk" length in pixels.
  *
- * MIN_REACH was 40 historically; that was too long for short
- * cross-row edges where the normal-axis gap was 20-30 px, so
- * the control point ended up *past* the target node and the
- * curve had to bend backwards (visible squiggle). 12 is just
- * enough to register as a curve without overshooting.
+ * A compact minimum and hard maximum prevent a curve from looping back
+ * as its endpoints move, while still giving long links a soft bend.
  */
-const MIN_REACH = 12
-const MAX_REACH = 320
-const REACH_RATIO = 0.6
+export const MIN_REACH = 8
+export const MAX_REACH = 100
+export const REACH_RATIO = 0.25
 
 /**
  * Build a cubic-Bezier SVG path `d` string from one port to another.

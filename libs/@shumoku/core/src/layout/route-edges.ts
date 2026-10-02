@@ -42,6 +42,7 @@
  */
 
 import type { Bounds, Link, Node, Subgraph } from '../models/types.js'
+import { MAX_REACH, MIN_REACH, REACH_RATIO } from './bezier-path.js'
 import { getLinkWidth } from './link-utils.js'
 import type { ResolvedEdge, ResolvedPort } from './resolved-types.js'
 
@@ -401,8 +402,15 @@ function sampleBezier(edge: ResolvedEdge): Array<{ x: number; y: number }> {
   const tp = edge.toPort.absolutePosition
   const dx = tp.x - fp.x
   const dy = tp.y - fp.y
-  const dist = Math.hypot(dx, dy)
-  const cpDist = Math.max(40, dist * 0.5)
+  const normalGap =
+    edge.fromPort.side === 'top'
+      ? -dy
+      : edge.fromPort.side === 'bottom'
+        ? dy
+        : edge.fromPort.side === 'left'
+          ? -dx
+          : dx
+  const cpDist = Math.min(MAX_REACH, Math.max(MIN_REACH, normalGap * REACH_RATIO))
   const normal = (side: ResolvedPort['side']): { x: number; y: number } => {
     if (side === 'top') return { x: 0, y: -1 }
     if (side === 'bottom') return { x: 0, y: 1 }
