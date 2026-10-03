@@ -8,7 +8,7 @@ import {
   specDeviceType,
   stringifyWithMaps,
 } from '@shumoku/core'
-import { renderSvgString } from '@shumoku/renderer/static'
+import { continuationBounds, renderSvgString } from '@shumoku/renderer/static'
 import {
   render as renderHtml,
   renderHierarchical as renderHtmlHierarchical,
@@ -128,7 +128,7 @@ export async function buildTopologyExport(
 async function renderStaticOutput(graph: NetworkGraph, resolved?: ResolvedLayout) {
   const padding = 50
   const canonicalLayout = resolved ?? (await computeNetworkLayout(graph)).resolved
-  const { bounds } = canonicalLayout
+  const bounds = continuationBounds(canonicalLayout)
   return {
     svg: renderSvgString(canonicalLayout, {
       theme: graph.settings?.theme === 'dark' ? darkTheme : lightTheme,

@@ -126,6 +126,7 @@
     WeathermapLinkOverlay,
   } from '$lib/components/topology'
   import { semanticLayers } from '$lib/components/topology/semantic-layers'
+  import { createSerialLayoutWriter } from '$lib/components/topology/serial-layout-writer'
   import { serviceIcons } from '$lib/service-icons'
   import {
     displaySettings,
@@ -195,6 +196,7 @@
   let baseGraph: NetworkGraph | undefined
   let loading = $state(true)
   let error = $state('')
+  let layoutSaveError = $state('')
   // Server is baking the layout in the background (large topology). While a
   // previous diagram exists we keep showing it; otherwise the loading state
   // says what's happening instead of a bare spinner.
@@ -323,6 +325,13 @@
   let linkEditorOpen = $state(false)
   let linkDraft = $state<OperatorLink | null>(null)
   let linkDraftError = $state('')
+  const editorLink = $derived(graph?.links.find((link) => link.id === appearanceDraft?.id))
+  const editorSourceId = $derived(
+    appearanceEditorOpen ? editorLink?.from.node : linkEditorOpen ? linkDraft?.from : undefined,
+  )
+  const editorDestinationId = $derived(
+    appearanceEditorOpen ? editorLink?.to.node : linkEditorOpen ? linkDraft?.to : undefined,
+  )
   let groupEditorOpen = $state(false)
   let groupDraft = $state<OperatorGroup | null>(null)
   let groupManagerOpen = $state(false)
@@ -885,6 +894,11 @@
     void persistOperatorLayout(pinnedPositions, next, portOrders, portOffsets, edgeRoutes)
   }
 
+  const layoutWriter = createSerialLayoutWriter(
+    ({ id, operatorLayout }: { id: string; operatorLayout: OperatorLayout }) =>
+      api.topologies.displaySettings.set(id, { operatorLayout }),
+  )
+
   async function persistOperatorLayout(
     nodePositions: Record<string, { x: number; y: number }>,
     sides: Record<string, 'top' | 'bottom' | 'left' | 'right'>,
@@ -903,8 +917,10 @@
     continuations: Record<string, LinkContinuation> = linkContinuationOverrides,
   ) {
     if (!topologyId || readOnly) return
-    await api.topologies.displaySettings.set(topologyId, {
-      operatorLayout: {
+    const id = topologyId
+    // Capture a plain snapshot now: later Svelte edits must not mutate a queued write.
+    const operatorLayout = JSON.parse(
+      JSON.stringify({
         nodePositions,
         portSides: sides,
         portOrders: orders,
@@ -920,8 +936,14 @@
         linkPortOverrides: linkPorts,
         linkContinuationOverrides: continuations,
         portPresentationOverrides: portPresentations,
-      },
-    })
+      }),
+    ) as OperatorLayout
+    try {
+      await layoutWriter.enqueue({ id, operatorLayout })
+      layoutSaveError = ''
+    } catch (cause) {
+      layoutSaveError = cause instanceof Error ? cause.message : 'Layout could not be saved'
+    }
   }
 
   function applyLinkPresentation<T extends NetworkGraph['links'][number]>(
@@ -1283,6 +1305,8 @@
     loading = !hasGraph
     error = ''
     try {
+      // A refresh must never restore a server copy older than the last edit.
+      await layoutWriter.flush().catch(() => undefined)
       loadLayerPreferences()
       const loader = graphLoader ?? (() => api.topologies.getView(topologyId))
       const [res, display] = await Promise.all([
@@ -1564,18 +1588,23 @@
     void loadGraph()
   }
 
-  function resetOperatorLayout() {
+  async function resetOperatorLayout() {
     edgeRoutes = {}
     portOrders = {}
     portOffsets = {}
     parentOverrides = {}
-    writePins({})
-    writePortSides({})
+    pinnedPositions = {}
+    portSides = {}
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(pinStorageKey)
+      localStorage.removeItem(portStorageKey)
+    }
     selectedLayoutNode = null
     selectedLayoutType = null
     selectedLayoutLinkId = null
     selectedLayoutPinIds = []
-    void loadGraph()
+    await persistOperatorLayout({}, {}, {}, {}, {})
+    if (!layoutSaveError) await loadGraph()
   }
 
   function isSubgraphDescendant(candidateId: string, ancestorId: string): boolean {
@@ -2335,6 +2364,19 @@
     return graph?.nodes.find((node) => node.id === link?.[side].node)?.ports ?? []
   }
 
+  function appearanceEndpointName(side: 'from' | 'to'): string {
+    return nodeLabelById(graph?.nodes, editorLink?.[side].node ?? '')
+  }
+
+  function readablePortName(
+    port: NonNullable<NetworkGraph['nodes'][number]['ports']>[number],
+    index: number,
+  ): string {
+    const label = (port.label ?? '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
+    const side = port.placement?.side
+    return label || `Point ${index + 1}${side ? ` · ${side}` : ''}`
+  }
+
   function autoPlaceLinkSides() {
     if (!graph || !linkDraft) return
     const from = graph.nodes.find((node) => node.id === linkDraft?.from)?.position
@@ -2836,6 +2878,12 @@
       </div>
     {/if}
 
+    {#if layoutSaveError}
+      <div class="warnings-banner" role="alert">
+        <span class="warning-text">Layout not saved: {layoutSaveError}</span>
+      </div>
+    {/if}
+
     <TopologyViewer
       bind:this={viewer}
       graph={visibleGraph}
@@ -2887,13 +2935,19 @@
         />
         <HighlightOverlay
           {svgElement}
-          highlightedIds={highlightedPathNodes}
-          highlightedLinkIds={highlightedPathLinks}
-          secondaryHighlightedIds={controlPlanePath.nodeIds}
+          highlightedIds={editorSourceId ? new Set([editorSourceId]) : highlightedPathNodes}
+          highlightedLinkIds={appearanceEditorOpen && appearanceDraft
+    ? new Set([appearanceDraft.id])
+    : highlightedPathLinks}
+          secondaryHighlightedIds={editorDestinationId
+    ? new Set([editorDestinationId])
+    : controlPlanePath.nodeIds}
           secondaryHighlightedLinkIds={controlPlanePath.linkIds}
-          dimOthers={pathExplorerOpen && highlightedPathNodes.size > 0}
-          highlightColor={selectedTrafficFlow?.primaryColor ?? '#2563eb'}
-          secondaryHighlightColor={selectedTrafficFlow?.controlColor ?? '#8b5cf6'}
+          dimOthers={pathExplorerOpen && highlightedPathNodes.size > 0 && !editorSourceId}
+          highlightColor={editorSourceId ? '#2563eb' : (selectedTrafficFlow?.primaryColor ?? '#2563eb')}
+          secondaryHighlightColor={editorDestinationId
+    ? '#f97316'
+    : (selectedTrafficFlow?.controlColor ?? '#8b5cf6')}
           pulseAnimation={false}
         />
         <TooltipOverlay {svgElement} graph={activeGraph} contentBuilder={buildTooltip} />
@@ -3194,6 +3248,11 @@
       </div>
       <label
         >Source
+        <span class="editor-help"
+          >{linkDraft.from
+    ? `${nodeLabelById(graph?.nodes, linkDraft.from)} · blue block`
+    : 'Choose the block where the connection starts'}</span
+        >
         <select bind:value={linkDraft.from}>
           <option value="">Choose a block</option>
           {#each graph?.nodes ?? [] as node}
@@ -3203,6 +3262,11 @@
       </label>
       <label
         >Destination
+        <span class="editor-help"
+          >{linkDraft.to
+    ? `${nodeLabelById(graph?.nodes, linkDraft.to)} · orange block`
+    : 'Choose the block where the connection ends'}</span
+        >
         <select bind:value={linkDraft.to}>
           <option value="">Choose a block</option>
           {#each graph?.nodes ?? [] as node}
@@ -3466,17 +3530,19 @@
       </div>
       <label
         >Source point
+        <span class="editor-help">{appearanceEndpointName('from')} · blue block</span>
         <select bind:value={appearanceDraft.from}>
-          {#each appearancePorts('from') as port}
-            <option value={port.id}>{port.label.trim() || port.id}</option>
+          {#each appearancePorts('from') as port, index}
+            <option value={port.id}>{readablePortName(port, index)}</option>
           {/each}
         </select>
       </label>
       <label
         >Destination point
+        <span class="editor-help">{appearanceEndpointName('to')} · orange block</span>
         <select bind:value={appearanceDraft.to}>
-          {#each appearancePorts('to') as port}
-            <option value={port.id}>{port.label.trim() || port.id}</option>
+          {#each appearancePorts('to') as port, index}
+            <option value={port.id}>{readablePortName(port, index)}</option>
           {/each}
         </select>
       </label>

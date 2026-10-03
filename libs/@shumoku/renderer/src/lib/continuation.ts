@@ -1,4 +1,4 @@
-import type { ResolvedEdge } from '@shumoku/core'
+import type { ResolvedEdge, ResolvedLayout } from '@shumoku/core'
 
 export interface ContinuationGeometry {
   label: string
@@ -68,4 +68,24 @@ export function continuationGeometry(edge: ResolvedEdge): ContinuationGeometry |
     path: `M ${from.startX} ${from.startY} L ${from.x} ${from.y} M ${to.startX} ${to.startY} L ${to.x} ${to.y}`,
     ends: [from, to],
   }
+}
+
+/** Include movable continuation badges when fitting an exported diagram. */
+export function continuationBounds(layout: ResolvedLayout) {
+  const { x, y, width, height } = layout.bounds
+  let minX = x
+  let minY = y
+  let maxX = x + width
+  let maxY = y + height
+  for (const edge of layout.edges.values()) {
+    const geometry = continuationGeometry(edge)
+    if (!geometry) continue
+    for (const end of geometry.ends) {
+      minX = Math.min(minX, end.badgeX - 36, end.x)
+      minY = Math.min(minY, end.badgeY - 12, end.y)
+      maxX = Math.max(maxX, end.badgeX + 36, end.x)
+      maxY = Math.max(maxY, end.badgeY + 12, end.y)
+    }
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
 }

@@ -23,6 +23,7 @@ export function nodeLabel(node: NodeLike | undefined | null): string {
   // than leaking "<b>…</b>" into the UI.
   const text = raw
     .replace(/<[^>]*>/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
   return text.length > 0 ? text : node.id

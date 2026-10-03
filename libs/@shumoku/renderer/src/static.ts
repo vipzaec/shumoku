@@ -40,7 +40,10 @@ const resolveNodeSize = (n: {
   size?: { width: number; height: number }
 }) => n.size ?? engine.nodeBodySize(n as Parameters<typeof engine.nodeBodySize>[0])
 
-import { continuationGeometry } from './lib/continuation'
+import { continuationBounds, continuationGeometry } from './lib/continuation'
+
+export { continuationBounds } from './lib/continuation'
+
 import { type RenderColors, themeToColors } from './lib/render-colors'
 import {
   bezierEdgePath,
@@ -282,10 +285,10 @@ function renderEdge(edge: ResolvedEdge, colors: RenderColors): string {
   // to the standard port-anchored Bezier.
   const continuation = continuationGeometry(edge)
   const pathD =
+    continuation?.path ??
     (edge.link.metadata?.['routeShape'] === 'straight' && edge.fromPort && edge.toPort
       ? `M ${edge.fromPort.absolutePosition.x} ${edge.fromPort.absolutePosition.y} L ${edge.toPort.absolutePosition.x} ${edge.toPort.absolutePosition.y}`
       : null) ??
-    continuation?.path ??
     (edge.route
       ? polylinePath(edge.route.points, edge.link.metadata?.['routePolicy'] === 'avoid' ? 12 : 6)
       : edge.fromPort && edge.toPort
@@ -477,7 +480,7 @@ export function renderSvgString(layout: ResolvedLayout, options?: StaticRenderOp
   const theme = options?.theme ?? lightTheme
   const colors = themeToColors(theme)
 
-  const { bounds } = layout
+  const bounds = continuationBounds(layout)
   const vb = `${bounds.x - 50} ${bounds.y - 50} ${bounds.width + 100} ${bounds.height + 100}`
 
   const monoFont = 'ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace'

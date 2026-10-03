@@ -100,6 +100,28 @@ describe('routeEdges — obstacle avoidance', () => {
     expect([...under.values()][0]?.route).toBeUndefined()
     expect([...around.values()][0]?.route?.points?.length).toBeGreaterThan(2)
   })
+
+  test('routes around an unrelated container after automatic placement', async () => {
+    const groups = new Map([
+      [
+        'other-site',
+        {
+          id: 'other-site',
+          label: 'Other site',
+          bounds: { x: 160, y: -20, width: 100, height: 220 },
+        },
+      ],
+    ])
+    const avoiding = await routeEdges(NOOP_NODES, ports, [link('source:out', 'target:in')], groups)
+    const passing = await routeEdges(
+      NOOP_NODES,
+      ports,
+      [{ ...link('source:out', 'target:in'), metadata: { routePolicy: 'under' } }],
+      groups,
+    )
+    expect([...avoiding.values()][0]?.route?.points?.length).toBeGreaterThan(2)
+    expect([...passing.values()][0]?.route).toBeUndefined()
+  })
 })
 
 describe('routeEdges — lane offset', () => {

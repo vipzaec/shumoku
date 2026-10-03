@@ -224,7 +224,7 @@ function detourAroundObstacles(
     )
       continue
     if (!findBezierObstacle(edge, nodes, subgraphs)) continue
-    const points = routeViaGrid(edge, nodes)
+    const points = routeViaGrid(edge, nodes, subgraphs)
     if (!points) continue
     edge.route = { kind: 'polyline', points }
     edge.points = points
@@ -258,7 +258,11 @@ function segmentHitsRect(a: RoutePoint, b: RoutePoint, r: RouteRect): boolean {
 }
 
 /** Find a short orthogonal path on the visibility grid around every unrelated node. */
-function routeViaGrid(edge: ResolvedEdge, nodes: Map<string, Node>): RoutePoint[] | null {
+function routeViaGrid(
+  edge: ResolvedEdge,
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+): RoutePoint[] | null {
   const src = edge.fromPort.absolutePosition
   const tgt = edge.toPort.absolutePosition
   const sn = portNormal(edge.fromPort.side)
@@ -277,6 +281,16 @@ function routeViaGrid(edge: ResolvedEdge, nodes: Map<string, Node>): RoutePoint[
         width: b.width + 2 * DETOUR_CLEARANCE,
         height: b.height + 2 * DETOUR_CLEARANCE,
       })
+  }
+  for (const group of subgraphs.values()) {
+    const b = group.bounds
+    if (!b || endpointInsideGroup(edge, b)) continue
+    obstacles.push({
+      x: b.x - DETOUR_CLEARANCE,
+      y: b.y - DETOUR_CLEARANCE,
+      width: b.width + 2 * DETOUR_CLEARANCE,
+      height: b.height + 2 * DETOUR_CLEARANCE,
+    })
   }
   const clear = (a: RoutePoint, b: RoutePoint) => obstacles.every((r) => !segmentHitsRect(a, b, r))
   if (!clear(src, start) || !clear(end, tgt)) return null
@@ -373,7 +387,7 @@ function routeViaGrid(edge: ResolvedEdge, nodes: Map<string, Node>): RoutePoint[
 function findBezierObstacle(
   edge: ResolvedEdge,
   nodes: Map<string, Node>,
-  _subgraphs: Map<string, Subgraph>,
+  subgraphs: Map<string, Subgraph>,
 ): { x: number; y: number; width: number; height: number } | null {
   const samples = sampleBezier(edge)
   let merged: { x: number; y: number; width: number; height: number } | null = null
@@ -395,7 +409,23 @@ function findBezierObstacle(
     if (!bbox) continue
     if (samples.some((s) => pointInRect(s.x, s.y, bbox))) grow(bbox)
   }
+  for (const group of subgraphs.values()) {
+    const b = group.bounds
+    if (!b || endpointInsideGroup(edge, b)) continue
+    if (samples.some((s) => pointInRect(s.x, s.y, b))) grow(b)
+  }
   return merged
+}
+
+function endpointInsideGroup(edge: ResolvedEdge, bounds: Bounds): boolean {
+  const from = edge.fromPort.absolutePosition
+  const to = edge.toPort.absolutePosition
+  const contains = (point: RoutePoint) =>
+    point.x >= bounds.x &&
+    point.x <= bounds.x + bounds.width &&
+    point.y >= bounds.y &&
+    point.y <= bounds.y + bounds.height
+  return contains(from) || contains(to)
 }
 
 /** Approximate the renderer's port-anchored bezier with N samples. */

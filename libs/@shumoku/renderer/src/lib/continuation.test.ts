@@ -1,6 +1,6 @@
-import type { ResolvedEdge } from '@shumoku/core'
+import type { ResolvedEdge, ResolvedLayout } from '@shumoku/core'
 import { describe, expect, it } from 'vitest'
-import { continuationGeometry } from './continuation'
+import { continuationBounds, continuationGeometry } from './continuation'
 
 function edge(config: unknown): ResolvedEdge {
   return {
@@ -38,5 +38,28 @@ describe('paired continuation geometry', () => {
     ])
     expect(geometry?.path).toContain('M 100 200 L')
     expect(geometry?.path).toContain('M 500 300 L')
+  })
+
+  it('expands export bounds to include independently moved markers', () => {
+    const layout = {
+      bounds: { x: 0, y: 0, width: 600, height: 400 },
+      edges: new Map([
+        [
+          'link',
+          edge({
+            enabled: true,
+            label: 'LAN-42',
+            source: { x: -80, y: -30 },
+            destination: { x: 670, y: 450 },
+          }),
+        ],
+      ]),
+    } as unknown as ResolvedLayout
+    expect(continuationBounds(layout)).toEqual({
+      x: -116,
+      y: -42,
+      width: 822,
+      height: 504,
+    })
   })
 })
