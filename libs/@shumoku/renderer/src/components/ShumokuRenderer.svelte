@@ -145,6 +145,7 @@
     onrouteadd?: (id: string, x: number, y: number, index: number) => void
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
+    oncontinuationmove?: (id: string, index: number, x: number, y: number) => void
     /**
      * Per-element right-clicks call `preventDefault()` by default to
      * suppress the browser's native context menu. Set this to `false`
@@ -203,6 +204,7 @@
     onrouteadd,
     onroutemove,
     onrouteremove,
+    oncontinuationmove,
     subgraphOverlay,
     linkOverlay,
     nodeOverlay,
@@ -301,9 +303,11 @@
       return false
     }
     return Object.fromEntries(
-      [...nodes.values()]
-        .filter((node) => node.position && isInside(node))
-        .map((node) => [node.id, { x: node.position!.x, y: node.position!.y }]),
+      [...nodes.values()].flatMap((node) =>
+        node.position && isInside(node)
+          ? [[node.id, { x: node.position.x, y: node.position.y }] as const]
+          : [],
+      ),
     )
   }
 
@@ -928,7 +932,8 @@
       let index = 0
       let best = Infinity
       for (let i = 0; i < points.length - 1; i++) {
-        const a = points[i]!, b = points[i + 1]!
+        const a = points[i], b = points[i + 1]
+        if (!a || !b) continue
         const dx = b.x - a.x, dy = b.y - a.y
         const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)))
         const distance = Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy)
@@ -938,6 +943,10 @@
     }}
     onroutemove={(id, index, x, y) => { const p = screenToSvg(x, y); onroutemove?.(id, index, p.x, p.y) }}
     {onrouteremove}
+    oncontinuationmove={(id, index, x, y) => {
+      const p = screenToSvg(x, y)
+      oncontinuationmove?.(id, index, p.x, p.y)
+    }}
     oncontextmenu={handleContextMenu}
     onbackgroundclick={handleBackgroundClick}
     onmarquee={handleMarquee}

@@ -52,6 +52,7 @@
     onrouteadd,
     onroutemove,
     onrouteremove,
+    oncontinuationmove,
   }: RendererOverlaySnippets & {
     nodes: Map<string, Node>
     ports: Map<string, ResolvedPort>
@@ -93,6 +94,7 @@
     onrouteadd?: (id: string, x: number, y: number) => void
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
+    oncontinuationmove?: (id: string, index: number, x: number, y: number) => void
   } = $props()
 
   const viewBox = $derived(
@@ -328,6 +330,7 @@
         {onrouteadd}
         {onroutemove}
         {onrouteremove}
+        {oncontinuationmove}
       />
     {/each}
 

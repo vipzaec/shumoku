@@ -140,6 +140,18 @@ export const OperatorLayoutSchema = z.object({
       }),
     )
     .optional(),
+  linkContinuationOverrides: z
+    .record(
+      z.string(),
+      z.object({
+        enabled: z.boolean(),
+        label: z.string().max(100),
+        length: z.number().min(28).max(160).optional(),
+        source: z.object({ x: z.number().finite(), y: z.number().finite() }).optional(),
+        destination: z.object({ x: z.number().finite(), y: z.number().finite() }).optional(),
+      }),
+    )
+    .optional(),
   portPresentationOverrides: z
     .record(
       z.string(),

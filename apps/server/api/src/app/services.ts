@@ -72,7 +72,12 @@ export interface DataSourceOperationsService {
     tags: { slug: string; name: string }[]
   } | null>
   getAlerts(id: string, options: AlertQueryOptions): Promise<Alert[] | null>
-  listBindableObjects(id: string, kind: string, query?: string, objectId?: string): Promise<Array<{
+  listBindableObjects(
+    id: string,
+    kind: string,
+    query?: string,
+    objectId?: string,
+  ): Promise<Array<{
     id: string
     kind: string
     name: string
@@ -215,11 +220,49 @@ export interface DisplaySettingsView {
     portOrders: Record<string, number>
     portOffsets: Record<string, number>
     edgeRoutes: Record<string, Array<{ x: number; y: number }>>
+    linkContinuationOverrides?: Record<
+      string,
+      {
+        enabled: boolean
+        label: string
+        length?: number
+        source?: { x: number; y: number }
+        destination?: { x: number; y: number }
+      }
+    >
     parentOverrides?: Record<string, string | null>
-    operatorNodes?: Array<{ id: string; label: string[]; parent?: string; type: string; tenant?: string; notes?: string; origin?: 'Manual' | 'NetBox' | 'Existing object'; reference?: { nodeId: string; nodeName: string }; binding?: { dataSourceId: string; kind: string; objectId: string; objectName: string } }>
+    operatorNodes?: Array<{
+      id: string
+      label: string[]
+      parent?: string
+      type: string
+      tenant?: string
+      notes?: string
+      origin?: 'Manual' | 'NetBox' | 'Existing object'
+      reference?: { nodeId: string; nodeName: string }
+      binding?: { dataSourceId: string; kind: string; objectId: string; objectName: string }
+    }>
     presentationOverrides?: Record<string, { label?: string[]; type?: string }>
-    operatorLinks?: Array<{ id: string; from: string; to: string; label: string; relationship?: 'network' | 'management' | 'dependency' | 'traffic' | 'documentation'; direction?: 'none' | 'forward' | 'back' | 'both'; tenant?: string; notes?: string; fromSide: 'top' | 'bottom' | 'left' | 'right'; toSide: 'top' | 'bottom' | 'left' | 'right' }>
-    operatorGroups?: Array<{ id: string; label: string; parent?: string; direction: 'TB' | 'BT' | 'LR' | 'RL'; tenant?: string; notes?: string }>
+    operatorLinks?: Array<{
+      id: string
+      from: string
+      to: string
+      label: string
+      relationship?: 'network' | 'management' | 'dependency' | 'traffic' | 'documentation'
+      direction?: 'none' | 'forward' | 'back' | 'both'
+      tenant?: string
+      notes?: string
+      fromSide: 'top' | 'bottom' | 'left' | 'right'
+      toSide: 'top' | 'bottom' | 'left' | 'right'
+    }>
+    operatorGroups?: Array<{
+      id: string
+      label: string
+      parent?: string
+      direction: 'TB' | 'BT' | 'LR' | 'RL'
+      tenant?: string
+      notes?: string
+    }>
   }
 }
 

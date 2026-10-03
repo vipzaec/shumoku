@@ -272,11 +272,19 @@
     { id: 'double', label: 'Double', dash: '' },
   ] as const
   type LinkPorts = { from?: string; to?: string }
+  type LinkContinuation = {
+    enabled: boolean
+    label: string
+    length?: number
+    source?: { x: number; y: number }
+    destination?: { x: number; y: number }
+  }
   type PortPresentation = { label?: string; description?: string }
   const defaultBlockSpacing: BlockSpacing = { top: 20, right: 20, bottom: 20, left: 20 }
   let blockSpacingOverrides = $state<Record<string, BlockSpacing>>({})
   let linkAppearanceOverrides = $state<Record<string, LinkAppearance>>({})
   let linkPortOverrides = $state<Record<string, LinkPorts>>({})
+  let linkContinuationOverrides = $state<Record<string, LinkContinuation>>({})
   let portPresentationOverrides = $state<Record<string, PortPresentation>>({})
   let portEditorOpen = $state(false)
   let portDraft = $state<{
@@ -286,7 +294,17 @@
     description: string
   } | null>(null)
   let appearanceEditorOpen = $state(false)
-  let appearanceDraft = $state<(LinkAppearance & LinkPorts & { id: string }) | null>(null)
+  let appearanceDraft = $state<
+    | (LinkAppearance &
+        LinkPorts & {
+          id: string
+          continuationEnabled: boolean
+          continuationLabel: string
+          continuationLength: number
+        })
+    | null
+  >(null)
+  let appearanceDraftError = $state('')
   let objectEditorOpen = $state(false)
   let objectDraft = $state<OperatorNode | null>(null)
   let objectSource = $state<'Manual' | 'NetBox' | 'Existing object'>('Manual')
@@ -695,6 +713,7 @@
     blockSpacingOverrides?: Record<string, BlockSpacing>
     linkAppearanceOverrides?: Record<string, LinkAppearance>
     linkPortOverrides?: Record<string, LinkPorts>
+    linkContinuationOverrides?: Record<string, LinkContinuation>
     portPresentationOverrides?: Record<string, PortPresentation>
   }
 
@@ -881,6 +900,7 @@
     appearances: Record<string, LinkAppearance> = linkAppearanceOverrides,
     linkPorts: Record<string, LinkPorts> = linkPortOverrides,
     portPresentations: Record<string, PortPresentation> = portPresentationOverrides,
+    continuations: Record<string, LinkContinuation> = linkContinuationOverrides,
   ) {
     if (!topologyId || readOnly) return
     await api.topologies.displaySettings.set(topologyId, {
@@ -898,6 +918,7 @@
         blockSpacingOverrides: spacing,
         linkAppearanceOverrides: appearances,
         linkPortOverrides: linkPorts,
+        linkContinuationOverrides: continuations,
         portPresentationOverrides: portPresentations,
       },
     })
@@ -907,10 +928,12 @@
     link: T,
     appearances: Record<string, LinkAppearance>,
     linkPorts: Record<string, LinkPorts>,
+    continuations: Record<string, LinkContinuation>,
   ): T {
     const id = link.id ?? ''
     const ports = linkPorts[id]
     const appearance = appearances[id]
+    const continuation = continuations[id]
     const dash =
       appearance?.preset === 'dashed'
         ? '8 5'
@@ -934,10 +957,19 @@
               strokeWidth: appearance.width,
               strokeDasharray: dash,
             },
+          }
+        : {}),
+      ...(appearance || continuation
+        ? {
             metadata: {
               ...link.metadata,
-              routePolicy: appearance.routePolicy,
-              routeShape: appearance.routeShape ?? 'bent',
+              ...(appearance
+                ? {
+                    routePolicy: appearance.routePolicy,
+                    routeShape: appearance.routeShape ?? 'bent',
+                  }
+                : {}),
+              ...(continuation ? { continuation } : {}),
             },
           }
         : {}),
@@ -959,6 +991,7 @@
     appearances: Record<string, LinkAppearance> = linkAppearanceOverrides,
     linkPorts: Record<string, LinkPorts> = linkPortOverrides,
     portPresentations: Record<string, PortPresentation> = portPresentationOverrides,
+    continuations: Record<string, LinkContinuation> = linkContinuationOverrides,
   ): NetworkGraph {
     const mergedNodes: NetworkGraph['nodes'] = [
       ...source.nodes,
@@ -1171,7 +1204,7 @@
       links: [
         ...source.links
           .filter((link) => !(link.metadata as Record<string, unknown> | undefined)?.operatorObject)
-          .map((link) => applyLinkPresentation(link, appearances, linkPorts)),
+          .map((link) => applyLinkPresentation(link, appearances, linkPorts, continuations)),
         ...manualLinks
           .filter((link) => validNodeIds.has(link.from) && validNodeIds.has(link.to))
           .map((link) =>
@@ -1194,6 +1227,7 @@
               },
               appearances,
               linkPorts,
+              continuations,
             ),
           ),
       ],
@@ -1284,6 +1318,7 @@
             Object.keys(saved.blockSpacingOverrides ?? {}).length > 0 ||
             Object.keys(saved.linkAppearanceOverrides ?? {}).length > 0 ||
             Object.keys(saved.linkPortOverrides ?? {}).length > 0 ||
+            Object.keys(saved.linkContinuationOverrides ?? {}).length > 0 ||
             Object.keys(saved.portPresentationOverrides ?? {}).length > 0)
         const pins = serverHasLayout ? saved.nodePositions : localPins
         const sides = serverHasLayout ? saved.portSides : localSides
@@ -1297,6 +1332,7 @@
         const spacing = saved?.blockSpacingOverrides ?? {}
         const appearances = saved?.linkAppearanceOverrides ?? {}
         const linkPorts = saved?.linkPortOverrides ?? {}
+        const continuations = saved?.linkContinuationOverrides ?? {}
         const portPresentations = saved?.portPresentationOverrides ?? {}
         edgeRoutes = saved?.edgeRoutes ?? {}
         pinnedPositions = pins
@@ -1311,6 +1347,7 @@
         blockSpacingOverrides = spacing
         linkAppearanceOverrides = appearances
         linkPortOverrides = linkPorts
+        linkContinuationOverrides = continuations
         portPresentationOverrides = portPresentations
         if (
           !serverHasLayout &&
@@ -1333,6 +1370,7 @@
           appearances,
           linkPorts,
           portPresentations,
+          continuations,
         )
         // Pinned positions require a fresh client layout so ports and routes
         // are recalculated around the operator's saved placement.
@@ -2086,6 +2124,11 @@
     const link = graph?.links.find((candidate) => candidate.id === selectedLayoutLinkId)
     if (!link?.id) return
     const saved = linkAppearanceOverrides[link.id]
+    const rawContinuation = linkContinuationOverrides[link.id] ?? link.metadata?.['continuation']
+    const continuation =
+      rawContinuation && typeof rawContinuation === 'object' && !Array.isArray(rawContinuation)
+        ? (rawContinuation as Partial<LinkContinuation>)
+        : undefined
     const dash = link.style?.strokeDasharray ?? ''
     const preset =
       link.type === 'double'
@@ -2110,12 +2153,22 @@
         saved?.routePolicy ?? (link.metadata?.['routePolicy'] === 'under' ? 'under' : 'avoid'),
       from: linkPortOverrides[link.id]?.from ?? link.from.port,
       to: linkPortOverrides[link.id]?.to ?? link.to.port,
+      continuationEnabled: continuation?.enabled === true,
+      continuationLabel:
+        continuation?.label ??
+        (Array.isArray(link.label) ? link.label.join(' / ') : (link.label ?? '')),
+      continuationLength: continuation?.length ?? 48,
     }
+    appearanceDraftError = ''
     appearanceEditorOpen = true
   }
 
   function saveSelectedAppearance(clearManualRoute = false) {
     if (!appearanceDraft || !graph) return
+    if (appearanceDraft.continuationEnabled && !appearanceDraft.continuationLabel.trim()) {
+      appearanceDraftError = 'Enter a label for both ends of the connection.'
+      return
+    }
     const source = baseGraph ?? graph
     const link =
       source.links.find((candidate) => candidate.id === appearanceDraft?.id) ??
@@ -2139,6 +2192,28 @@
       },
     }
     const nextPorts = { ...linkPortOverrides }
+    const nextContinuations = { ...linkContinuationOverrides }
+    const generatedContinuation = link.metadata?.['continuation']
+    const previousContinuation =
+      nextContinuations[link.id] ??
+      (generatedContinuation && typeof generatedContinuation === 'object'
+        ? (generatedContinuation as Partial<LinkContinuation>)
+        : undefined)
+    if (
+      appearanceDraft.continuationEnabled ||
+      (generatedContinuation && typeof generatedContinuation === 'object') ||
+      Object.hasOwn(nextContinuations, link.id)
+    ) {
+      nextContinuations[link.id] = {
+        enabled: appearanceDraft.continuationEnabled,
+        label: appearanceDraft.continuationLabel.trim(),
+        length: Math.min(160, Math.max(28, Number(appearanceDraft.continuationLength) || 48)),
+        ...(previousContinuation?.source ? { source: previousContinuation.source } : {}),
+        ...(previousContinuation?.destination
+          ? { destination: previousContinuation.destination }
+          : {}),
+      }
+    }
     const selectedPorts = {
       ...(appearanceDraft.from !== link.from.port ? { from: appearanceDraft.from } : {}),
       ...(appearanceDraft.to !== link.to.port ? { to: appearanceDraft.to } : {}),
@@ -2161,6 +2236,7 @@
     edgeRoutes = nextRoutes
     linkAppearanceOverrides = nextAppearance
     linkPortOverrides = nextPorts
+    linkContinuationOverrides = nextContinuations
     void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, nextRoutes)
     graph = applyLayoutOverrides(source, pinnedPositions, portSides, portOrders, portOffsets)
     serverLayout = undefined
@@ -2170,6 +2246,52 @@
 
   function selectRouteShape(shape: LinkAppearance['routeShape']) {
     if (appearanceDraft) appearanceDraft.routeShape = shape
+  }
+
+  function setContinuationEnabled(enabled: boolean) {
+    if (appearanceDraft) appearanceDraft.continuationEnabled = enabled
+  }
+
+  function moveContinuationMarker(id: string, index: number, x: number, y: number) {
+    if (!layoutEdit || !graph || !Number.isFinite(x) || !Number.isFinite(y)) return
+    const source = baseGraph ?? graph
+    const link = source.links.find((candidate) => candidate.id === id)
+    if (!link) return
+    const raw = linkContinuationOverrides[id] ?? link.metadata?.['continuation']
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return
+    const continuation = raw as Partial<LinkContinuation>
+    if (continuation.enabled !== true || !continuation.label?.trim()) return
+    const next = {
+      ...linkContinuationOverrides,
+      [id]: {
+        ...continuation,
+        enabled: true,
+        label: continuation.label,
+        [index === 0 ? 'source' : 'destination']: { x, y },
+      },
+    }
+    linkContinuationOverrides = next
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
+    graph = applyLayoutOverrides(source, pinnedPositions, portSides, portOrders, portOffsets)
+    serverLayout = undefined
+  }
+
+  function resetContinuationMarkers() {
+    if (!appearanceDraft || !graph) return
+    const id = appearanceDraft.id
+    const current = linkContinuationOverrides[id]
+    if (!current) return
+    const { source: _source, destination: _destination, ...rest } = current
+    linkContinuationOverrides = { ...linkContinuationOverrides, [id]: rest }
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
+    graph = applyLayoutOverrides(
+      baseGraph ?? graph,
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+    )
+    serverLayout = undefined
   }
 
   function selectRoutePolicy(policy: LinkAppearance['routePolicy']) {
@@ -2730,6 +2852,7 @@
       onrouteadd={addRoutePoint}
       onroutemove={moveRoutePoint}
       onrouteremove={removeRoutePoint}
+      oncontinuationmove={moveContinuationMarker}
       detail={{
     nodeDetails: nodeDetailsVisible,
     portLabels: portLabelsVisible,
@@ -3238,6 +3361,56 @@
         </div>
       </div>
       <div class="line-type-field">
+        <span>Connection</span>
+        <div class="line-type-picker" role="group" aria-label="Connection continuity">
+          <button
+            type="button"
+            class:active={!appearanceDraft.continuationEnabled}
+            aria-label="Continuous connection"
+            aria-pressed={!appearanceDraft.continuationEnabled}
+            title="Draw the full connection"
+            onclick={() => setContinuationEnabled(false)}
+          >
+            <svg viewBox="0 0 48 24" aria-hidden="true"><path d="M4 12 H44" /></svg>
+          </button>
+          <button
+            type="button"
+            class:active={appearanceDraft.continuationEnabled}
+            aria-label="Paired continuation"
+            aria-pressed={appearanceDraft.continuationEnabled}
+            title="Show two ends of one connection"
+            onclick={() => setContinuationEnabled(true)}
+          >
+            <svg viewBox="0 0 48 24" aria-hidden="true">
+              <path d="M4 12 H17 M31 12 H44" />
+              <path d="M19 7 V17 M29 7 V17" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      {#if appearanceDraft.continuationEnabled}
+        <div class="side-pickers">
+          <label
+            >Both ends label
+            <input maxlength="100" bind:value={appearanceDraft.continuationLabel}></label
+          >
+          <label
+            >Stub length
+            <input
+              type="number"
+              min="28"
+              max="160"
+              step="1"
+              bind:value={appearanceDraft.continuationLength}
+            ></label
+          >
+        </div>
+        <p class="editor-help">Both ends belong to the same connection and highlight together.</p>
+        {#if linkContinuationOverrides[appearanceDraft.id]?.source || linkContinuationOverrides[appearanceDraft.id]?.destination}
+          <button type="button" onclick={resetContinuationMarkers}>Reset marker positions</button>
+        {/if}
+      {/if}
+      <div class="line-type-field">
         <span>Stroke</span>
         <div class="line-type-picker" role="group" aria-label="Connection stroke">
           {#each strokePresets as preset}
@@ -3312,6 +3485,9 @@
         style.
       </p>
       <div class="object-editor-actions">
+        {#if appearanceDraftError}
+          <span role="alert">{appearanceDraftError}</span>
+        {/if}
         <button class="primary" onclick={() => saveSelectedAppearance()}>Save connection</button>
       </div>
     </div>

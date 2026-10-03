@@ -131,6 +131,15 @@ describe('topology display settings', () => {
         },
       },
       linkPortOverrides: { ingress: { to: 'wan' } },
+      linkContinuationOverrides: {
+        ingress: {
+          enabled: true,
+          label: 'WAN-1',
+          length: 56,
+          source: { x: 175, y: 210 },
+          destination: { x: 630, y: 210 },
+        },
+      },
       portPresentationOverrides: {
         'firewall:wan': { label: 'WAN', description: 'Internet uplink' },
       },

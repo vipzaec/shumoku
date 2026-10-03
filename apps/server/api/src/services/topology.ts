@@ -164,6 +164,16 @@ export interface OperatorLayoutState {
     }
   >
   linkPortOverrides?: Record<string, { from?: string; to?: string }>
+  linkContinuationOverrides?: Record<
+    string,
+    {
+      enabled: boolean
+      label: string
+      length?: number
+      source?: { x: number; y: number }
+      destination?: { x: number; y: number }
+    }
+  >
   portPresentationOverrides?: Record<string, { label?: string; description?: string }>
 }
 
@@ -552,6 +562,7 @@ export class TopologyService {
         blockSpacingOverrides: {},
         linkAppearanceOverrides: {},
         linkPortOverrides: {},
+        linkContinuationOverrides: {},
         portPresentationOverrides: {},
       }
     try {
@@ -570,6 +581,7 @@ export class TopologyService {
         blockSpacingOverrides: value.blockSpacingOverrides ?? {},
         linkAppearanceOverrides: value.linkAppearanceOverrides ?? {},
         linkPortOverrides: value.linkPortOverrides ?? {},
+        linkContinuationOverrides: value.linkContinuationOverrides ?? {},
         portPresentationOverrides: value.portPresentationOverrides ?? {},
       }
     } catch {
@@ -587,6 +599,7 @@ export class TopologyService {
         blockSpacingOverrides: {},
         linkAppearanceOverrides: {},
         linkPortOverrides: {},
+        linkContinuationOverrides: {},
         portPresentationOverrides: {},
       }
     }

@@ -22,6 +22,7 @@
     onrouteadd,
     onroutemove,
     onrouteremove,
+    oncontinuationmove,
   }: {
     edge: ResolvedEdge
     colors: RenderColors
@@ -36,6 +37,7 @@
     onrouteadd?: (id: string, x: number, y: number) => void
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
+    oncontinuationmove?: (id: string, index: number, x: number, y: number) => void
   } = $props()
 
   // Every edge renders as a cubic Bezier flowing out of the source
@@ -54,10 +56,10 @@
   // are drawn as right-angle segments with rounded corners.
   const continuation = $derived(continuationGeometry(edge))
   const pathD = $derived(
-    (edge.link.metadata?.['routeShape'] === 'straight' && edge.fromPort && edge.toPort
-      ? `M ${edge.fromPort.absolutePosition.x} ${edge.fromPort.absolutePosition.y} L ${edge.toPort.absolutePosition.x} ${edge.toPort.absolutePosition.y}`
-      : null) ??
-      continuation?.path ??
+    continuation?.path ??
+      (edge.link.metadata?.['routeShape'] === 'straight' && edge.fromPort && edge.toPort
+        ? `M ${edge.fromPort.absolutePosition.x} ${edge.fromPort.absolutePosition.y} L ${edge.toPort.absolutePosition.x} ${edge.toPort.absolutePosition.y}`
+        : null) ??
       (edge.route
         ? polylinePath(edge.route.points, edge.link.metadata?.['routePolicy'] === 'avoid' ? 12 : 6)
         : edge.fromPort && edge.toPort
@@ -147,12 +149,19 @@
     onctx?.(edge.id, e)
   }
   function addPoint(e: MouseEvent) {
-    if (!routeEdit) return
+    if (!routeEdit || continuation) return
     e.preventDefault()
     e.stopPropagation()
     onrouteadd?.(edge.id, e.clientX, e.clientY)
   }
   let draggedPoint = $state<number | null>(null)
+  let draggedTerminal = $state<number | null>(null)
+  function finishTerminal(e: PointerEvent) {
+    if (draggedTerminal === null) return
+    e.stopPropagation()
+    oncontinuationmove?.(edge.id, draggedTerminal, e.clientX, e.clientY)
+    draggedTerminal = null
+  }
   function finishPoint(e: PointerEvent) {
     if (draggedPoint === null) return
     e.stopPropagation()
@@ -216,7 +225,15 @@
         aria-label={`${continuation.label}: ${index === 0 ? 'source' : 'destination'} of the same connection`}
         {onclick}
         onkeydown={onBadgeKeydown}
-        style="cursor: pointer"
+        onpointerdown={(e) => {
+          if (!routeEdit || !selected) return
+          e.stopPropagation()
+          draggedTerminal = index
+          e.currentTarget.setPointerCapture(e.pointerId)
+        }}
+        onpointerup={finishTerminal}
+        style={routeEdit && selected ? 'cursor: grab; touch-action: none' : 'cursor: pointer'}
+        title={routeEdit && selected ? 'Drag to move this continuation marker' : undefined}
       >
         <rect
           x={terminal.badgeX - 34}
@@ -252,7 +269,7 @@
     stroke-width={Math.max(edge.width + 12, 16)}
     stroke-linecap="round"
     class="link-hit"
-    title={routeEdit ? 'Double-click to add a bend' : undefined}
+    title={routeEdit && !continuation ? 'Double-click to add a bend' : undefined}
     {onclick}
     ondblclick={addPoint}
     oncontextmenu={handleContextMenu}

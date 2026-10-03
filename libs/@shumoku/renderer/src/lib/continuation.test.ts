@@ -22,4 +22,21 @@ describe('paired continuation geometry', () => {
     expect(continuationGeometry(edge({ enabled: false, label: 'LAN-42' }))).toBeNull()
     expect(continuationGeometry(edge({ enabled: true, label: '  ' }))).toBeNull()
   })
+
+  it('places each marker independently without changing the logical endpoints', () => {
+    const geometry = continuationGeometry(
+      edge({
+        enabled: true,
+        label: 'MON-01',
+        source: { x: 180, y: 240 },
+        destination: { x: 420, y: 280 },
+      }),
+    )
+    expect(geometry?.ends.map(({ badgeX, badgeY }) => [badgeX, badgeY])).toEqual([
+      [180, 240],
+      [420, 280],
+    ])
+    expect(geometry?.path).toContain('M 100 200 L')
+    expect(geometry?.path).toContain('M 500 300 L')
+  })
 })

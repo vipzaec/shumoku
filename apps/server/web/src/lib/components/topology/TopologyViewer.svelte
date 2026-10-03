@@ -114,6 +114,7 @@
     onrouteadd?: (id: string, x: number, y: number, index: number) => void
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
+    oncontinuationmove?: (id: string, index: number, x: number, y: number) => void
     onerror?: (err: Error) => void
 
     // --- Overlay slot ---
@@ -141,6 +142,7 @@
     onrouteadd,
     onroutemove,
     onrouteremove,
+    oncontinuationmove,
     onerror,
     children,
     subgraphOverlay,
@@ -484,6 +486,7 @@
       {onrouteadd}
       {onroutemove}
       {onrouteremove}
+      {oncontinuationmove}
     />
     {#if ctx}
       {@render children?.(ctx)}

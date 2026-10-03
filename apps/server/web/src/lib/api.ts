@@ -953,6 +953,16 @@ export const topologies = {
             }
           >
           linkPortOverrides?: Record<string, { from?: string; to?: string }>
+          linkContinuationOverrides?: Record<
+            string,
+            {
+              enabled: boolean
+              label: string
+              length?: number
+              source?: { x: number; y: number }
+              destination?: { x: number; y: number }
+            }
+          >
           portPresentationOverrides?: Record<string, { label?: string; description?: string }>
         }
       },
