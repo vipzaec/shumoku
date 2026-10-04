@@ -184,7 +184,7 @@ export {
 export { resolveLayout, unresolveLayout } from './resolve.js'
 // Resolved layout model (Port/Edge as computed objects, Node/Subgraph used directly)
 export type { EdgeRoute, ResolvedEdge, ResolvedLayout, ResolvedPort } from './resolved-types.js'
-export { routeEdges } from './route-edges.js'
+export { routeContinuationStub, routeEdges } from './route-edges.js'
 // Top-level convenience entry that runs autoLayoutFlatTree +
 // edge routing in one call. Used by the editor / server / CLI.
 export { computeNetworkLayout, createNetworkLayoutEngine } from './unified-engine.js'

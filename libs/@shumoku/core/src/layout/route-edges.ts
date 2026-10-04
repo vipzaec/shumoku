@@ -41,7 +41,7 @@
  * mixed graphs (some bus, some Bezier) work without extra wiring.
  */
 
-import type { Bounds, Link, Node, Subgraph } from '../models/types.js'
+import type { Bounds, Link, Node, Position, Subgraph } from '../models/types.js'
 import { bezierTangentReach } from './bezier-path.js'
 import { getLinkWidth } from './link-utils.js'
 import type { ResolvedEdge, ResolvedPort } from './resolved-types.js'
@@ -357,6 +357,64 @@ function obstacleRects(
   subgraphs: Map<string, Subgraph>,
 ): RouteRect[] {
   return visibleObstacleRects(edge, nodes, subgraphs, DETOUR_CLEARANCE)
+}
+
+/**
+ * Route one visible half of a paired continuation. Its marker is a visual
+ * endpoint, so the other half of the logical link must not make an obstacle
+ * disappear. The same container hierarchy and clearance rules as full links
+ * apply to this short segment.
+ */
+export function routeContinuationStub(
+  edge: ResolvedEdge,
+  half: 'source' | 'destination',
+  terminal: Position,
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+): Position[] {
+  const port = half === 'source' ? edge.fromPort : edge.toPort
+  const nodeId = half === 'source' ? edge.fromNodeId : edge.toNodeId
+  const start = port.absolutePosition
+  const direct = [start, terminal]
+  if (edge.link.metadata?.['routePolicy'] === 'under') return direct
+  if (edge.link.metadata?.['routeShape'] === 'straight') return direct
+  const otherSide: ResolvedPort['side'][] = ['left', 'right', 'top', 'bottom']
+  let best: Position[] | null = null
+  let bestLength = Infinity
+  for (const side of otherSide) {
+    const virtualPort: ResolvedPort = {
+      ...port,
+      id: '__continuation_terminal',
+      nodeId: '__continuation_terminal',
+      absolutePosition: terminal,
+      side,
+    }
+    const segment: ResolvedEdge = {
+      ...edge,
+      fromPort: port,
+      toPort: virtualPort,
+      fromNodeId: nodeId,
+      toNodeId: '__continuation_terminal',
+    }
+    if (
+      !visibleObstacleRects(segment, nodes, subgraphs, 0).some((rect) =>
+        segmentCrossesRect(start, terminal, rect),
+      )
+    ) {
+      return direct
+    }
+    const points = routeViaGrid(segment, nodes, subgraphs)
+    if (!points) continue
+    const length = points.slice(1).reduce((sum, point, index) => {
+      const previous = points[index]
+      return sum + (previous ? Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y) : 0)
+    }, 0)
+    if (length < bestLength) {
+      best = points
+      bestLength = length
+    }
+  }
+  return best ?? direct
 }
 
 /**

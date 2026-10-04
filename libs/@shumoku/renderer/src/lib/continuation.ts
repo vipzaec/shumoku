@@ -1,14 +1,27 @@
-import type { ResolvedEdge, ResolvedLayout } from '@shumoku/core'
+import {
+  type Node,
+  type Position,
+  type ResolvedEdge,
+  type ResolvedLayout,
+  routeContinuationStub,
+  type Subgraph,
+} from '@shumoku/core'
+import { polylinePath } from './svg-coords'
 
 export interface ContinuationGeometry {
   label: string
   path: string
   ends: Array<{ x: number; y: number; badgeX: number; badgeY: number }>
+  segments: Position[][]
 }
 
 /** Two visual stubs of one logical link; the missing middle is intentional. */
-export function continuationGeometry(edge: ResolvedEdge): ContinuationGeometry | null {
-  const value = edge.link?.metadata?.continuation
+export function continuationGeometry(
+  edge: ResolvedEdge,
+  nodes?: Map<string, Node>,
+  subgraphs?: Map<string, Subgraph>,
+): ContinuationGeometry | null {
+  const value = edge.link?.metadata?.['continuation']
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const config = value as {
     enabled?: unknown
@@ -34,7 +47,7 @@ export function continuationGeometry(edge: ResolvedEdge): ContinuationGeometry |
           : port.side === 'bottom'
             ? { x: 0, y: 1 }
             : { x: 1, y: 0 }
-    const placed =
+    const placed: Position | null =
       position &&
       typeof position === 'object' &&
       'x' in position &&
@@ -43,7 +56,7 @@ export function continuationGeometry(edge: ResolvedEdge): ContinuationGeometry |
       typeof position.y === 'number' &&
       Number.isFinite(position.x) &&
       Number.isFinite(position.y)
-        ? position
+        ? { x: position.x, y: position.y }
         : null
     const badgeX = placed?.x ?? x + normal.x * (length + 30)
     const badgeY = placed?.y ?? y + normal.y * (length + 30)
@@ -63,22 +76,44 @@ export function continuationGeometry(edge: ResolvedEdge): ContinuationGeometry |
   }
   const from = end(edge.fromPort, config.source)
   const to = end(edge.toPort, config.destination)
+  const segments: Position[][] = [
+    nodes && subgraphs
+      ? routeContinuationStub(edge, 'source', { x: from.x, y: from.y }, nodes, subgraphs)
+      : [
+          { x: from.startX, y: from.startY },
+          { x: from.x, y: from.y },
+        ],
+    nodes && subgraphs
+      ? routeContinuationStub(edge, 'destination', { x: to.x, y: to.y }, nodes, subgraphs)
+      : [
+          { x: to.startX, y: to.startY },
+          { x: to.x, y: to.y },
+        ],
+  ]
   return {
     label: config.label.trim(),
-    path: `M ${from.startX} ${from.startY} L ${from.x} ${from.y} M ${to.startX} ${to.startY} L ${to.x} ${to.y}`,
+    path: segments.map((points) => polylinePath(points, 12)).join(' '),
     ends: [from, to],
+    segments,
   }
 }
 
 /** Include movable continuation badges when fitting an exported diagram. */
 export function continuationBounds(layout: ResolvedLayout) {
-  return continuationBoundsFromEdges(layout.bounds, layout.edges.values())
+  return continuationBoundsFromEdges(
+    layout.bounds,
+    layout.edges.values(),
+    layout.nodes,
+    layout.subgraphs,
+  )
 }
 
 /** Use the same fit bounds for the interactive canvas and static exports. */
 export function continuationBoundsFromEdges(
   bounds: { x: number; y: number; width: number; height: number },
   edges: Iterable<ResolvedEdge>,
+  nodes?: Map<string, Node>,
+  subgraphs?: Map<string, Subgraph>,
 ) {
   const { x, y, width, height } = bounds
   let minX = x
@@ -86,13 +121,19 @@ export function continuationBoundsFromEdges(
   let maxX = x + width
   let maxY = y + height
   for (const edge of edges) {
-    const geometry = continuationGeometry(edge)
+    const geometry = continuationGeometry(edge, nodes, subgraphs)
     if (!geometry) continue
     for (const end of geometry.ends) {
       minX = Math.min(minX, end.badgeX - 36, end.x)
       minY = Math.min(minY, end.badgeY - 12, end.y)
       maxX = Math.max(maxX, end.badgeX + 36, end.x)
       maxY = Math.max(maxY, end.badgeY + 12, end.y)
+    }
+    for (const point of geometry.segments.flat()) {
+      minX = Math.min(minX, point.x)
+      minY = Math.min(minY, point.y)
+      maxX = Math.max(maxX, point.x)
+      maxY = Math.max(maxY, point.y)
     }
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }

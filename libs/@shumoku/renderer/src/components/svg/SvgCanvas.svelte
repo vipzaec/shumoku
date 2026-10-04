@@ -99,7 +99,7 @@
   } = $props()
 
   const viewBox = $derived.by(() => {
-    const fit = continuationBoundsFromEdges(bounds, edges.values())
+    const fit = continuationBoundsFromEdges(bounds, edges.values(), nodes, subgraphs)
     return `${fit.x - 50} ${fit.y - 50} ${fit.width + 100} ${fit.height + 100}`
   })
 
@@ -322,6 +322,8 @@
     {#each edges.values() as edge (edge.id)}
       <SvgEdge
         {edge}
+        {nodes}
+        {subgraphs}
         {colors}
         selected={selection.has(edge.id)}
         overlay={linkOverlay}

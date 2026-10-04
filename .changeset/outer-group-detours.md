@@ -3,4 +3,4 @@
 '@shumoku/renderer': patch
 ---
 
-Route smooth connections around the outermost unrelated container and its descendants. Keep the first port turn rounded in interactive and static diagrams.
+Route smooth connections and both halves of paired continuations around the outermost unrelated container and its descendants. Keep port turns rounded in interactive and static diagrams.

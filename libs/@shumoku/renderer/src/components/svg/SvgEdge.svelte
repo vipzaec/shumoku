@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ResolvedEdge } from '@shumoku/core'
+  import type { Node, ResolvedEdge, Subgraph } from '@shumoku/core'
   import { continuationGeometry } from '../../lib/continuation'
   import type { LinkOverlaySnippet } from '../../lib/overlays'
   import type { RenderColors } from '../../lib/render-colors'
@@ -12,6 +12,8 @@
 
   let {
     edge,
+    nodes,
+    subgraphs,
     colors,
     selected = false,
     overlay,
@@ -25,6 +27,8 @@
     oncontinuationmove,
   }: {
     edge: ResolvedEdge
+    nodes: Map<string, Node>
+    subgraphs: Map<string, Subgraph>
     colors: RenderColors
     selected?: boolean
     overlay?: LinkOverlaySnippet
@@ -54,7 +58,7 @@
   // Edges with `edge.route` set were routed orthogonally (bus / polyline)
   // by the router and override the default Bezier; the polyline points
   // are drawn as right-angle segments with rounded corners.
-  const continuation = $derived(continuationGeometry(edge))
+  const continuation = $derived(continuationGeometry(edge, nodes, subgraphs))
   const pathD = $derived(
     continuation?.path ??
       (edge.link.metadata?.['routeShape'] === 'straight' && edge.fromPort && edge.toPort

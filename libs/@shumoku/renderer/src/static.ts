@@ -279,11 +279,16 @@ function renderPort(port: ResolvedPort, colors: RenderColors): string {
 </g>`
 }
 
-function renderEdge(edge: ResolvedEdge, colors: RenderColors): string {
+function renderEdge(
+  edge: ResolvedEdge,
+  colors: RenderColors,
+  nodes: ResolvedLayout['nodes'],
+  subgraphs: ResolvedLayout['subgraphs'],
+): string {
   // Orthogonal (bus / polyline) routes are drawn as right-angle
   // polylines with light corner rounding; everything else falls back
   // to the standard port-anchored Bezier.
-  const continuation = continuationGeometry(edge)
+  const continuation = continuationGeometry(edge, nodes, subgraphs)
   const pathD =
     continuation?.path ??
     (edge.link.metadata?.['routeShape'] === 'straight' && edge.fromPort && edge.toPort
@@ -531,7 +536,7 @@ export function renderSvgString(layout: ResolvedLayout, options?: StaticRenderOp
 
   // Edges
   for (const edge of layout.edges.values()) {
-    parts.push(renderEdge(edge, colors))
+    parts.push(renderEdge(edge, colors, layout.nodes, layout.subgraphs))
   }
 
   // Nodes + ports

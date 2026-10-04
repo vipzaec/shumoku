@@ -1,4 +1,4 @@
-import type { ResolvedEdge, ResolvedLayout } from '@shumoku/core'
+import type { Node, ResolvedEdge, ResolvedLayout, Subgraph } from '@shumoku/core'
 import { describe, expect, it } from 'vitest'
 import {
   continuationBounds,
@@ -42,6 +42,68 @@ describe('paired continuation geometry', () => {
     ])
     expect(geometry?.path).toContain('M 100 200 L')
     expect(geometry?.path).toContain('M 500 300 L')
+  })
+
+  it('routes a moved marker around a lower nested service and rounds the turn', () => {
+    const link = edge({
+      enabled: true,
+      label: '1C KEY',
+      source: { x: 200, y: 330 },
+    })
+    link.fromNodeId = 'service'
+    link.toNodeId = 'target'
+    link.fromPort = {
+      ...link.fromPort,
+      absolutePosition: { x: 350, y: 100 },
+      side: 'right',
+    }
+    const nodes = new Map<string, Node>([
+      [
+        'service',
+        {
+          id: 'service',
+          label: '1C',
+          parent: 'vm',
+          position: { x: 300, y: 100 },
+          size: { width: 100, height: 60 },
+        },
+      ],
+      [
+        'lower',
+        {
+          id: 'lower',
+          label: 'MSSQL',
+          parent: 'lower-group',
+          position: { x: 320, y: 200 },
+          size: { width: 100, height: 80 },
+        },
+      ],
+    ])
+    const subgraphs = new Map<string, Subgraph>([
+      ['vm', { id: 'vm', label: 'SQL VM', bounds: { x: 200, y: 40, width: 300, height: 320 } }],
+      [
+        'lower-group',
+        {
+          id: 'lower-group',
+          label: 'MSSQL',
+          parent: 'vm',
+          bounds: { x: 260, y: 150, width: 130, height: 100 },
+        },
+      ],
+    ])
+    const geometry = continuationGeometry(link, nodes, subgraphs)
+    expect(geometry?.segments[0]?.length).toBeGreaterThan(2)
+    expect(geometry?.path).toContain(' Q ')
+    for (const [index, a] of (geometry?.segments[0] ?? []).entries()) {
+      const b = geometry?.segments[0]?.[index + 1]
+      if (!b) continue
+      expect(a.x === b.x || a.y === b.y).toBe(true)
+      expect(
+        a.x === b.x
+          ? a.x > 260 && a.x < 390 && Math.max(a.y, b.y) > 150 && Math.min(a.y, b.y) < 250
+          : a.y > 150 && a.y < 250 && Math.max(a.x, b.x) > 260 && Math.min(a.x, b.x) < 390,
+      ).toBe(false)
+    }
   })
 
   it('expands export bounds to include independently moved markers', () => {
