@@ -1,6 +1,10 @@
 import type { ResolvedEdge, ResolvedLayout } from '@shumoku/core'
 import { describe, expect, it } from 'vitest'
-import { continuationBounds, continuationGeometry } from './continuation'
+import {
+  continuationBounds,
+  continuationBoundsFromEdges,
+  continuationGeometry,
+} from './continuation'
 
 function edge(config: unknown): ResolvedEdge {
   return {
@@ -55,11 +59,13 @@ describe('paired continuation geometry', () => {
         ],
       ]),
     } as unknown as ResolvedLayout
-    expect(continuationBounds(layout)).toEqual({
+    const expected = {
       x: -116,
       y: -42,
       width: 822,
       height: 504,
-    })
+    }
+    expect(continuationBounds(layout)).toEqual(expected)
+    expect(continuationBoundsFromEdges(layout.bounds, layout.edges.values())).toEqual(expected)
   })
 })

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Node, ResolvedEdge, ResolvedPort, Subgraph, Theme } from '@shumoku/core'
+  import { continuationBoundsFromEdges } from '../../lib/continuation'
   import type { RendererOverlaySnippets } from '../../lib/overlays'
   import type { RenderColors } from '../../lib/render-colors'
   import { screenToWorld } from '../../lib/svg-coords'
@@ -97,9 +98,10 @@
     oncontinuationmove?: (id: string, index: number, x: number, y: number) => void
   } = $props()
 
-  const viewBox = $derived(
-    `${bounds.x - 50} ${bounds.y - 50} ${bounds.width + 100} ${bounds.height + 100}`,
-  )
+  const viewBox = $derived.by(() => {
+    const fit = continuationBoundsFromEdges(bounds, edges.values())
+    return `${fit.x - 50} ${fit.y - 50} ${fit.width + 100} ${fit.height + 100}`
+  })
 
   // Camera (pan/zoom) is intentionally NOT attached here. Different host
   // apps have different pan/zoom requirements, so the canvas only

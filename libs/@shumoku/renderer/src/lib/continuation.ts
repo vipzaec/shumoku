@@ -72,12 +72,20 @@ export function continuationGeometry(edge: ResolvedEdge): ContinuationGeometry |
 
 /** Include movable continuation badges when fitting an exported diagram. */
 export function continuationBounds(layout: ResolvedLayout) {
-  const { x, y, width, height } = layout.bounds
+  return continuationBoundsFromEdges(layout.bounds, layout.edges.values())
+}
+
+/** Use the same fit bounds for the interactive canvas and static exports. */
+export function continuationBoundsFromEdges(
+  bounds: { x: number; y: number; width: number; height: number },
+  edges: Iterable<ResolvedEdge>,
+) {
+  const { x, y, width, height } = bounds
   let minX = x
   let minY = y
   let maxX = x + width
   let maxY = y + height
-  for (const edge of layout.edges.values()) {
+  for (const edge of edges) {
     const geometry = continuationGeometry(edge)
     if (!geometry) continue
     for (const end of geometry.ends) {
