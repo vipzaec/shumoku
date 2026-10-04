@@ -23,4 +23,43 @@ describe('canonical SVG pipeline', () => {
     expect(await renderSvg(prepared)).toContain('style="background: transparent;"')
     expect(renderEmbeddable(prepared).svg).toContain('style="background: transparent;"')
   })
+
+  it('includes moved continuation markers in embeddable fit bounds', async () => {
+    const prepared = await prepareRender({
+      version: '1',
+      name: 'Moved continuation',
+      nodes: [
+        { id: 'source', label: 'Source' },
+        { id: 'destination', label: 'Destination' },
+      ],
+      links: [
+        {
+          id: 'link',
+          from: { node: 'source' },
+          to: { node: 'destination' },
+          metadata: {
+            continuation: {
+              enabled: true,
+              label: 'LAN-42',
+              source: { x: -1000, y: -800 },
+              destination: { x: 1000, y: 800 },
+            },
+          },
+        },
+      ],
+    })
+    const embedded = renderEmbeddable(prepared)
+    const svgViewBox = embedded.svg
+      .match(/viewBox="([^"]+)"/)?.[1]
+      .split(' ')
+      .map(Number)
+
+    expect(svgViewBox).toBeDefined()
+    expect(embedded.viewBox.x).toBeLessThanOrEqual(-1036)
+    expect(embedded.viewBox.y).toBeLessThanOrEqual(-812)
+    expect(embedded.viewBox.x - 10).toBe(svgViewBox?.[0])
+    expect(embedded.viewBox.y - 10).toBe(svgViewBox?.[1])
+    expect(embedded.viewBox.width + 20).toBe(svgViewBox?.[2])
+    expect(embedded.viewBox.height + 20).toBe(svgViewBox?.[3])
+  })
 })

@@ -19,7 +19,7 @@ import {
   type SurfaceToken,
   type Theme,
 } from '@shumoku/core'
-import { renderSvgString } from '@shumoku/renderer/static'
+import { continuationBounds, renderSvgString } from '@shumoku/renderer/static'
 import { type IconDimensions, resolveAllIconDimensions } from './icon-dims.js'
 import { collectIconUrls } from './icon-urls.js'
 import { SVGRenderer } from './legacy.js'
@@ -176,7 +176,7 @@ export function renderEmbeddable(
   const css = generateEmbeddableCSS(options?.toolbar ?? false)
 
   // Compute viewBox from layout bounds with padding
-  const bounds = prepared.resolved?.bounds ?? prepared.layout.bounds
+  const bounds = prepared.resolved ? continuationBounds(prepared.resolved) : prepared.layout.bounds
   const padding = 40
   const viewBox = {
     x: bounds.x - padding,
