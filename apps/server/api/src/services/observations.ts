@@ -31,6 +31,7 @@ import {
   type ObservationGraphInput,
   observationGraphInputSchema,
 } from './observation-graph.js'
+import { emptyOperatorLayout, parseOperatorLayout } from './operator-layout.js'
 import type { OperatorLayoutState } from './topology.js'
 
 /**
@@ -125,7 +126,7 @@ function rowToObservation(row: ObservationRow): TopologyObservation {
     portCount: row.port_count,
     createdAt: row.created_at,
     operatorLayout: row.operator_layout_json
-      ? (JSON.parse(row.operator_layout_json) as OperatorLayoutState)
+      ? parseOperatorLayout(row.operator_layout_json)
       : undefined,
   }
 }
@@ -154,12 +155,6 @@ export class ObservationsService {
 
   constructor() {
     this.db = getDatabase()
-  }
-
-  snapshotOperatorLayout(id: string, layout: OperatorLayoutState): void {
-    this.db
-      .query('UPDATE topology_observations SET operator_layout_json = ? WHERE id = ?')
-      .run(JSON.stringify(layout), id)
   }
 
   /**
@@ -198,7 +193,12 @@ export class ObservationsService {
     // transaction — bun:sqlite nests it as a SAVEPOINT, so a failure here rolls back
     // both writes together.)
     let contributionChanged = false
+    let operatorLayout = emptyOperatorLayout()
     const persist = this.db.transaction(() => {
+      const layoutRow = this.db
+        .query('SELECT payload_json FROM topology_operator_layout WHERE topology_id = ?')
+        .get(input.topologyId) as { payload_json: string } | null
+      operatorLayout = parseOperatorLayout(layoutRow?.payload_json)
       contributionChanged = this.materializeContribution({
         ...input,
         status,
@@ -208,8 +208,8 @@ export class ObservationsService {
         .query(
           `INSERT INTO topology_observations (
             id, topology_id, source_id, captured_at, status, status_message,
-            graph_json, node_count, link_count, port_count, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            graph_json, node_count, link_count, port_count, created_at, operator_layout_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -223,6 +223,7 @@ export class ObservationsService {
           linkCount,
           portCount,
           now,
+          JSON.stringify(operatorLayout),
         )
     })
     persist()
@@ -249,6 +250,7 @@ export class ObservationsService {
       portCount,
       createdAt: now,
       contributionChanged,
+      operatorLayout,
     }
   }
 

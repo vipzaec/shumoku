@@ -54,9 +54,6 @@ export function createTopologyObservationApplicationService(
         status,
         graph,
       })
-      const operatorLayout = topologies.readOperatorLayout(topologyId)
-      observations.snapshotOperatorLayout(observation.id, operatorLayout)
-      observation.operatorLayout = operatorLayout
       if (observation.contributionChanged) {
         topologies.clearCacheEntry(topologyId)
         topologies.precompute(topologyId)

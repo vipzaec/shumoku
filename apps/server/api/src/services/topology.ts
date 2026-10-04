@@ -73,6 +73,7 @@ import {
   stampEntityIds,
 } from './entity-registry.js'
 import { planLinkAutoMap, unionInterfacesAcrossSources } from './link-automap.js'
+import { parseOperatorLayout } from './operator-layout.js'
 import { TopologySourcesService } from './topology-sources.js'
 
 /**
@@ -553,62 +554,7 @@ export class TopologyService {
     const row = this.db
       .query('SELECT payload_json FROM topology_operator_layout WHERE topology_id = ?')
       .get(topologyId) as { payload_json: string } | null
-    if (!row)
-      return {
-        nodePositions: {},
-        portSides: {},
-        portOrders: {},
-        portOffsets: {},
-        edgeRoutes: {},
-        parentOverrides: {},
-        operatorNodes: [],
-        presentationOverrides: {},
-        operatorLinks: [],
-        operatorGroups: [],
-        blockSpacingOverrides: {},
-        linkAppearanceOverrides: {},
-        linkPortOverrides: {},
-        linkContinuationOverrides: {},
-        portPresentationOverrides: {},
-      }
-    try {
-      const value = JSON.parse(row.payload_json) as Partial<OperatorLayoutState>
-      return {
-        nodePositions: value.nodePositions ?? {},
-        portSides: value.portSides ?? {},
-        portOrders: value.portOrders ?? {},
-        portOffsets: value.portOffsets ?? {},
-        edgeRoutes: value.edgeRoutes ?? {},
-        parentOverrides: value.parentOverrides ?? {},
-        operatorNodes: value.operatorNodes ?? [],
-        presentationOverrides: value.presentationOverrides ?? {},
-        operatorLinks: value.operatorLinks ?? [],
-        operatorGroups: value.operatorGroups ?? [],
-        blockSpacingOverrides: value.blockSpacingOverrides ?? {},
-        linkAppearanceOverrides: value.linkAppearanceOverrides ?? {},
-        linkPortOverrides: value.linkPortOverrides ?? {},
-        linkContinuationOverrides: value.linkContinuationOverrides ?? {},
-        portPresentationOverrides: value.portPresentationOverrides ?? {},
-      }
-    } catch {
-      return {
-        nodePositions: {},
-        portSides: {},
-        portOrders: {},
-        portOffsets: {},
-        edgeRoutes: {},
-        parentOverrides: {},
-        operatorNodes: [],
-        presentationOverrides: {},
-        operatorLinks: [],
-        operatorGroups: [],
-        blockSpacingOverrides: {},
-        linkAppearanceOverrides: {},
-        linkPortOverrides: {},
-        linkContinuationOverrides: {},
-        portPresentationOverrides: {},
-      }
-    }
+    return parseOperatorLayout(row?.payload_json)
   }
 
   writeOperatorLayout(topologyId: string, layout: OperatorLayoutState): void {
