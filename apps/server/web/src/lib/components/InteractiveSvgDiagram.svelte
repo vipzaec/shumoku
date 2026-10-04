@@ -2397,10 +2397,33 @@
   function readablePortName(
     port: NonNullable<NetworkGraph['nodes'][number]['ports']>[number],
     index: number,
+    endpoint: 'from' | 'to',
   ): string {
     const label = (port.label ?? '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
     const side = port.placement?.side
-    return label || `Point ${index + 1}${side ? ` · ${side}` : ''}`
+    const nodeId = editorLink?.[endpoint].node
+    const peers = new Set<string>()
+    for (const link of graph?.links ?? []) {
+      const otherId =
+        link.from.node === nodeId && link.from.port === port.id
+          ? link.to.node
+          : link.to.node === nodeId && link.to.port === port.id
+            ? link.from.node
+            : undefined
+      if (!otherId) continue
+      const other = graph?.nodes.find((node) => node.id === otherId)
+      const firstLine = Array.isArray(other?.label) ? other.label[0] : other?.label
+      const name = (firstLine ?? '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .trim()
+      peers.add(name || (other ? nodeLabel(other) : otherId))
+    }
+    const peerNames = [...peers]
+    const connection = peerNames.length
+      ? ` · ${peerNames.slice(0, 2).join(', ')}${peerNames.length > 2 ? ` +${peerNames.length - 2}` : ''}`
+      : ''
+    return `${label || `Point ${index + 1}`}${connection}${side ? ` · ${side}` : ''}`
   }
 
   function autoPlaceLinkSides() {
@@ -3568,7 +3591,7 @@
         <span class="editor-help">{appearanceEndpointName('from')} · blue block</span>
         <select bind:value={appearanceDraft.from}>
           {#each appearancePorts('from') as port, index}
-            <option value={port.id}>{readablePortName(port, index)}</option>
+            <option value={port.id}>{readablePortName(port, index, 'from')}</option>
           {/each}
         </select>
       </label>
@@ -3577,7 +3600,7 @@
         <span class="editor-help">{appearanceEndpointName('to')} · orange block</span>
         <select bind:value={appearanceDraft.to}>
           {#each appearancePorts('to') as port, index}
-            <option value={port.id}>{readablePortName(port, index)}</option>
+            <option value={port.id}>{readablePortName(port, index, 'to')}</option>
           {/each}
         </select>
       </label>
