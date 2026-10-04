@@ -266,7 +266,9 @@ interface StoredLinkMapping {
 // v22: port-attachment — routed polylines terminate ON their ports (corridor
 // shifts no longer displace terminals) and run in from→to order; old artifacts
 // carry detached endpoints.
-const RESOLVER_VERSION = 22
+// v23: automatic routes now avoid unrelated subgraph hulls. Rebake saved
+// layouts so existing diagrams pick up those obstacle-aware paths.
+const RESOLVER_VERSION = 23
 
 /** Persisted resolved-graph artifact row (Phase 3 materialization). */
 interface ResolvedGraphRow {
