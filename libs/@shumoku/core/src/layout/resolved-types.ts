@@ -80,7 +80,7 @@ export interface ResolvedPort {
  */
 export type EdgeRoute =
   | { kind: 'bus'; points: Position[]; busId: string; branchIndex: number; branchCount: number }
-  | { kind: 'polyline'; points: Position[] }
+  | { kind: 'polyline'; points: Position[]; cornerRadius?: number }
 
 /**
  * A routed edge connecting two existing ports. Points are absolute coordinates;

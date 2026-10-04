@@ -214,20 +214,13 @@ function detourAroundObstacles(
   for (const edge of edges.values()) {
     if (edge.route) continue // bus / lane / preassigned routes are explicit
     if (edge.link.metadata?.['routeShape'] === 'straight') continue
-    // Some logical views (for example a monotone DNAT fan-out) deliberately
-    // place every endpoint so the default Bezier is the clearest route.  Do
-    // not replace those curves with an orthogonal obstacle detour merely
-    // because a sampled curve grazes adjacent card geometry.
+    // Explicit pass-under is the only way to allow a curve through another
+    // block. A smooth line is still required to avoid foreign geometry.
     if (edge.link.metadata?.['routePolicy'] === 'under') continue
-    if (
-      edge.link.metadata?.['routePolicy'] !== 'avoid' &&
-      edge.link.metadata?.['routeMode'] === 'smooth'
-    )
-      continue
     if (!findBezierObstacle(edge, nodes, subgraphs)) continue
     const points = routeViaGrid(edge, nodes, subgraphs)
     if (!points) continue
-    edge.route = { kind: 'polyline', points }
+    edge.route = { kind: 'polyline', points, cornerRadius: 12 }
     edge.points = points
     // Lane offsets are applied at the bezier port — they fight
     // the polyline corner shape, so clear them for this edge.
@@ -363,27 +356,67 @@ function obstacleRects(
   nodes: Map<string, Node>,
   subgraphs: Map<string, Subgraph>,
 ): RouteRect[] {
+  return visibleObstacleRects(edge, nodes, subgraphs, DETOUR_CLEARANCE)
+}
+
+/**
+ * An external wire sees the outermost foreign container, not every card
+ * nested inside it. Its own endpoint containers stay open so it can leave or
+ * enter them, while sibling containers remain obstacles.
+ */
+function visibleObstacleRects(
+  edge: ResolvedEdge,
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+  clearance: number,
+): RouteRect[] {
+  const blocked = new Set<string>()
+  for (const [id, group] of subgraphs) {
+    if (group.bounds && !endpointInsideGroup(edge, group.bounds)) blocked.add(id)
+  }
+  const outermost = new Set<string>()
+  for (const id of blocked) {
+    let parent = subgraphs.get(id)?.parent
+    let hasBlockedAncestor = false
+    while (parent) {
+      if (blocked.has(parent)) {
+        hasBlockedAncestor = true
+        break
+      }
+      parent = subgraphs.get(parent)?.parent
+    }
+    if (!hasBlockedAncestor) outermost.add(id)
+  }
+  const underBlockedGroup = (node: Node) => {
+    let parent = node.parent
+    while (parent) {
+      if (outermost.has(parent)) return true
+      parent = subgraphs.get(parent)?.parent
+    }
+    return false
+  }
   const obstacles: RouteRect[] = []
   for (const [id, node] of nodes) {
     if (id === edge.fromNodeId || id === edge.toNodeId) continue
     if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
+    if (underBlockedGroup(node)) continue
     const b = nodeBounds(node)
     if (b)
       obstacles.push({
-        x: b.x - DETOUR_CLEARANCE,
-        y: b.y - DETOUR_CLEARANCE,
-        width: b.width + 2 * DETOUR_CLEARANCE,
-        height: b.height + 2 * DETOUR_CLEARANCE,
+        x: b.x - clearance,
+        y: b.y - clearance,
+        width: b.width + 2 * clearance,
+        height: b.height + 2 * clearance,
       })
   }
-  for (const group of subgraphs.values()) {
-    const b = group.bounds
-    if (!b || endpointInsideGroup(edge, b)) continue
+  for (const id of outermost) {
+    const b = subgraphs.get(id)?.bounds
+    if (!b) continue
     obstacles.push({
-      x: b.x - DETOUR_CLEARANCE,
-      y: b.y - DETOUR_CLEARANCE,
-      width: b.width + 2 * DETOUR_CLEARANCE,
-      height: b.height + 2 * DETOUR_CLEARANCE,
+      x: b.x - clearance,
+      y: b.y - clearance,
+      width: b.width + 2 * clearance,
+      height: b.height + 2 * clearance,
     })
   }
   return obstacles
@@ -442,7 +475,11 @@ function separateCoincidentDetours(
           })
         )
           continue
-        edge.route = { kind: 'polyline', points: candidate }
+        edge.route = {
+          kind: 'polyline',
+          points: candidate,
+          cornerRadius: edge.route?.kind === 'polyline' ? edge.route.cornerRadius : undefined,
+        }
         edge.points = candidate
         occupied.push({ x, top, bottom })
         break
@@ -452,10 +489,9 @@ function separateCoincidentDetours(
 }
 
 /**
- * Sample the bezier the renderer would draw for `edge` and find
- * any non-endpoint node whose body the curve enters. Multiple
- * blockers are merged into one bounding box so the detour wraps
- * the whole cluster.
+ * Sample the bezier the renderer would draw for `edge` and find a
+ * visible blocker. Segment checks catch a narrow block even when no
+ * sampled point happens to land inside it.
  *
  * An unrelated subgraph hull is an obstacle. The source and target
  * ancestors are excluded, so a legitimate edge can enter or leave
@@ -467,31 +503,38 @@ function findBezierObstacle(
   subgraphs: Map<string, Subgraph>,
 ): { x: number; y: number; width: number; height: number } | null {
   const samples = sampleBezier(edge)
-  let merged: { x: number; y: number; width: number; height: number } | null = null
-  const grow = (b: { x: number; y: number; width: number; height: number }) => {
-    if (!merged) {
-      merged = { ...b }
-    } else {
-      const left = Math.min(merged.x, b.x)
-      const top = Math.min(merged.y, b.y)
-      const right = Math.max(merged.x + merged.width, b.x + b.width)
-      const bottom = Math.max(merged.y + merged.height, b.y + b.height)
-      merged = { x: left, y: top, width: right - left, height: bottom - top }
+  for (const bbox of visibleObstacleRects(edge, nodes, subgraphs, 0)) {
+    if (samples.some((sample) => pointInRect(sample.x, sample.y, bbox))) return bbox
+    for (let i = 1; i < samples.length; i++) {
+      const previous = samples[i - 1]
+      const current = samples[i]
+      if (previous && current && segmentCrossesRect(previous, current, bbox)) return bbox
     }
   }
-  for (const [nodeId, node] of nodes) {
-    if (nodeId === edge.fromNodeId || nodeId === edge.toNodeId) continue
-    if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
-    const bbox = nodeBounds(node)
-    if (!bbox) continue
-    if (samples.some((s) => pointInRect(s.x, s.y, bbox))) grow(bbox)
+  return null
+}
+
+/** Strict interior intersection for a short sampled Bezier segment. */
+function segmentCrossesRect(a: RoutePoint, b: RoutePoint, rect: RouteRect): boolean {
+  const inset = 0.01
+  let first = 0
+  let last = 1
+  for (const [start, delta, lower, upper] of [
+    [a.x, b.x - a.x, rect.x + inset, rect.x + rect.width - inset],
+    [a.y, b.y - a.y, rect.y + inset, rect.y + rect.height - inset],
+  ] as const) {
+    if (lower >= upper) return false
+    if (Math.abs(delta) < 1e-9) {
+      if (start <= lower || start >= upper) return false
+      continue
+    }
+    const entry = (lower - start) / delta
+    const exit = (upper - start) / delta
+    first = Math.max(first, Math.min(entry, exit))
+    last = Math.min(last, Math.max(entry, exit))
+    if (first >= last) return false
   }
-  for (const group of subgraphs.values()) {
-    const b = group.bounds
-    if (!b || endpointInsideGroup(edge, b)) continue
-    if (samples.some((s) => pointInRect(s.x, s.y, b))) grow(b)
-  }
-  return merged
+  return first < 1 && last > 0
 }
 
 function endpointInsideGroup(edge: ResolvedEdge, bounds: Bounds): boolean {

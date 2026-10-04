@@ -290,7 +290,14 @@ function renderEdge(edge: ResolvedEdge, colors: RenderColors): string {
       ? `M ${edge.fromPort.absolutePosition.x} ${edge.fromPort.absolutePosition.y} L ${edge.toPort.absolutePosition.x} ${edge.toPort.absolutePosition.y}`
       : null) ??
     (edge.route
-      ? polylinePath(edge.route.points, edge.link.metadata?.['routePolicy'] === 'avoid' ? 12 : 6)
+      ? polylinePath(
+          edge.route.points,
+          edge.route.kind === 'polyline' && edge.route.cornerRadius !== undefined
+            ? edge.route.cornerRadius
+            : edge.link.metadata?.['routePolicy'] === 'avoid'
+              ? 12
+              : 6,
+        )
       : edge.fromPort && edge.toPort
         ? bezierEdgePath(
             { ...edge.fromPort, lateralOffset: edge.fromLateralOffset },

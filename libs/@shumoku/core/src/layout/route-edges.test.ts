@@ -101,6 +101,103 @@ describe('routeEdges — obstacle avoidance', () => {
     expect([...around.values()][0]?.route?.points?.length).toBeGreaterThan(2)
   })
 
+  test('smooth describes the line shape, while an obstacle still requires a detour', async () => {
+    const nodes = new Map([['middle', obstacle('middle', 200, 100)]])
+    const smooth = await routeEdges(nodes, ports, [
+      { ...link('source:out', 'target:in'), metadata: { routeMode: 'smooth' } },
+    ])
+    expect([...smooth.values()][0]?.route?.points?.length).toBeGreaterThan(2)
+    expect([...smooth.values()][0]?.route).toMatchObject({ cornerRadius: 12 })
+  })
+
+  test('an external connection detours around the outermost foreign group', async () => {
+    const horizontalPorts = makePorts([
+      ['source:out', port('source:out', 'source', 0, 100, 'right')],
+      ['target:in', port('target:in', 'target', 400, 100, 'left')],
+    ])
+    const groups = new Map([
+      ['outer', { id: 'outer', label: 'VM', bounds: { x: 140, y: 50, width: 120, height: 100 } }],
+      [
+        'inner',
+        {
+          id: 'inner',
+          label: 'Service',
+          parent: 'outer',
+          bounds: { x: 170, y: 75, width: 50, height: 50 },
+        },
+      ],
+      [
+        'component',
+        {
+          id: 'component',
+          label: 'Component',
+          parent: 'inner',
+          bounds: { x: 185, y: 85, width: 20, height: 30 },
+        },
+      ],
+    ])
+    const nodes = new Map<string, Node>([
+      ['inner-node', { ...obstacle('inner-node', 195, 100), parent: 'component' }],
+    ])
+    const edges = await routeEdges(
+      nodes,
+      horizontalPorts,
+      [{ ...link('source:out', 'target:in'), metadata: { routeMode: 'smooth' } }],
+      groups,
+    )
+    const points = [...edges.values()][0]?.route?.points
+    expect(points?.length).toBeGreaterThan(2)
+    for (const [index, a] of (points ?? []).entries()) {
+      const b = points?.[index + 1]
+      if (!b) continue
+      expect(
+        a.y === b.y
+          ? a.y > 50 && a.y < 150 && Math.max(a.x, b.x) > 140 && Math.min(a.x, b.x) < 260
+          : a.x > 140 && a.x < 260 && Math.max(a.y, b.y) > 50 && Math.min(a.y, b.y) < 150,
+      ).toBe(false)
+    }
+  })
+
+  test('an outgoing service connection detours around a nested sibling group', async () => {
+    const servicePorts = makePorts([
+      ['service:out', port('service:out', 'service', 150, 100, 'right')],
+      ['target:in', port('target:in', 'target', 500, 250, 'left')],
+    ])
+    const groups = new Map([
+      ['vm', { id: 'vm', label: 'VM', bounds: { x: 100, y: 50, width: 350, height: 350 } }],
+      [
+        'sibling',
+        {
+          id: 'sibling',
+          label: 'Other service',
+          parent: 'vm',
+          bounds: { x: 190, y: 110, width: 180, height: 130 },
+        },
+      ],
+    ])
+    const nodes = new Map<string, Node>([
+      ['service', { ...obstacle('service', 150, 100), parent: 'vm' }],
+      ['sibling-node', { ...obstacle('sibling-node', 280, 175), parent: 'sibling' }],
+    ])
+    const edges = await routeEdges(
+      nodes,
+      servicePorts,
+      [{ ...link('service:out', 'target:in'), metadata: { routeMode: 'smooth' } }],
+      groups,
+    )
+    const points = [...edges.values()][0]?.route?.points
+    expect(points?.length).toBeGreaterThan(2)
+    for (const [index, a] of (points ?? []).entries()) {
+      const b = points?.[index + 1]
+      if (!b) continue
+      expect(
+        a.y === b.y
+          ? a.y > 110 && a.y < 240 && Math.max(a.x, b.x) > 190 && Math.min(a.x, b.x) < 370
+          : a.x > 190 && a.x < 370 && Math.max(a.y, b.y) > 110 && Math.min(a.y, b.y) < 240,
+      ).toBe(false)
+    }
+  })
+
   test('routes around an unrelated container after automatic placement', async () => {
     const groups = new Map([
       [
