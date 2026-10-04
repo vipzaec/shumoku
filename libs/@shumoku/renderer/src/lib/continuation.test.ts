@@ -94,10 +94,16 @@ describe('paired continuation geometry', () => {
     const geometry = continuationGeometry(link, nodes, subgraphs)
     expect(geometry?.segments[0]?.length).toBeGreaterThan(2)
     expect(geometry?.path).toContain(' Q ')
+    expect(geometry?.segments[0]?.[1]?.x).toBeGreaterThan(350)
     for (const [index, a] of (geometry?.segments[0] ?? []).entries()) {
       const b = geometry?.segments[0]?.[index + 1]
       if (!b) continue
       expect(a.x === b.x || a.y === b.y).toBe(true)
+      expect(
+        a.x === b.x
+          ? a.x > 250 && a.x < 350 && Math.max(a.y, b.y) > 70 && Math.min(a.y, b.y) < 130
+          : a.y > 70 && a.y < 130 && Math.max(a.x, b.x) > 250 && Math.min(a.x, b.x) < 350,
+      ).toBe(false)
       expect(
         a.x === b.x
           ? a.x > 260 && a.x < 390 && Math.max(a.y, b.y) > 150 && Math.min(a.y, b.y) < 250

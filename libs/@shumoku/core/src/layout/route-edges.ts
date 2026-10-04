@@ -256,12 +256,13 @@ function routeViaGrid(
   edge: ResolvedEdge,
   nodes: Map<string, Node>,
   subgraphs: Map<string, Subgraph>,
+  extraObstacles: RouteRect[] = [],
 ): RoutePoint[] | null {
   const src = edge.fromPort.absolutePosition
   const tgt = edge.toPort.absolutePosition
   const sn = portNormal(edge.fromPort.side)
   const tn = portNormal(edge.toPort.side)
-  const obstacles = obstacleRects(edge, nodes, subgraphs)
+  const obstacles = [...obstacleRects(edge, nodes, subgraphs), ...extraObstacles]
   const clear = (a: RoutePoint, b: RoutePoint) => obstacles.every((r) => !segmentHitsRect(a, b, r))
   // A neighboring group may be closer than the usual port stalk. Shorten
   // that stalk before giving up; otherwise a perfectly routable wire keeps
@@ -315,6 +316,10 @@ function routeViaGrid(
       const ix = state.ix + dx,
         iy = state.iy + dy
       if (ix < 0 || iy < 0 || ix >= xs.length || iy >= ys.length) continue
+      // A route from a port must first travel outward. Turning sideways at
+      // the stalk is fine, but immediately reversing it makes the wire look
+      // as though it starts inside its own card.
+      if (state.key === first.key && dx * sn.x + dy * sn.y < 0) continue
       const a = at(state.ix, state.iy),
         b = at(ix, iy)
       if (!clear(a, b)) continue
@@ -343,11 +348,20 @@ function routeViaGrid(
   }
   gridPoints.reverse()
   const points = [src, ...gridPoints, tgt]
-  return points.filter((p, i) => {
-    if (i === 0 || i === points.length - 1) return true
-    const a = points[i - 1],
-      b = points[i + 1]
-    return !a || !b || ((a.x !== p.x || p.x !== b.x) && (a.y !== p.y || p.y !== b.y))
+  const unique = points.filter((point, index) => {
+    const previous = points[index - 1]
+    return !previous || previous.x !== point.x || previous.y !== point.y
+  })
+  return unique.filter((point, index) => {
+    if (index === 0 || index === unique.length - 1) return true
+    const previous = unique[index - 1]
+    const next = unique[index + 1]
+    if (!previous || !next) return true
+    const horizontal = previous.y === point.y && point.y === next.y
+    const vertical = previous.x === point.x && point.x === next.x
+    if (horizontal) return (point.x - previous.x) * (next.x - point.x) <= 0
+    if (vertical) return (point.y - previous.y) * (next.y - point.y) <= 0
+    return true
   })
 }
 
@@ -379,6 +393,12 @@ export function routeContinuationStub(
   if (edge.link.metadata?.['routePolicy'] === 'under') return direct
   if (edge.link.metadata?.['routeShape'] === 'straight') return direct
   const otherSide: ResolvedPort['side'][] = ['left', 'right', 'top', 'bottom']
+  // The ordinary router excludes endpoint cards. A continuation marker is
+  // outside that card, so its visible stub must not leave a right-side port
+  // and then double back through the source card on the way to the marker.
+  const ownBody = nodes.get(nodeId)
+  const ownRect = ownBody ? nodeBounds(ownBody) : null
+  const ownObstacle = ownRect ? [ownRect] : []
   let best: Position[] | null = null
   let bestLength = Infinity
   for (const side of otherSide) {
@@ -397,13 +417,13 @@ export function routeContinuationStub(
       toNodeId: '__continuation_terminal',
     }
     if (
-      !visibleObstacleRects(segment, nodes, subgraphs, 0).some((rect) =>
+      ![...visibleObstacleRects(segment, nodes, subgraphs, 0), ...ownObstacle].some((rect) =>
         segmentCrossesRect(start, terminal, rect),
       )
     ) {
       return direct
     }
-    const points = routeViaGrid(segment, nodes, subgraphs)
+    const points = routeViaGrid(segment, nodes, subgraphs, ownObstacle)
     if (!points) continue
     const length = points.slice(1).reduce((sum, point, index) => {
       const previous = points[index]
