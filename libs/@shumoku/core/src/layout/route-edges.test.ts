@@ -126,6 +126,7 @@ describe('routeEdges — obstacle avoidance', () => {
   test('shortens a port stalk when a neighboring group nearly touches the target', async () => {
     const sitePorts = makePorts([
       ['site:wan', port('site:wan', 'site', 523.6, 1695, 'right')],
+      ['office:wan', port('office:wan', 'office', 523.6, 1271, 'right')],
       ['gateway:wan', port('gateway:wan', 'gateway', 615.6, 903.2, 'left')],
     ])
     const groups = new Map([
@@ -154,9 +155,17 @@ describe('routeEdges — obstacle avoidance', () => {
         },
       ],
     ])
-    const edges = await routeEdges(NOOP_NODES, sitePorts, [link('site:wan', 'gateway:wan')], groups)
-    const points = [...edges.values()][0]?.route?.points
+    const edges = await routeEdges(
+      NOOP_NODES,
+      sitePorts,
+      [link('office:wan', 'gateway:wan'), link('site:wan', 'gateway:wan')],
+      groups,
+    )
+    const [officeEdge, consultingEdge] = [...edges.values()]
+    const points = consultingEdge?.route?.points
     expect(points?.length).toBeGreaterThan(2)
+    expect(officeEdge?.route?.points?.length).toBeGreaterThan(2)
+    expect(officeEdge?.route?.points?.[1]?.x).not.toBe(points?.[1]?.x)
     const office = { left: -80.9, right: 587.6, top: 1099, bottom: 1414 }
     for (const [index, point] of (points ?? []).entries()) {
       const next = points?.[index + 1]

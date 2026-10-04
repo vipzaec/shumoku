@@ -179,6 +179,7 @@ export async function routeEdges(
     }
   }
   detourAroundObstacles(edges, nodes, subgraphs ?? new Map())
+  separateCoincidentDetours(edges, nodes, subgraphs ?? new Map())
   return edges
 }
 
@@ -267,29 +268,7 @@ function routeViaGrid(
   const tgt = edge.toPort.absolutePosition
   const sn = portNormal(edge.fromPort.side)
   const tn = portNormal(edge.toPort.side)
-  const obstacles: RouteRect[] = []
-  for (const [id, node] of nodes) {
-    if (id === edge.fromNodeId || id === edge.toNodeId) continue
-    if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
-    const b = nodeBounds(node)
-    if (b)
-      obstacles.push({
-        x: b.x - DETOUR_CLEARANCE,
-        y: b.y - DETOUR_CLEARANCE,
-        width: b.width + 2 * DETOUR_CLEARANCE,
-        height: b.height + 2 * DETOUR_CLEARANCE,
-      })
-  }
-  for (const group of subgraphs.values()) {
-    const b = group.bounds
-    if (!b || endpointInsideGroup(edge, b)) continue
-    obstacles.push({
-      x: b.x - DETOUR_CLEARANCE,
-      y: b.y - DETOUR_CLEARANCE,
-      width: b.width + 2 * DETOUR_CLEARANCE,
-      height: b.height + 2 * DETOUR_CLEARANCE,
-    })
-  }
+  const obstacles = obstacleRects(edge, nodes, subgraphs)
   const clear = (a: RoutePoint, b: RoutePoint) => obstacles.every((r) => !segmentHitsRect(a, b, r))
   // A neighboring group may be closer than the usual port stalk. Shorten
   // that stalk before giving up; otherwise a perfectly routable wire keeps
@@ -377,6 +356,99 @@ function routeViaGrid(
       b = points[i + 1]
     return !a || !b || ((a.x !== p.x || p.x !== b.x) && (a.y !== p.y || p.y !== b.y))
   })
+}
+
+function obstacleRects(
+  edge: ResolvedEdge,
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+): RouteRect[] {
+  const obstacles: RouteRect[] = []
+  for (const [id, node] of nodes) {
+    if (id === edge.fromNodeId || id === edge.toNodeId) continue
+    if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
+    const b = nodeBounds(node)
+    if (b)
+      obstacles.push({
+        x: b.x - DETOUR_CLEARANCE,
+        y: b.y - DETOUR_CLEARANCE,
+        width: b.width + 2 * DETOUR_CLEARANCE,
+        height: b.height + 2 * DETOUR_CLEARANCE,
+      })
+  }
+  for (const group of subgraphs.values()) {
+    const b = group.bounds
+    if (!b || endpointInsideGroup(edge, b)) continue
+    obstacles.push({
+      x: b.x - DETOUR_CLEARANCE,
+      y: b.y - DETOUR_CLEARANCE,
+      width: b.width + 2 * DETOUR_CLEARANCE,
+      height: b.height + 2 * DETOUR_CLEARANCE,
+    })
+  }
+  return obstacles
+}
+
+/** Fan parallel detours apart without moving their shared port attachment. */
+function separateCoincidentDetours(
+  edges: Map<string, ResolvedEdge>,
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+): void {
+  const byTarget = new Map<string, ResolvedEdge[]>()
+  for (const edge of edges.values()) {
+    const points = edge.route?.kind === 'polyline' ? edge.route.points : undefined
+    if (
+      points?.length !== 4 ||
+      points[0]?.y !== points[1]?.y ||
+      points[1]?.x !== points[2]?.x ||
+      points[2]?.y !== points[3]?.y
+    )
+      continue
+    const group = byTarget.get(edge.toPortId) ?? []
+    group.push(edge)
+    byTarget.set(edge.toPortId, group)
+  }
+  for (const group of byTarget.values()) {
+    if (group.length < 2) continue
+    const occupied: Array<{ x: number; top: number; bottom: number }> = []
+    group.sort((a, b) => a.fromPort.absolutePosition.y - b.fromPort.absolutePosition.y)
+    for (const edge of group) {
+      const points = edge.route?.kind === 'polyline' ? edge.route.points : undefined
+      if (points?.length !== 4) continue
+      const [source, turn, rise, target] = points
+      if (!source || !turn || !rise || !target) continue
+      const top = Math.min(turn.y, rise.y)
+      const bottom = Math.max(turn.y, rise.y)
+      const obstacles = obstacleRects(edge, nodes, subgraphs)
+      const clear = (a: RoutePoint, b: RoutePoint) =>
+        obstacles.every((obstacle) => !segmentHitsRect(a, b, obstacle))
+      const direction = target.x >= turn.x ? 1 : -1
+      for (let lane = 0; lane <= group.length + 1; lane++) {
+        const x = turn.x + lane * 6 * direction
+        if (
+          occupied.some(
+            (other) =>
+              Math.abs(other.x - x) < 6 &&
+              Math.max(other.top, top) < Math.min(other.bottom, bottom),
+          )
+        )
+          continue
+        const candidate: RoutePoint[] = [source, { x, y: turn.y }, { x, y: rise.y }, target]
+        if (
+          !candidate.every((point, index) => {
+            const previous = candidate[index - 1]
+            return index === 0 || (previous !== undefined && clear(previous, point))
+          })
+        )
+          continue
+        edge.route = { kind: 'polyline', points: candidate }
+        edge.points = candidate
+        occupied.push({ x, top, bottom })
+        break
+      }
+    }
+  }
 }
 
 /**
