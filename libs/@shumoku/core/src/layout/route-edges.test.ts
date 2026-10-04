@@ -122,6 +122,59 @@ describe('routeEdges — obstacle avoidance', () => {
     expect([...avoiding.values()][0]?.route?.points?.length).toBeGreaterThan(2)
     expect([...passing.values()][0]?.route).toBeUndefined()
   })
+
+  test('shortens a port stalk when a neighboring group nearly touches the target', async () => {
+    const sitePorts = makePorts([
+      ['site:wan', port('site:wan', 'site', 523.6, 1695, 'right')],
+      ['gateway:wan', port('gateway:wan', 'gateway', 615.6, 903.2, 'left')],
+    ])
+    const groups = new Map([
+      [
+        'source-site',
+        {
+          id: 'source-site',
+          label: 'Consulting',
+          bounds: { x: -73.2, y: 1591, width: 660.8, height: 180 },
+        },
+      ],
+      [
+        'other-site',
+        {
+          id: 'other-site',
+          label: 'Office',
+          bounds: { x: -80.9, y: 1099, width: 668.5, height: 315 },
+        },
+      ],
+      [
+        'external',
+        {
+          id: 'external',
+          label: 'External access',
+          bounds: { x: -147.65, y: 214, width: 735.25, height: 877 },
+        },
+      ],
+    ])
+    const edges = await routeEdges(NOOP_NODES, sitePorts, [link('site:wan', 'gateway:wan')], groups)
+    const points = [...edges.values()][0]?.route?.points
+    expect(points?.length).toBeGreaterThan(2)
+    const office = { left: -80.9, right: 587.6, top: 1099, bottom: 1414 }
+    for (const [index, point] of (points ?? []).entries()) {
+      const next = points?.[index + 1]
+      if (!next) continue
+      const crosses =
+        point.x === next.x
+          ? point.x > office.left &&
+            point.x < office.right &&
+            Math.max(point.y, next.y) > office.top &&
+            Math.min(point.y, next.y) < office.bottom
+          : point.y === next.y &&
+            point.y > office.top &&
+            point.y < office.bottom &&
+            Math.max(point.x, next.x) > office.left &&
+            Math.min(point.x, next.x) < office.right
+      expect(crosses).toBe(false)
+    }
+  })
 })
 
 describe('routeEdges — lane offset', () => {

@@ -268,7 +268,9 @@ interface StoredLinkMapping {
 // carry detached endpoints.
 // v23: automatic routes now avoid unrelated subgraph hulls. Rebake saved
 // layouts so existing diagrams pick up those obstacle-aware paths.
-const RESOLVER_VERSION = 23
+// v24: shorten a port stalk when it nearly touches a neighboring group;
+// previously cached v23 layouts could still contain the obstructed curve.
+const RESOLVER_VERSION = 24
 
 /** Persisted resolved-graph artifact row (Phase 3 materialization). */
 interface ResolvedGraphRow {

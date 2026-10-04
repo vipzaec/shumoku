@@ -267,8 +267,6 @@ function routeViaGrid(
   const tgt = edge.toPort.absolutePosition
   const sn = portNormal(edge.fromPort.side)
   const tn = portNormal(edge.toPort.side)
-  const start = { x: src.x + sn.x * DETOUR_STALK, y: src.y + sn.y * DETOUR_STALK }
-  const end = { x: tgt.x + tn.x * DETOUR_STALK, y: tgt.y + tn.y * DETOUR_STALK }
   const obstacles: RouteRect[] = []
   for (const [id, node] of nodes) {
     if (id === edge.fromNodeId || id === edge.toNodeId) continue
@@ -293,7 +291,16 @@ function routeViaGrid(
     })
   }
   const clear = (a: RoutePoint, b: RoutePoint) => obstacles.every((r) => !segmentHitsRect(a, b, r))
-  if (!clear(src, start) || !clear(end, tgt)) return null
+  // A neighboring group may be closer than the usual port stalk. Shorten
+  // that stalk before giving up; otherwise a perfectly routable wire keeps
+  // its original curve simply because the first 28px cross the neighbor.
+  const stalk = (point: RoutePoint, normal: RoutePoint) =>
+    [DETOUR_STALK, 20, 12, 8, 4, 0]
+      .map((distance) => ({ x: point.x + normal.x * distance, y: point.y + normal.y * distance }))
+      .find((candidate) => clear(point, candidate))
+  const start = stalk(src, sn)
+  const end = stalk(tgt, tn)
+  if (!start || !end) return null
   const xs = [
     ...new Set([src.x, start.x, end.x, tgt.x, ...obstacles.flatMap((r) => [r.x, r.x + r.width])]),
   ].sort((a, b) => a - b)
@@ -378,11 +385,9 @@ function routeViaGrid(
  * blockers are merged into one bounding box so the detour wraps
  * the whole cluster.
  *
- * Subgraph hulls are NOT obstacles — they're visual groupings,
- * not physical barriers. A wire that grazes the corner of an
- * intervening subgraph on its way to its target is a normal
- * cross-subgraph link, not a routing conflict. Only the actual
- * boxes drawn for nodes block.
+ * An unrelated subgraph hull is an obstacle. The source and target
+ * ancestors are excluded, so a legitimate edge can enter or leave
+ * its own group without detouring around that group.
  */
 function findBezierObstacle(
   edge: ResolvedEdge,
