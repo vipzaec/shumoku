@@ -332,6 +332,19 @@
   const editorDestinationId = $derived(
     appearanceEditorOpen ? editorLink?.to.node : linkEditorOpen ? linkDraft?.to : undefined,
   )
+  const editorSourceVisualId = $derived(
+    graph?.nodes.find((node) => node.id === editorSourceId)?.metadata?.['presentationRole'] ===
+      'subgraph-boundary-port'
+      ? (graph?.nodes.find((node) => node.id === editorSourceId)?.parent ?? editorSourceId)
+      : editorSourceId,
+  )
+  const editorDestinationVisualId = $derived(
+    graph?.nodes.find((node) => node.id === editorDestinationId)?.metadata?.['presentationRole'] ===
+      'subgraph-boundary-port'
+      ? (graph?.nodes.find((node) => node.id === editorDestinationId)?.parent ??
+          editorDestinationId)
+      : editorDestinationId,
+  )
   let groupEditorOpen = $state(false)
   let groupDraft = $state<OperatorGroup | null>(null)
   let groupManagerOpen = $state(false)
@@ -2935,12 +2948,14 @@
         />
         <HighlightOverlay
           {svgElement}
-          highlightedIds={editorSourceId ? new Set([editorSourceId]) : highlightedPathNodes}
+          highlightedIds={editorSourceVisualId
+    ? new Set([editorSourceVisualId])
+    : highlightedPathNodes}
           highlightedLinkIds={appearanceEditorOpen && appearanceDraft
     ? new Set([appearanceDraft.id])
     : highlightedPathLinks}
-          secondaryHighlightedIds={editorDestinationId
-    ? new Set([editorDestinationId])
+          secondaryHighlightedIds={editorDestinationVisualId
+    ? new Set([editorDestinationVisualId])
     : controlPlanePath.nodeIds}
           secondaryHighlightedLinkIds={controlPlanePath.linkIds}
           dimOthers={pathExplorerOpen && highlightedPathNodes.size > 0 && !editorSourceId}
@@ -3499,34 +3514,41 @@
       </div>
       <div class="line-type-field">
         <span>At blocks</span>
-        <div class="line-type-picker" role="group" aria-label="Connection at blocks">
-          <button
-            type="button"
-            class:active={appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid'}
-            aria-label="Go around blocks"
-            aria-pressed={appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid'}
-            title="Go around blocks"
-            onclick={() => selectRoutePolicy('avoid')}
-          >
-            <svg viewBox="0 0 48 24" aria-hidden="true">
-              <rect x="20" y="7" width="8" height="10" rx="1" />
-              <path d="M3 12 H10 Q14 12 14 7 V4 H34 V7 Q34 12 38 12 H45" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            class:active={appearanceDraft.routePolicy === 'under' || appearanceDraft.routeShape === 'straight'}
-            aria-label="Pass through blocks"
-            aria-pressed={appearanceDraft.routePolicy === 'under' || appearanceDraft.routeShape === 'straight'}
-            title="Pass through blocks"
-            onclick={() => selectRoutePolicy('under')}
-          >
-            <svg viewBox="0 0 48 24" aria-hidden="true">
-              <rect x="20" y="7" width="8" height="10" rx="1" />
-              <path d="M3 12 H45" />
-            </svg>
-          </button>
-        </div>
+        {#if appearanceDraft.continuationEnabled}
+          <p class="editor-help">
+            A paired continuation only draws short ends. Switch to a continuous connection to route
+            its line around or through blocks.
+          </p>
+        {:else}
+          <div class="line-type-picker" role="group" aria-label="Connection at blocks">
+            <button
+              type="button"
+              class:active={appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid'}
+              aria-label="Go around blocks"
+              aria-pressed={appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid'}
+              title="Go around blocks"
+              onclick={() => selectRoutePolicy('avoid')}
+            >
+              <svg viewBox="0 0 48 24" aria-hidden="true">
+                <rect x="20" y="7" width="8" height="10" rx="1" />
+                <path d="M3 12 H10 Q14 12 14 7 V4 H34 V7 Q34 12 38 12 H45" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class:active={appearanceDraft.routePolicy === 'under' || appearanceDraft.routeShape === 'straight'}
+              aria-label="Pass through blocks"
+              aria-pressed={appearanceDraft.routePolicy === 'under' || appearanceDraft.routeShape === 'straight'}
+              title="Pass through blocks"
+              onclick={() => selectRoutePolicy('under')}
+            >
+              <svg viewBox="0 0 48 24" aria-hidden="true">
+                <rect x="20" y="7" width="8" height="10" rx="1" />
+                <path d="M3 12 H45" />
+              </svg>
+            </button>
+          </div>
+        {/if}
       </div>
       <label
         >Source point

@@ -59,6 +59,11 @@
     for (const el of svg.querySelectorAll('.node-secondary-highlighted')) {
       el.classList.remove('node-secondary-highlighted')
     }
+    for (const el of svg.querySelectorAll(
+      '.subgraph-highlighted, .subgraph-secondary-highlighted',
+    )) {
+      el.classList.remove('subgraph-highlighted', 'subgraph-secondary-highlighted')
+    }
     for (const el of svg.querySelectorAll('.link-secondary-highlighted')) {
       el.classList.remove('link-secondary-highlighted')
     }
@@ -76,14 +81,30 @@
     for (const node of svg.querySelectorAll('g.node[data-id]')) {
       const id = node.getAttribute('data-id')
       node.classList.toggle('node-highlighted', Boolean(id && nodeIds.has(id)))
-      node.classList.toggle('node-secondary-highlighted', Boolean(id && !nodeIds.has(id) && secondaryNodeIds.has(id)))
-      if (dimOthers) node.classList.toggle('node-dimmed', !id || (!nodeIds.has(id) && !secondaryNodeIds.has(id)))
+      node.classList.toggle(
+        'node-secondary-highlighted',
+        Boolean(id && !nodeIds.has(id) && secondaryNodeIds.has(id)),
+      )
+      if (dimOthers)
+        node.classList.toggle('node-dimmed', !id || (!nodeIds.has(id) && !secondaryNodeIds.has(id)))
+    }
+    for (const group of svg.querySelectorAll('g.subgraph[data-id]')) {
+      const id = group.getAttribute('data-id')
+      group.classList.toggle('subgraph-highlighted', Boolean(id && nodeIds.has(id)))
+      group.classList.toggle(
+        'subgraph-secondary-highlighted',
+        Boolean(id && !nodeIds.has(id) && secondaryNodeIds.has(id)),
+      )
     }
     for (const link of svg.querySelectorAll('g.link-group[data-link-id]')) {
       const id = link.getAttribute('data-link-id')
       link.classList.toggle('link-highlighted', Boolean(id && linkIds.has(id)))
-      link.classList.toggle('link-secondary-highlighted', Boolean(id && !linkIds.has(id) && secondaryLinkIds.has(id)))
-      if (dimOthers) link.classList.toggle('node-dimmed', !id || (!linkIds.has(id) && !secondaryLinkIds.has(id)))
+      link.classList.toggle(
+        'link-secondary-highlighted',
+        Boolean(id && !linkIds.has(id) && secondaryLinkIds.has(id)),
+      )
+      if (dimOthers)
+        link.classList.toggle('node-dimmed', !id || (!linkIds.has(id) && !secondaryLinkIds.has(id)))
     }
   }
 
@@ -159,9 +180,7 @@
     if (highlightedIds || highlightedLinkIds) {
       const set = highlightedIds instanceof Set ? highlightedIds : new Set(highlightedIds ?? [])
       const linkSet =
-        highlightedLinkIds instanceof Set
-          ? highlightedLinkIds
-          : new Set(highlightedLinkIds ?? [])
+        highlightedLinkIds instanceof Set ? highlightedLinkIds : new Set(highlightedLinkIds ?? [])
       const secondarySet =
         secondaryHighlightedIds instanceof Set
           ? secondaryHighlightedIds
@@ -196,6 +215,14 @@
   {@html `<style id="shumoku-highlight-css">
     g.node.node-highlighted {
       animation: var(--highlight-pulse, node-pulse) 0.5s ease-in-out infinite alternate;
+    }
+    g.subgraph.subgraph-highlighted > rect.subgraph-bg {
+      stroke: var(--highlight-color, #2563eb) !important;
+      stroke-width: 4px !important;
+    }
+    g.subgraph.subgraph-secondary-highlighted > rect.subgraph-bg {
+      stroke: var(--secondary-highlight-color, #f97316) !important;
+      stroke-width: 4px !important;
     }
     g.node.node-highlighted rect,
     g.node.node-highlighted circle,
