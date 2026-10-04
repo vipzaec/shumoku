@@ -2378,7 +2378,20 @@
   }
 
   function appearanceEndpointName(side: 'from' | 'to'): string {
-    return nodeLabelById(graph?.nodes, editorLink?.[side].node ?? '')
+    return diagramNodeNameById(editorLink?.[side].node ?? '')
+  }
+
+  function diagramNodeName(node: NetworkGraph['nodes'][number]): string {
+    if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port' && node.parent) {
+      const group = graph?.subgraphs.find((candidate) => candidate.id === node.parent)
+      return `${nodeLabel({ id: node.parent, label: group?.label })} · interface`
+    }
+    return nodeLabel(node)
+  }
+
+  function diagramNodeNameById(nodeId: string): string {
+    const node = graph?.nodes.find((candidate) => candidate.id === nodeId)
+    return node ? diagramNodeName(node) : nodeId
   }
 
   function readablePortName(
@@ -3265,13 +3278,13 @@
         >Source
         <span class="editor-help"
           >{linkDraft.from
-    ? `${nodeLabelById(graph?.nodes, linkDraft.from)} · blue block`
+    ? `${diagramNodeNameById(linkDraft.from)} · blue block`
     : 'Choose the block where the connection starts'}</span
         >
         <select bind:value={linkDraft.from}>
           <option value="">Choose a block</option>
           {#each graph?.nodes ?? [] as node}
-            <option value={node.id}>{nodeLabel(node)}</option>
+            <option value={node.id}>{diagramNodeName(node)}</option>
           {/each}
         </select>
       </label>
@@ -3279,13 +3292,13 @@
         >Destination
         <span class="editor-help"
           >{linkDraft.to
-    ? `${nodeLabelById(graph?.nodes, linkDraft.to)} · orange block`
+    ? `${diagramNodeNameById(linkDraft.to)} · orange block`
     : 'Choose the block where the connection ends'}</span
         >
         <select bind:value={linkDraft.to}>
           <option value="">Choose a block</option>
           {#each graph?.nodes ?? [] as node}
-            <option value={node.id}>{nodeLabel(node)}</option>
+            <option value={node.id}>{diagramNodeName(node)}</option>
           {/each}
         </select>
       </label>
