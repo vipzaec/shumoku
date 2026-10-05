@@ -289,25 +289,25 @@
       vector-effect: non-scaling-stroke;
     }
     svg.camera-link-overview .link-group:not([data-link-pattern="solid"]) > path.link {
-      stroke-width: 2;
+      stroke-width: 1.3;
     }
     svg.camera-link-overview .link-group[data-link-pattern="dashed"] > path.link {
-      stroke-dasharray: 9 6;
+      stroke-dasharray: 6 5;
     }
     svg.camera-link-overview .link-group[data-link-pattern="dotted"] > path.link {
-      stroke-dasharray: 2 5;
+      stroke-dasharray: 1.5 4;
     }
     svg.camera-link-overview .link-group[data-link-pattern="dash-dot"] > path.link {
-      stroke-dasharray: 9 4 2 4;
+      stroke-dasharray: 6 3 1.5 3;
     }
     svg.camera-link-overview .link-group[data-link-type="double"] > path:first-child {
-      stroke-width: 6;
+      stroke-width: 4;
     }
     svg.camera-link-overview .link-group[data-link-type="double"] > path:nth-child(2) {
-      stroke-width: 3;
+      stroke-width: 2;
     }
     svg.camera-link-overview .link-group[data-link-type="double"] > path:nth-child(3) {
-      stroke-width: 1.5;
+      stroke-width: 1;
     }
   </style>`}
 
