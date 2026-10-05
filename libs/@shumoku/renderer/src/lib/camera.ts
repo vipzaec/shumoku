@@ -223,7 +223,10 @@ export function attachCamera(svg: SVGSVGElement, options: CameraOptions = {}): C
   // viewBox-to-CSS scaling is often the dominant factor on overview plans.
   const updateLinkDetail = (zoomScale: number) => {
     const vb = svg.viewBox.baseVal
-    const fitScale = vb.width > 0 ? svg.clientWidth / vb.width : 1
+    const fitScale =
+      vb.width > 0 && vb.height > 0
+        ? Math.min(svg.clientWidth / vb.width, svg.clientHeight / vb.height)
+        : 1
     svg.classList.toggle('camera-link-overview', zoomScale * fitScale < 0.65)
   }
 
