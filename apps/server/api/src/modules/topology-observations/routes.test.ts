@@ -130,7 +130,7 @@ describe('topology display settings', () => {
           routePolicy: 'avoid',
         },
       },
-      linkPortOverrides: { ingress: { to: 'wan' } },
+      linkPortOverrides: { ingress: { toNode: 'opnsense-netbird', to: 'ctrl' } },
       linkContinuationOverrides: {
         ingress: {
           enabled: true,

@@ -273,7 +273,7 @@
     { id: 'long-dash', label: 'Long dashes', dash: '16 6' },
     { id: 'double', label: 'Double', dash: '' },
   ] as const
-  type LinkPorts = { from?: string; to?: string }
+  type LinkPorts = { fromNode?: string; toNode?: string; from?: string; to?: string }
   type LinkContinuation = {
     enabled: boolean
     label: string
@@ -325,12 +325,11 @@
   let linkEditorOpen = $state(false)
   let linkDraft = $state<OperatorLink | null>(null)
   let linkDraftError = $state('')
-  const editorLink = $derived(graph?.links.find((link) => link.id === appearanceDraft?.id))
   const editorSourceId = $derived(
-    appearanceEditorOpen ? editorLink?.from.node : linkEditorOpen ? linkDraft?.from : undefined,
+    appearanceEditorOpen ? appearanceDraft?.fromNode : linkEditorOpen ? linkDraft?.from : undefined,
   )
   const editorDestinationId = $derived(
-    appearanceEditorOpen ? editorLink?.to.node : linkEditorOpen ? linkDraft?.to : undefined,
+    appearanceEditorOpen ? appearanceDraft?.toNode : linkEditorOpen ? linkDraft?.to : undefined,
   )
   const editorSourceVisualId = $derived(
     graph?.nodes.find((node) => node.id === editorSourceId)?.metadata?.['presentationRole'] ===
@@ -981,8 +980,24 @@
               : ''
     return {
       ...link,
-      ...(ports?.from ? { from: { ...link.from, port: ports.from } } : {}),
-      ...(ports?.to ? { to: { ...link.to, port: ports.to } } : {}),
+      ...(ports?.fromNode || ports?.from
+        ? {
+            from: {
+              ...link.from,
+              ...(ports.fromNode ? { node: ports.fromNode } : {}),
+              ...(ports.from ? { port: ports.from } : {}),
+            },
+          }
+        : {}),
+      ...(ports?.toNode || ports?.to
+        ? {
+            to: {
+              ...link.to,
+              ...(ports.toNode ? { node: ports.toNode } : {}),
+              ...(ports.to ? { port: ports.to } : {}),
+            },
+          }
+        : {}),
       ...(appearance
         ? {
             type: appearance.preset === 'double' ? ('double' as const) : ('solid' as const),
@@ -2193,6 +2208,8 @@
         saved?.routeShape ?? (link.metadata?.['routeShape'] === 'straight' ? 'straight' : 'bent'),
       routePolicy:
         saved?.routePolicy ?? (link.metadata?.['routePolicy'] === 'under' ? 'under' : 'avoid'),
+      fromNode: linkPortOverrides[link.id]?.fromNode ?? link.from.node,
+      toNode: linkPortOverrides[link.id]?.toNode ?? link.to.node,
       from: linkPortOverrides[link.id]?.from ?? link.from.port,
       to: linkPortOverrides[link.id]?.to ?? link.to.port,
       continuationEnabled: continuation?.enabled === true,
@@ -2216,13 +2233,15 @@
       source.links.find((candidate) => candidate.id === appearanceDraft?.id) ??
       graph.links.find((candidate) => candidate.id === appearanceDraft?.id)
     if (!link?.id) return
-    const fromNode = graph.nodes.find((node) => node.id === link.from.node)
-    const toNode = graph.nodes.find((node) => node.id === link.to.node)
+    const fromNode = graph.nodes.find((node) => node.id === appearanceDraft?.fromNode)
+    const toNode = graph.nodes.find((node) => node.id === appearanceDraft?.toNode)
     if (
       !fromNode?.ports?.some((port) => port.id === appearanceDraft?.from) ||
       !toNode?.ports?.some((port) => port.id === appearanceDraft?.to)
-    )
+    ) {
+      appearanceDraftError = 'Select a connection point on each endpoint block.'
       return
+    }
     const nextAppearance = {
       ...linkAppearanceOverrides,
       [link.id]: {
@@ -2257,6 +2276,10 @@
       }
     }
     const selectedPorts = {
+      ...(appearanceDraft.fromNode !== link.from.node
+        ? { fromNode: appearanceDraft.fromNode }
+        : {}),
+      ...(appearanceDraft.toNode !== link.to.node ? { toNode: appearanceDraft.toNode } : {}),
       ...(appearanceDraft.from !== link.from.port ? { from: appearanceDraft.from } : {}),
       ...(appearanceDraft.to !== link.to.port ? { to: appearanceDraft.to } : {}),
     }
@@ -2271,7 +2294,9 @@
     if (
       clearManualRoute ||
       appearanceDraft.routeShape !== priorShape ||
-      appearanceDraft.routePolicy !== priorPolicy
+      appearanceDraft.routePolicy !== priorPolicy ||
+      appearanceDraft.fromNode !== link.from.node ||
+      appearanceDraft.toNode !== link.to.node
     ) {
       delete nextRoutes[link.id]
     }
@@ -2372,12 +2397,29 @@
   }
 
   function appearancePorts(side: 'from' | 'to') {
-    const link = graph?.links.find((candidate) => candidate.id === appearanceDraft?.id)
-    return graph?.nodes.find((node) => node.id === link?.[side].node)?.ports ?? []
+    const nodeId = side === 'from' ? appearanceDraft?.fromNode : appearanceDraft?.toNode
+    return graph?.nodes.find((node) => node.id === nodeId)?.ports ?? []
   }
 
   function appearanceEndpointName(side: 'from' | 'to'): string {
-    return diagramNodeNameById(editorLink?.[side].node ?? '')
+    return diagramNodeNameById(
+      (side === 'from' ? appearanceDraft?.fromNode : appearanceDraft?.toNode) ?? '',
+    )
+  }
+
+  function selectAppearanceNode(side: 'from' | 'to', nodeId: string) {
+    if (!appearanceDraft) return
+    const nextPorts = graph?.nodes.find((node) => node.id === nodeId)?.ports ?? []
+    if (side === 'from') {
+      appearanceDraft.fromNode = nodeId
+      appearanceDraft.from =
+        nextPorts.find((port) => port.id === appearanceDraft?.from)?.id ?? nextPorts[0]?.id ?? ''
+    } else {
+      appearanceDraft.toNode = nodeId
+      appearanceDraft.to =
+        nextPorts.find((port) => port.id === appearanceDraft?.to)?.id ?? nextPorts[0]?.id ?? ''
+    }
+    appearanceDraftError = ''
   }
 
   function diagramNodeName(node: NetworkGraph['nodes'][number]): string {
@@ -2400,7 +2442,7 @@
   ): string {
     const label = (port.label ?? '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
     const side = port.placement?.side
-    const nodeId = editorLink?.[endpoint].node
+    const nodeId = endpoint === 'from' ? appearanceDraft?.fromNode : appearanceDraft?.toNode
     const peers = new Set<string>()
     for (const link of graph?.links ?? []) {
       const otherId =
@@ -3586,11 +3628,33 @@
         {/if}
       </div>
       <label
+        >Source block
+        <select
+          value={appearanceDraft.fromNode}
+          onchange={(event) => selectAppearanceNode('from', event.currentTarget.value)}
+        >
+          {#each graph?.nodes ?? [] as node (node.id)}
+            <option value={node.id}>{diagramNodeName(node)}</option>
+          {/each}
+        </select>
+      </label>
+      <label
         >Source point
         <span class="editor-help">{appearanceEndpointName('from')} · blue block</span>
         <select bind:value={appearanceDraft.from}>
           {#each appearancePorts('from') as port, index}
             <option value={port.id}>{readablePortName(port, index, 'from')}</option>
+          {/each}
+        </select>
+      </label>
+      <label
+        >Destination block
+        <select
+          value={appearanceDraft.toNode}
+          onchange={(event) => selectAppearanceNode('to', event.currentTarget.value)}
+        >
+          {#each graph?.nodes ?? [] as node (node.id)}
+            <option value={node.id}>{diagramNodeName(node)}</option>
           {/each}
         </select>
       </label>

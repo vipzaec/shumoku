@@ -54,6 +54,9 @@ function renderInteractive(layout: ResolvedLayout, theme: Theme): string {
       bounds: layout.bounds,
       colors: themeToColors(theme),
       theme,
+      linkedPorts: new Set(
+        [...layout.edges.values()].flatMap((edge) => [edge.fromPortId, edge.toPortId]),
+      ),
     },
   }).body
 }
@@ -120,8 +123,16 @@ describe('static and interactive renderer parity', () => {
         expect(interactive).toContain(`data-id="${node.id}"`)
         expect(staticallyRendered).toContain(`data-id="${node.id}"`)
       }
+      const linkedPorts = new Set(
+        [...resolved.edges.values()].flatMap((edge) => [edge.fromPortId, edge.toPortId]),
+      )
       for (const port of resolved.ports.values()) {
         const selector = `data-port="${port.id}"`
+        if (!linkedPorts.has(port.id)) {
+          expect(interactive).not.toContain(selector)
+          expect(staticallyRendered).not.toContain(selector)
+          continue
+        }
         expect(interactive).toContain(selector)
         expect(staticallyRendered).toContain(selector)
         const interactivePort = portBox(interactive, port.id)

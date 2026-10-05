@@ -547,8 +547,13 @@ export function renderSvgString(layout: ResolvedLayout, options?: StaticRenderOp
     if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
     parts.push(renderNode(node, colors))
   }
+  const linkedPorts = new Set<string>()
+  for (const edge of layout.edges.values()) {
+    if (edge.fromPortId) linkedPorts.add(edge.fromPortId)
+    if (edge.toPortId) linkedPorts.add(edge.toPortId)
+  }
   for (const port of layout.ports.values()) {
-    parts.push(renderPort(port, colors))
+    if (linkedPorts.has(port.id)) parts.push(renderPort(port, colors))
   }
 
   // Match the interactive canvas: group names remain legible over crossing links.

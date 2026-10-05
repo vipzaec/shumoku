@@ -437,9 +437,14 @@ export class SVGRenderer {
       parts.push(this.renderNode(node))
     }
 
-    // Layer 4: Ports — each port drawn at its own position (no offset calculation)
+    // Layer 4: connected ports only; unused anchors remain editable in the model.
+    const linkedPorts = new Set<string>()
+    for (const link of layout.links.values()) {
+      linkedPorts.add(`${link.fromEndpoint.node}:${link.fromEndpoint.port}`)
+      linkedPorts.add(`${link.toEndpoint.node}:${link.toEndpoint.port}`)
+    }
     for (const port of ports.values()) {
-      parts.push(this.renderResolvedPort(port))
+      if (linkedPorts.has(port.id)) parts.push(this.renderResolvedPort(port))
     }
 
     if (legendSettings.enabled && legendWidth > 0) {

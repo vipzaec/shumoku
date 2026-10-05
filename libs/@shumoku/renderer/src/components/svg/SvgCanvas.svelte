@@ -384,23 +384,25 @@
 
     <!-- Ports layer (above nodes so they're always clickable) -->
     {#each ports.values() as port (port.id)}
-      <SvgPort
-        {port}
-        {colors}
-        selected={selection.has(port.id)}
-        {interactive}
-        linked={linkedPorts.has(port.id)}
-        boundary={nodes.get(port.nodeId)?.metadata?.['presentationRole'] === 'subgraph-boundary-port'}
-        overlay={portOverlay}
-        {onlinkstart}
-        {onlinkend}
-        {onportdragmove}
-        {onportdragend}
-        {onselect}
-        {onlabeledit}
-        oncontextmenu={(id, e) => onctx?.(id, 'port', e)}
-        {preventContextMenuDefault}
-      />
+      {#if linkedPorts.has(port.id) || (interactive && (selection.has(port.id) || selection.has(port.nodeId) || selection.has(nodes.get(port.nodeId)?.parent ?? '')))}
+        <SvgPort
+          {port}
+          {colors}
+          selected={selection.has(port.id)}
+          {interactive}
+          linked={linkedPorts.has(port.id)}
+          boundary={nodes.get(port.nodeId)?.metadata?.['presentationRole'] === 'subgraph-boundary-port'}
+          overlay={portOverlay}
+          {onlinkstart}
+          {onlinkend}
+          {onportdragmove}
+          {onportdragend}
+          {onselect}
+          {onlabeledit}
+          oncontextmenu={(id, e) => onctx?.(id, 'port', e)}
+          {preventContextMenuDefault}
+        />
+      {/if}
     {/each}
 
     <!-- Keep container titles above edges and ports; the text halo masks crossings. -->

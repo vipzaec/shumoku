@@ -952,7 +952,10 @@ export const topologies = {
               routePolicy: 'avoid' | 'under'
             }
           >
-          linkPortOverrides?: Record<string, { from?: string; to?: string }>
+          linkPortOverrides?: Record<
+            string,
+            { fromNode?: string; toNode?: string; from?: string; to?: string }
+          >
           linkContinuationOverrides?: Record<
             string,
             {

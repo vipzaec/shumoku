@@ -135,6 +135,8 @@ export const OperatorLayoutSchema = z.object({
     .record(
       z.string(),
       z.object({
+        fromNode: z.string().optional(),
+        toNode: z.string().optional(),
         from: z.string().optional(),
         to: z.string().optional(),
       }),

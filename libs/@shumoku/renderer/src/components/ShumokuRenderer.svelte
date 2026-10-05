@@ -16,7 +16,6 @@
     addPort,
     collectObstacles,
     createEngine,
-    detectClickSide,
     linkExists,
     moveNode,
     moveSubgraph,
@@ -817,21 +816,27 @@
     const port = ports.get(portId)
     const node = port && nodes.get(port.nodeId)
     const group = node?.parent ? subgraphs.get(node.parent) : undefined
-    if (
-      node?.metadata?.['presentationRole'] !== 'subgraph-boundary-port' ||
-      !group?.bounds ||
-      !port
-    )
-      return
+    if (!node?.position || !port) return
+    const boundaryPort = node.metadata?.['presentationRole'] === 'subgraph-boundary-port'
+    const size = resolveNodeSize(node)
+    const portBounds = boundaryPort
+      ? group?.bounds
+      : {
+          x: node.position.x - size.width / 2,
+          y: node.position.y - size.height / 2,
+          width: size.width,
+          height: size.height,
+        }
+    if (!portBounds) return
     const placement = projectBoundaryPort(
-      group.bounds,
+      portBounds,
       screenToSvg(screenX, screenY),
       port.side,
       false,
     )
-    portDragGuide = { bounds: group.bounds, side: placement.side, offset: placement.offset }
+    portDragGuide = { bounds: portBounds, side: placement.side, offset: placement.offset }
     ports.set(portId, { ...port, side: placement.side, absolutePosition: placement.point })
-    nodes.set(node.id, { ...node, position: placement.point })
+    if (boundaryPort) nodes.set(node.id, { ...node, position: placement.point })
     const generation = ++portRouteGeneration
     void routeEdges(nodes, ports, links, subgraphs).then((routed) => {
       if (generation === portRouteGeneration) replaceMap(edges, routed)
@@ -847,16 +852,19 @@
     const node = nodes.get(port.nodeId)
     if (!node?.position) return
     const { x, y } = screenToSvg(screenX, screenY)
+    const size = resolveNodeSize(node)
     const groupBounds =
       node.metadata?.['presentationRole'] === 'subgraph-boundary-port'
         ? subgraphs.get(node.parent ?? '')?.bounds
         : undefined
-    const boundaryPlacement = groupBounds
-      ? projectBoundaryPort(groupBounds, { x, y }, port.side, true)
-      : null
-    const newSide =
-      boundaryPlacement?.side ??
-      detectClickSide(x, y, node as typeof node & { position: { x: number; y: number } })
+    const portBounds = groupBounds ?? {
+      x: node.position.x - size.width / 2,
+      y: node.position.y - size.height / 2,
+      width: size.width,
+      height: size.height,
+    }
+    const placement = projectBoundaryPort(portBounds, { x, y }, port.side, true)
+    const newSide = placement.side
     const axis = newSide === 'top' || newSide === 'bottom' ? 'x' : 'y'
     const siblings = [...ports.values()]
       .filter(
@@ -870,12 +878,7 @@
     const newOrder = siblings.filter(
       (candidate) => candidate.absolutePosition[axis] < pointer,
     ).length
-    const size = resolveNodeSize(node)
-    const start =
-      axis === 'x' ? node.position.x - size.width / 2 : node.position.y - size.height / 2
-    const length = axis === 'x' ? size.width : size.height
-    const offset =
-      boundaryPlacement?.offset ?? Math.max(0.04, Math.min(0.96, (pointer - start) / length))
+    const offset = placement.offset
     // Bare port id used by external API — SvgPort sees the resolved
     // `nodeId:portId` form; strip the prefix back to the raw port id
     // that lives on `NodePort.id`.

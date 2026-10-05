@@ -62,9 +62,11 @@ describe('renderSvgString', () => {
     const svg = renderSvgString(layout)
     expect(svg).toContain(' Q ')
     expect(svg).not.toContain('d="M 0 0 L 400 200"')
+    expect(svg).toContain('data-port="source:out"')
+    expect(svg).toContain('data-port="target:in"')
   })
 
-  it('draws a shared boundary port without an inner LAN card', () => {
+  it('hides an unused boundary port without an inner LAN card', () => {
     const boundary: Node = {
       id: 'vm-lan',
       label: [],
@@ -91,7 +93,7 @@ describe('renderSvgString', () => {
       bounds: { x: 0, y: 0, width: 220, height: 150 },
     }
     const svg = renderSvgString(layout)
-    expect(svg).toContain('data-port="vm-lan:lan"')
+    expect(svg).not.toContain('data-port="vm-lan:lan"')
     expect(svg).not.toContain('data-id="vm-lan"')
   })
 
@@ -121,7 +123,7 @@ describe('renderSvgString', () => {
     expect(svg).toContain('paint-order="stroke fill"')
   })
 
-  it('renders a legacy resolved port whose label is missing', () => {
+  it('does not render an unused legacy port whose label is missing', () => {
     const port: ResolvedPort = {
       id: 'node:legacy-port',
       nodeId: 'node',
@@ -139,7 +141,7 @@ describe('renderSvgString', () => {
       metadata: { algorithm: 'test', duration: 0 },
     }
 
-    expect(renderSvgString(layout)).toContain('data-port="node:legacy-port"')
+    expect(renderSvgString(layout)).not.toContain('data-port="node:legacy-port"')
   })
 
   it.each([
