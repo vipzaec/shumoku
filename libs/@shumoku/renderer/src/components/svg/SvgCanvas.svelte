@@ -284,10 +284,11 @@
     /* At overview scale, keep link patterns legible in screen pixels.
        The original per-link stroke and dash detail returns as soon as the
        viewer zooms in; no graph style or saved connection is changed. */
-    svg.camera-link-overview .link-group > path {
+    svg.camera-link-overview .link-group:not([data-link-pattern="solid"]) > path.link,
+    svg.camera-link-overview .link-group[data-link-type="double"] > path {
       vector-effect: non-scaling-stroke;
     }
-    svg.camera-link-overview .link-group > path.link {
+    svg.camera-link-overview .link-group:not([data-link-pattern="solid"]) > path.link {
       stroke-width: 2;
     }
     svg.camera-link-overview .link-group[data-link-pattern="dashed"] > path.link {
