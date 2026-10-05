@@ -213,11 +213,16 @@ function detourAroundObstacles(
 ): void {
   for (const edge of edges.values()) {
     if (edge.route) continue // bus / lane / preassigned routes are explicit
-    if (edge.link.metadata?.['routeShape'] === 'straight') continue
     // Explicit pass-under is the only way to allow a curve through another
     // block. A smooth line is still required to avoid foreign geometry.
     if (edge.link.metadata?.['routePolicy'] === 'under') continue
-    if (!findBezierObstacle(edge, nodes, subgraphs)) continue
+    const blocked =
+      edge.link.metadata?.['routeShape'] === 'straight'
+        ? visibleObstacleRects(edge, nodes, subgraphs, 0).some((rect) =>
+            segmentCrossesRect(edge.fromPort.absolutePosition, edge.toPort.absolutePosition, rect),
+          )
+        : findBezierObstacle(edge, nodes, subgraphs) !== null
+    if (!blocked) continue
     const points = routeViaGrid(edge, nodes, subgraphs)
     if (!points) continue
     edge.route = { kind: 'polyline', points, cornerRadius: 12 }
@@ -391,7 +396,6 @@ export function routeContinuationStub(
   const start = port.absolutePosition
   const direct = [start, terminal]
   if (edge.link.metadata?.['routePolicy'] === 'under') return direct
-  if (edge.link.metadata?.['routeShape'] === 'straight') return direct
   const otherSide: ResolvedPort['side'][] = ['left', 'right', 'top', 'bottom']
   // The ordinary router excludes endpoint cards. A continuation marker is
   // outside that card, so its visible stub must not leave a right-side port

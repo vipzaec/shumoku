@@ -4,12 +4,66 @@ import {
   type Node,
   type ResolvedLayout,
   type ResolvedPort,
+  routeEdges,
   type Subgraph,
 } from '@shumoku/core'
 import { describe, expect, it } from 'vitest'
 import { renderSvgString } from './static.js'
 
 describe('renderSvgString', () => {
+  it('exports the obstacle detour even when a connection prefers a straight path', async () => {
+    const from: ResolvedPort = {
+      id: 'source:out',
+      nodeId: 'source',
+      label: 'OUT',
+      side: 'right',
+      absolutePosition: { x: 0, y: 0 },
+      size: { width: 8, height: 8 },
+    }
+    const to: ResolvedPort = {
+      ...from,
+      id: 'target:in',
+      nodeId: 'target',
+      label: 'IN',
+      side: 'left',
+      absolutePosition: { x: 400, y: 200 },
+    }
+    const nodes = new Map<string, Node>([
+      [
+        'middle',
+        {
+          id: 'middle',
+          label: 'Middle',
+          position: { x: 200, y: 100 },
+          size: { width: 80, height: 80 },
+        },
+      ],
+    ])
+    const ports = new Map([
+      [from.id, from],
+      [to.id, to],
+    ])
+    const edges = await routeEdges(nodes, ports, [
+      {
+        id: 'link',
+        from: { node: 'source', port: 'out' },
+        to: { node: 'target', port: 'in' },
+        metadata: { routeShape: 'straight', routePolicy: 'avoid' },
+      },
+    ])
+    const layout: ResolvedLayout = {
+      nodes,
+      ports,
+      edges,
+      subgraphs: new Map(),
+      bounds: { x: 0, y: 0, width: 400, height: 200 },
+    }
+    expect(edges.get('link')?.route?.points.length).toBeGreaterThan(2)
+    const svg = renderSvgString(layout)
+    expect(svg).toContain(' Q ')
+    expect(svg).not.toContain('d="M 0 0 L 400 200"')
+  })
+
   it('draws a shared boundary port without an inner LAN card', () => {
     const boundary: Node = {
       id: 'vm-lan',

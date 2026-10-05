@@ -2338,7 +2338,6 @@
 
   function selectRoutePolicy(policy: LinkAppearance['routePolicy']) {
     if (!appearanceDraft) return
-    appearanceDraft.routeShape = 'bent'
     appearanceDraft.routePolicy = policy
   }
 
@@ -3559,9 +3558,9 @@
           <div class="line-type-picker" role="group" aria-label="Connection at blocks">
             <button
               type="button"
-              class:active={appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid'}
+              class:active={appearanceDraft.routePolicy === 'avoid'}
               aria-label="Go around blocks"
-              aria-pressed={appearanceDraft.routeShape === 'bent' && appearanceDraft.routePolicy === 'avoid'}
+              aria-pressed={appearanceDraft.routePolicy === 'avoid'}
               title="Go around blocks"
               onclick={() => selectRoutePolicy('avoid')}
             >
@@ -3572,9 +3571,9 @@
             </button>
             <button
               type="button"
-              class:active={appearanceDraft.routePolicy === 'under' || appearanceDraft.routeShape === 'straight'}
+              class:active={appearanceDraft.routePolicy === 'under'}
               aria-label="Pass through blocks"
-              aria-pressed={appearanceDraft.routePolicy === 'under' || appearanceDraft.routeShape === 'straight'}
+              aria-pressed={appearanceDraft.routePolicy === 'under'}
               title="Pass through blocks"
               onclick={() => selectRoutePolicy('under')}
             >
@@ -3826,7 +3825,7 @@
             </svg>
           </button>
           <button
-            onclick={() => setSelectedLinkRouting('straight', 'under')}
+            onclick={() => setSelectedLinkRouting('straight', selectedLinkAppearance()?.routePolicy ?? 'avoid')}
             class:active={selectedLinkAppearance()?.routeShape === 'straight'}
             title="Draw selected connection as a straight line"
             aria-label="Draw selected connection as a straight line"

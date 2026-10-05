@@ -110,6 +110,25 @@ describe('routeEdges — obstacle avoidance', () => {
     expect([...smooth.values()][0]?.route).toMatchObject({ cornerRadius: 12 })
   })
 
+  test('a straight connection stays straight in free space but avoids a blocking node', async () => {
+    const straight = {
+      ...link('source:out', 'target:in'),
+      metadata: { routeShape: 'straight', routePolicy: 'avoid' },
+    }
+    const clear = await routeEdges(NOOP_NODES, ports, [straight])
+    expect([...clear.values()][0]?.route).toBeUndefined()
+
+    const nodes = new Map([['middle', obstacle('middle', 200, 100)]])
+    const avoiding = await routeEdges(nodes, ports, [straight])
+    expect([...avoiding.values()][0]?.route).toMatchObject({ cornerRadius: 12 })
+    expect([...avoiding.values()][0]?.route?.points.length).toBeGreaterThan(2)
+
+    const passing = await routeEdges(nodes, ports, [
+      { ...straight, metadata: { routeShape: 'straight', routePolicy: 'under' } },
+    ])
+    expect([...passing.values()][0]?.route).toBeUndefined()
+  })
+
   test('an external connection detours around the outermost foreign group', async () => {
     const horizontalPorts = makePorts([
       ['source:out', port('source:out', 'source', 0, 100, 'right')],

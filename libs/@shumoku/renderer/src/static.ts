@@ -291,7 +291,10 @@ function renderEdge(
   const continuation = continuationGeometry(edge, nodes, subgraphs)
   const pathD =
     continuation?.path ??
-    (edge.link.metadata?.['routeShape'] === 'straight' && edge.fromPort && edge.toPort
+    (edge.link.metadata?.['routeShape'] === 'straight' &&
+    !edge.route &&
+    edge.fromPort &&
+    edge.toPort
       ? `M ${edge.fromPort.absolutePosition.x} ${edge.fromPort.absolutePosition.y} L ${edge.toPort.absolutePosition.x} ${edge.toPort.absolutePosition.y}`
       : null) ??
     (edge.route

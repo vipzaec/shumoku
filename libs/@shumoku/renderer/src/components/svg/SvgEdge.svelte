@@ -61,7 +61,10 @@
   const continuation = $derived(continuationGeometry(edge, nodes, subgraphs))
   const pathD = $derived(
     continuation?.path ??
-      (edge.link.metadata?.['routeShape'] === 'straight' && edge.fromPort && edge.toPort
+      (edge.link.metadata?.['routeShape'] === 'straight' &&
+      !edge.route &&
+      edge.fromPort &&
+      edge.toPort
         ? `M ${edge.fromPort.absolutePosition.x} ${edge.fromPort.absolutePosition.y} L ${edge.toPort.absolutePosition.x} ${edge.toPort.absolutePosition.y}`
         : null) ??
       (edge.route

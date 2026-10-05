@@ -112,6 +112,53 @@ describe('paired continuation geometry', () => {
     }
   })
 
+  it('keeps a straight continuation clear of a blocking card unless pass-under is selected', () => {
+    const link = edge({
+      enabled: true,
+      label: 'LAN',
+      source: { x: 210, y: 360 },
+    })
+    link.link.metadata = {
+      ...link.link.metadata,
+      routeShape: 'straight',
+      routePolicy: 'avoid',
+    }
+    link.fromNodeId = 'source'
+    link.toNodeId = 'target'
+    link.fromPort = {
+      ...link.fromPort,
+      absolutePosition: { x: 350, y: 100 },
+      side: 'right',
+    }
+    const nodes = new Map<string, Node>([
+      [
+        'source',
+        {
+          id: 'source',
+          label: 'Source',
+          position: { x: 300, y: 100 },
+          size: { width: 100, height: 60 },
+        },
+      ],
+      [
+        'lower',
+        {
+          id: 'lower',
+          label: 'Lower',
+          position: { x: 320, y: 200 },
+          size: { width: 100, height: 80 },
+        },
+      ],
+    ])
+    const groups = new Map<string, Subgraph>()
+    const avoiding = continuationGeometry(link, nodes, groups)
+    expect(avoiding?.segments[0]?.length).toBeGreaterThan(2)
+    expect(avoiding?.path).toContain(' Q ')
+    link.link.metadata = { ...link.link.metadata, routePolicy: 'under' }
+    const passing = continuationGeometry(link, nodes, groups)
+    expect(passing?.segments[0]).toHaveLength(2)
+  })
+
   it('expands export bounds to include independently moved markers', () => {
     const layout = {
       bounds: { x: 0, y: 0, width: 600, height: 400 },
