@@ -217,6 +217,16 @@ export function attachCamera(svg: SVGSVGElement, options: CameraOptions = {}): C
   let rafId: number | null = null
   let pendingTransform: string | null = null
 
+  // Link patterns that look distinct close up can collapse into a solid
+  // hairline when a large topology is fitted into a small viewport.
+  // Compare the effective screen scale, not just d3's zoom factor: the
+  // viewBox-to-CSS scaling is often the dominant factor on overview plans.
+  const updateLinkDetail = (zoomScale: number) => {
+    const vb = svg.viewBox.baseVal
+    const fitScale = vb.width > 0 ? svg.clientWidth / vb.width : 1
+    svg.classList.toggle('camera-link-overview', zoomScale * fitScale < 0.65)
+  }
+
   const svgSel = select(svg)
   const zoomBehavior: ZoomBehavior<SVGSVGElement, unknown> = zoom<SVGSVGElement, unknown>()
     .scaleExtent([minScale, currentMaxScale()])
@@ -249,6 +259,7 @@ export function attachCamera(svg: SVGSVGElement, options: CameraOptions = {}): C
       // repaint) is deferred, so wheel events arriving faster than the
       // display refresh don't queue up redundant repaints.
       pendingTransform = e.transform.toString()
+      updateLinkDetail(e.transform.k)
       if (rafId !== null) return
       rafId = requestAnimationFrame(() => {
         rafId = null
@@ -257,6 +268,7 @@ export function attachCamera(svg: SVGSVGElement, options: CameraOptions = {}): C
     })
 
   svgSel.call(zoomBehavior)
+  updateLinkDetail(zoomTransform(svg).k)
   svgSel.on('contextmenu.zoom', null)
 
   // Keep the adaptive max in sync: the viewBox changes when a new layout/sheet
@@ -270,6 +282,7 @@ export function attachCamera(svg: SVGSVGElement, options: CameraOptions = {}): C
       // The root coordinate transform also changes with these dimensions.
       cachedCtm = null
       zoomBehavior.scaleExtent([minScale, currentMaxScale()])
+      updateLinkDetail(zoomTransform(svg).k)
     }
     viewBoxObserver = new MutationObserver(refreshScaleExtent)
     viewBoxObserver.observe(svg, { attributes: true, attributeFilter: ['viewBox'] })
@@ -428,6 +441,7 @@ export function attachCamera(svg: SVGSVGElement, options: CameraOptions = {}): C
         rafId = null
       }
       endGesture()
+      svg.classList.remove('camera-link-overview')
       offWheel()
       unobserve()
       viewBoxObserver?.disconnect()

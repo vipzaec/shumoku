@@ -94,6 +94,15 @@
         return link?.style?.strokeDasharray ?? ''
     }
   })
+  const overviewPattern = $derived.by(() => {
+    const lengths = dasharray()
+      .split(/[\s,]+/)
+      .map(Number)
+      .filter((value) => value > 0)
+    if (!lengths.length) return 'solid'
+    if (lengths[0] <= 2.5) return 'dotted'
+    return lengths.length >= 4 ? 'dash-dot' : 'dashed'
+  })
   const strokeColor = $derived(
     selected
       ? colors.selection
@@ -184,7 +193,13 @@
   }
 </script>
 
-<g class="link-group" data-link-id={edge.id} bind:this={groupElement}>
+<g
+  class="link-group"
+  data-link-id={edge.id}
+  data-link-pattern={overviewPattern}
+  data-link-type={linkType}
+  bind:this={groupElement}
+>
   {#if isDouble}
     {@const gap = Math.max(3, Math.round(edge.width * 0.9))}
     <path

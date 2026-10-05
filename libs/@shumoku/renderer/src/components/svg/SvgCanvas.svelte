@@ -280,6 +280,34 @@
       vector-effect: non-scaling-stroke;
       stroke-width: 3;
     }
+
+    /* At overview scale, keep link patterns legible in screen pixels.
+       The original per-link stroke and dash detail returns as soon as the
+       viewer zooms in; no graph style or saved connection is changed. */
+    svg.camera-link-overview .link-group > path {
+      vector-effect: non-scaling-stroke;
+    }
+    svg.camera-link-overview .link-group > path.link {
+      stroke-width: 2;
+    }
+    svg.camera-link-overview .link-group[data-link-pattern="dashed"] > path.link {
+      stroke-dasharray: 9 6;
+    }
+    svg.camera-link-overview .link-group[data-link-pattern="dotted"] > path.link {
+      stroke-dasharray: 2 5;
+    }
+    svg.camera-link-overview .link-group[data-link-pattern="dash-dot"] > path.link {
+      stroke-dasharray: 9 4 2 4;
+    }
+    svg.camera-link-overview .link-group[data-link-type="double"] > path:first-child {
+      stroke-width: 6;
+    }
+    svg.camera-link-overview .link-group[data-link-type="double"] > path:nth-child(2) {
+      stroke-width: 3;
+    }
+    svg.camera-link-overview .link-group[data-link-type="double"] > path:nth-child(3) {
+      stroke-width: 1.5;
+    }
   </style>`}
 
   <!-- Viewport group: d3-zoom applies transform here -->
