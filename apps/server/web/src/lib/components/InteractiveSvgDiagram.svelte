@@ -4790,7 +4790,7 @@
     display: grid;
     gap: 10px;
     width: min(360px, calc(100% - 96px));
-    max-height: calc(100% - 32px);
+    max-height: calc(100% - 132px);
     overflow-y: auto;
     padding: 14px;
     color: var(--color-text, #111827);
