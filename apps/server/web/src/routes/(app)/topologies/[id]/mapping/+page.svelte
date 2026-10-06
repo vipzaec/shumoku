@@ -27,6 +27,7 @@
   import type { MetricsData } from '$lib/stores/metrics'
   import type { EdgeEndpoint, Identity, MetricsMapping } from '$lib/types'
   import { nodeLabelById, nodeLabel as resolveNodeLabel } from '$lib/utils/node-label'
+  import { sortByName } from '$lib/utils/sort'
   import { useTopologyCtx } from '../_context.svelte'
   import MappingPanel from './MappingPanel.svelte'
   import VirtualList from './VirtualList.svelte'
@@ -354,13 +355,19 @@
   // Current node / link elements a node/link orphan can be reassigned onto. After
   // the Phase 3 id flip, element `id` IS the entity id the server validates against.
   let nodeTargets = $derived(
-    (parsedTopology?.graph.nodes ?? []).map((n) => ({ id: n.id, label: getNodeLabel(n) })),
+    sortByName(
+      (parsedTopology?.graph.nodes ?? []).map((n) => ({ id: n.id, label: getNodeLabel(n) })),
+      (target) => target.label,
+    ),
   )
   let linkTargets = $derived(
-    edges.map((e) => ({
-      id: e.id,
-      label: `${getNodeLabelById(e.from.nodeId)} → ${getNodeLabelById(e.to.nodeId)}`,
-    })),
+    sortByName(
+      edges.map((e) => ({
+        id: e.id,
+        label: `${getNodeLabelById(e.from.nodeId)} → ${getNodeLabelById(e.to.nodeId)}`,
+      })),
+      (target) => target.label,
+    ),
   )
 
   function orphanHint(payload: unknown): string {

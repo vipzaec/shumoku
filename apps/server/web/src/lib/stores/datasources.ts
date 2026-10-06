@@ -6,6 +6,7 @@
 import { derived, writable } from 'svelte/store'
 import { api } from '$lib/api'
 import type { DataSource, DataSourceInput } from '$lib/types'
+import { sortByName } from '$lib/utils/sort'
 
 interface DataSourcesState {
   items: DataSource[]
@@ -66,6 +67,8 @@ function createDataSourcesStore() {
 export const dataSources = createDataSourcesStore()
 
 // Derived store for easy access to items
-export const dataSourcesList = derived(dataSources, ($ds) => $ds.items)
+export const dataSourcesList = derived(dataSources, ($ds) =>
+  sortByName($ds.items, (item) => item.name),
+)
 export const dataSourcesLoading = derived(dataSources, ($ds) => $ds.loading)
 export const dataSourcesError = derived(dataSources, ($ds) => $ds.error)

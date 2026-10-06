@@ -41,6 +41,7 @@
     SyncMode,
     TopologyDataSource,
   } from '$lib/types'
+  import { sortByName } from '$lib/utils/sort'
   import { useTopologyCtx } from '../_context.svelte'
 
   const ctx = useTopologyCtx()
@@ -180,7 +181,10 @@
     const taken = new Set(
       ctx.currentSources.filter((s) => s.purpose === purpose).map((s) => s.dataSourceId),
     )
-    return catalog.filter((ds) => !taken.has(ds.id))
+    return sortByName(
+      catalog.filter((ds) => !taken.has(ds.id)),
+      (source) => source.name,
+    )
   }
 
   /** Attach a specific data source chosen from the Add menu. */

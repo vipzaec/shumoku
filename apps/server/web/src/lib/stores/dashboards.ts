@@ -7,6 +7,7 @@ import { derived, get, writable } from 'svelte/store'
 import { api } from '$lib/api'
 import type { Dashboard, DashboardLayout, WidgetInstance, WidgetPosition } from '$lib/types'
 import { nanoid } from '$lib/utils/id'
+import { sortByName } from '$lib/utils/sort'
 
 // Store state
 interface DashboardState {
@@ -357,7 +358,9 @@ function findNextY(widgets: WidgetInstance[]): number {
 export const dashboardStore = createDashboardStore()
 
 // Derived stores for easy access
-export const dashboards = derived(dashboardStore, ($store) => $store.items)
+export const dashboards = derived(dashboardStore, ($store) =>
+  sortByName($store.items, (item) => item.name),
+)
 export const currentDashboard = derived(dashboardStore, ($store) => $store.current)
 export const currentLayout = derived(dashboardStore, ($store) => $store.currentLayout)
 export const dashboardLoading = derived(dashboardStore, ($store) => $store.loading)

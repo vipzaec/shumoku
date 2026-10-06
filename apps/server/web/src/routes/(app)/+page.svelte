@@ -10,6 +10,7 @@
   import { onMount } from 'svelte'
   import { api } from '$lib/api'
   import type { Dashboard, DataSource, Topology } from '$lib/types'
+  import { sortByName } from '$lib/utils/sort'
 
   let topologies: Topology[] = $state([])
   let dataSources: DataSource[] = $state([])
@@ -24,9 +25,9 @@
         api.dataSources.list(),
         api.dashboards.list(),
       ])
-      topologies = topoRes
-      dataSources = dsRes
-      dashboards = dashRes
+      topologies = sortByName(topoRes, (item) => item.name)
+      dataSources = sortByName(dsRes, (item) => item.name)
+      dashboards = sortByName(dashRes, (item) => item.name)
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load data'
     } finally {

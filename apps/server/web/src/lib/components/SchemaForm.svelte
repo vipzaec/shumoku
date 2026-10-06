@@ -12,6 +12,7 @@
   // fallback); wiring getConfigOptions is a later step.
   import { isSecretProp, type PluginConfigProperty, type PluginConfigSchema } from '@shumoku/core'
   import { EyeIcon, EyeSlashIcon } from 'phosphor-svelte'
+  import { sortByName } from '$lib/utils/sort'
   import SchemaForm from './SchemaForm.svelte'
 
   let {
@@ -45,7 +46,7 @@
     if (!getOptions || candidates[key] || loadingOptions[key]) return
     loadingOptions[key] = true
     try {
-      candidates[key] = await getOptions(key)
+      candidates[key] = sortByName(await getOptions(key), (option) => option.label)
     } catch {
       candidates[key] = []
     } finally {
@@ -91,8 +92,12 @@
   }
 
   function choices(prop: PluginConfigProperty): { const: string | number; title: string }[] | null {
-    if (prop.oneOf) return prop.oneOf
-    if (prop.enum) return prop.enum.map((v) => ({ const: v, title: String(v) }))
+    if (prop.oneOf) return sortByName(prop.oneOf, (option) => option.title)
+    if (prop.enum)
+      return sortByName(
+        prop.enum.map((v) => ({ const: v, title: String(v) })),
+        (option) => option.title,
+      )
     return null
   }
 
@@ -197,7 +202,7 @@
           >
         {:else if prop.type === 'array'}
           <div class="tag-input" class:opacity-50={disabled}>
-            {#each asArray(key) as tag (tag)}
+            {#each sortByName(asArray(key), (tag) => tag) as tag (tag)}
               <span class="tag">
                 {tag}
                 <button type="button" class="tag-x" {disabled} onclick={() => removeTag(key, tag)}>

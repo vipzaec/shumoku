@@ -1,6 +1,7 @@
 <script lang="ts">
   import { type NetworkGraph, specDeviceType } from '@shumoku/core'
   import * as Command from '$lib/components/ui/command'
+  import { sortByName } from '$lib/utils/sort'
 
   interface NodeEntry {
     id: string
@@ -33,28 +34,31 @@
     if (!open) return []
     const graph = getGraph()
     if (!graph) return []
-    return graph.nodes.map<NodeEntry>((node) => {
-      const label = Array.isArray(node.label)
-        ? node.label.join(' ').trim() || node.id
-        : node.label?.trim() || node.id
-      const type = specDeviceType(node.spec)
-      const hardware = node.spec?.kind === 'hardware' ? node.spec : undefined
-      const displayName =
-        typeof node.metadata?.displayName === 'string' ? node.metadata.displayName : ''
-      const context =
-        typeof node.metadata?.searchContext === 'string' ? node.metadata.searchContext : ''
-      return {
-        id: node.id,
-        label,
-        searchAliases: [displayName, context].filter(Boolean),
-        context,
-        spec: {
-          type,
-          vendor: hardware?.vendor,
-          model: hardware?.model,
-        },
-      }
-    })
+    return sortByName(
+      graph.nodes.map<NodeEntry>((node) => {
+        const label = Array.isArray(node.label)
+          ? node.label.join(' ').trim() || node.id
+          : node.label?.trim() || node.id
+        const type = specDeviceType(node.spec)
+        const hardware = node.spec?.kind === 'hardware' ? node.spec : undefined
+        const displayName =
+          typeof node.metadata?.displayName === 'string' ? node.metadata.displayName : ''
+        const context =
+          typeof node.metadata?.searchContext === 'string' ? node.metadata.searchContext : ''
+        return {
+          id: node.id,
+          label,
+          searchAliases: [displayName, context].filter(Boolean),
+          context,
+          spec: {
+            type,
+            vendor: hardware?.vendor,
+            model: hardware?.model,
+          },
+        }
+      }),
+      (node) => node.label,
+    )
   })
 
   // Custom filter: match label/id/type, prioritize label-starts-with

@@ -13,6 +13,7 @@
     DataSourcePluginInfo,
     PluginConfigSchema,
   } from '$lib/types'
+  import { sortByName } from '$lib/utils/sort'
 
   let showCreateModal = $state(false)
   let testingId = $state<string | null>(null)
@@ -45,7 +46,10 @@
     dataSources.load()
     // Load available plugin types
     try {
-      pluginTypes = await api.dataSources.getPluginTypes()
+      pluginTypes = sortByName(
+        await api.dataSources.getPluginTypes(),
+        (plugin) => plugin.displayName ?? plugin.type,
+      )
     } catch (e) {
       console.error('Failed to load plugin types:', e)
     }

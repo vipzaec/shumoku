@@ -142,6 +142,7 @@
   import { resolvedTheme } from '$lib/stores/theme'
   import { formatTraffic } from '$lib/utils/format'
   import { nodeLabel, nodeLabelById } from '$lib/utils/node-label'
+  import { sortByName } from '$lib/utils/sort'
   import { getUtilizationColor, IDLE_LINK_METRICS, isLinkInstrumented } from '$lib/weathermap'
 
   // --- Props (Svelte 5 runes) ---
@@ -338,6 +339,7 @@
   let linkEditorOpen = $state(false)
   let linkDraft = $state<OperatorLink | null>(null)
   let linkDraftError = $state('')
+  let linkPickEndpoint = $state<'from' | 'to' | null>(null)
   const editorSourceId = $derived(
     appearanceEditorOpen ? appearanceDraft?.fromNode : linkEditorOpen ? linkDraft?.from : undefined,
   )
@@ -447,15 +449,6 @@
     if (flowDraft?.id === id) flowDraft = null
   }
 
-  async function moveCustomFlow(id: string, delta: number) {
-    const next = [...customTrafficFlows]
-    const index = next.findIndex((flow) => flow.id === id)
-    const target = index + delta
-    if (index < 0 || target < 0 || target >= next.length) return
-    ;[next[index], next[target]] = [next[target], next[index]]
-    await saveCustomTrafficFlows(next)
-  }
-
   async function toggleCustomFlow(flow: TrafficFlowProfile) {
     await saveCustomTrafficFlows(
       customTrafficFlows.map((item) =>
@@ -472,9 +465,10 @@
   }
 
   const pathNodes = $derived.by(() =>
-    [...(graph?.nodes ?? [])]
-      .map((node) => ({ id: node.id, label: nodeLabel(node) }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
+    sortByName(
+      (graph?.nodes ?? []).map((node) => ({ id: node.id, label: nodeLabel(node) })),
+      (item) => item.label,
+    ),
   )
 
   function trafficDecision(link: Record<string, unknown>): string {
@@ -598,7 +592,10 @@
   })
   const editableTrafficFlows = $derived.by(() => {
     const customIds = new Set(customTrafficFlows.map((flow) => flow.id))
-    return [...customTrafficFlows, ...trafficFlowProfiles.filter((flow) => !customIds.has(flow.id))]
+    return sortByName(
+      [...customTrafficFlows, ...trafficFlowProfiles.filter((flow) => !customIds.has(flow.id))],
+      (flow) => flow.label,
+    )
   })
   const availableTrafficFlows = $derived(
     editableTrafficFlows.filter((flow) => flow.enabled !== false),
@@ -696,7 +693,10 @@
           entries.set(source, observedAt)
       }
     }
-    return [...entries.entries()].map(([source, observedAt]) => ({ source, observedAt }))
+    return sortByName(
+      [...entries.entries()].map(([source, observedAt]) => ({ source, observedAt })),
+      (item) => item.source,
+    )
   })
   const reconciliationIssues = $derived.by(() => {
     const issues: Array<{
@@ -724,7 +724,7 @@
         })
       }
     }
-    return issues
+    return sortByName(issues, (issue) => `${issue.node} · ${issue.field}`)
   })
 
   function inspectReconciliationIssue(nodeId: string) {
@@ -1572,6 +1572,25 @@
 
   function handleSelect(id: string | null, type: string | null) {
     if (layoutEdit) {
+      if (linkEditorOpen && linkPickEndpoint) {
+        if (!id || !graph) return
+        const target =
+          type === 'node'
+            ? graph.nodes.find((node) => node.id === id)
+            : type === 'subgraph'
+              ? graph.nodes.find(
+                  (node) =>
+                    node.parent === id &&
+                    node.metadata?.['presentationRole'] === 'subgraph-boundary-port',
+                )
+              : undefined
+        if (!target || !linkDraft) return
+        linkDraft[linkPickEndpoint] = target.id
+        linkPickEndpoint = null
+        linkDraftError = ''
+        if (linkDraft.from && linkDraft.to) autoPlaceLinkSides()
+        return
+      }
       selectedLayoutLinkId = type === 'edge' ? id : null
       selectedLayoutNode = id
       selectedLayoutType = type
@@ -1803,8 +1822,11 @@
   }
 
   function availableParentsFor(id: string) {
-    return (graph?.subgraphs ?? []).filter(
-      (candidate) => candidate.id !== id && !isSubgraphDescendant(candidate.id, id),
+    return sortByName(
+      (graph?.subgraphs ?? []).filter(
+        (candidate) => candidate.id !== id && !isSubgraphDescendant(candidate.id, id),
+      ),
+      (parent) => nodeLabel({ id: parent.id, label: parent.label }),
     )
   }
 
@@ -1880,11 +1902,14 @@
 
   function filteredIconTypes() {
     const query = iconQuery.trim().toLowerCase()
-    return query
-      ? objectIconTypes.filter(
-          ([value, label]) => value.includes(query) || label.toLowerCase().includes(query),
-        )
-      : objectIconTypes
+    return sortByName(
+      query
+        ? objectIconTypes.filter(
+            ([value, label]) => value.includes(query) || label.toLowerCase().includes(query),
+          )
+        : objectIconTypes,
+      (item) => item[1] ?? '',
+    )
   }
 
   async function readLocalIcon(file: File): Promise<string> {
@@ -2019,10 +2044,15 @@
   }
 
   function startAddObject() {
+    const selectedContainer =
+      selectedLayoutType === 'subgraph' &&
+      graph?.subgraphs?.some((group) => group.id === selectedLayoutNode)
+        ? (selectedLayoutNode ?? undefined)
+        : undefined
     objectDraft = {
       id: `operator-${Date.now()}`,
       label: ['New block'],
-      parent: undefined,
+      parent: selectedContainer,
       type: 'generic',
       tenant: topologyTenant(),
       notes: '',
@@ -2039,7 +2069,10 @@
     bindingError = ''
     try {
       const sources = (await api.dataSources.list()).filter((source) => source.type === 'netbox')
-      bindingSources = sources.map((source) => ({ id: source.id, name: source.name }))
+      bindingSources = sortByName(
+        sources.map((source) => ({ id: source.id, name: source.name })),
+        (source) => source.name,
+      )
       bindingSourceId = objectDraft?.binding?.dataSourceId ?? bindingSources[0]?.id ?? ''
       bindingKind = objectDraft?.binding?.kind ?? 'virtual-machine'
       bindingQuery = objectDraft?.binding?.objectName ?? ''
@@ -2053,10 +2086,9 @@
     bindingLoading = true
     bindingError = ''
     try {
-      bindingResults = await api.dataSources.listBindableObjects(
-        bindingSourceId,
-        bindingKind,
-        bindingQuery,
+      bindingResults = sortByName(
+        await api.dataSources.listBindableObjects(bindingSourceId, bindingKind, bindingQuery),
+        (result) => result.name,
       )
       if (bindingResults.length === 0) bindingError = 'No matching NetBox objects'
     } catch (error) {
@@ -2300,7 +2332,16 @@
   }
 
   function startAddLink() {
-    const first = selectedLayoutType === 'node' ? (selectedLayoutNode ?? '') : ''
+    const first =
+      selectedLayoutType === 'node'
+        ? (selectedLayoutNode ?? '')
+        : selectedLayoutType === 'subgraph'
+          ? (graph?.nodes.find(
+              (node) =>
+                node.parent === selectedLayoutNode &&
+                node.metadata?.['presentationRole'] === 'subgraph-boundary-port',
+            )?.id ?? '')
+          : ''
     linkDraft = {
       id: `operator-link-${Date.now()}`,
       from: first,
@@ -2314,6 +2355,7 @@
       toSide: 'left',
     }
     linkDraftError = ''
+    linkPickEndpoint = null
     linkEditorOpen = true
   }
 
@@ -2323,6 +2365,7 @@
     if (!existing) return
     linkDraft = { ...existing }
     linkDraftError = ''
+    linkPickEndpoint = null
     linkEditorOpen = true
   }
 
@@ -2623,7 +2666,11 @@
 
   function appearancePorts(side: 'from' | 'to') {
     const nodeId = side === 'from' ? appearanceDraft?.fromNode : appearanceDraft?.toNode
-    return graph?.nodes.find((node) => node.id === nodeId)?.ports ?? []
+    const ports = graph?.nodes.find((node) => node.id === nodeId)?.ports ?? []
+    return sortByName(
+      ports.map((port, index) => ({ port, label: readablePortName(port, index, side) })),
+      (item) => item.label,
+    )
   }
 
   function appearanceEndpointName(side: 'from' | 'to'): string {
@@ -2660,6 +2707,14 @@
     return node ? diagramNodeName(node) : nodeId
   }
 
+  function sortedDiagramNodes() {
+    return sortByName(graph?.nodes ?? [], diagramNodeName)
+  }
+
+  function sortedFlowLinks() {
+    return sortByName(graph?.links ?? [], flowLinkLabel)
+  }
+
   function readablePortName(
     port: NonNullable<NetworkGraph['nodes'][number]['ports']>[number],
     index: number,
@@ -2685,7 +2740,7 @@
         .trim()
       peers.add(name || (other ? nodeLabel(other) : otherId))
     }
-    const peerNames = [...peers]
+    const peerNames = sortByName([...peers], (name) => name)
     const connection = peerNames.length
       ? ` · ${peerNames.slice(0, 2).join(', ')}${peerNames.length > 2 ? ` +${peerNames.length - 2}` : ''}`
       : ''
@@ -2755,6 +2810,7 @@
     )
     serverLayout = undefined
     linkEditorOpen = false
+    linkPickEndpoint = null
     linkDraft = null
     linkDraftError = ''
   }
@@ -2775,6 +2831,7 @@
       next,
     )
     linkEditorOpen = false
+    linkPickEndpoint = null
     linkDraft = null
     selectedLayoutLinkId = null
     void loadGraph()
@@ -3132,6 +3189,11 @@
   // --- Keyboard shortcut for search palette ---
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && linkPickEndpoint) {
+      linkPickEndpoint = null
+      e.preventDefault()
+      return
+    }
     if (e.key === 'Escape' && portEditorOpen) {
       portEditorOpen = false
       portDraft = null
@@ -3337,9 +3399,9 @@
           value={objectSource}
           onchange={(event) => changeObjectSource(event.currentTarget.value as typeof objectSource)}
         >
+          <option value="Existing object">Existing topology object</option>
           <option value="Manual">Manual documentation</option>
           <option value="NetBox">NetBox inventory</option>
-          <option value="Existing object">Existing topology object</option>
         </select>
       </label>
       {#if objectSource === 'Existing object'}
@@ -3350,7 +3412,7 @@
             onchange={(event) => chooseExistingObject(event.currentTarget.value)}
           >
             <option value="">Choose an existing block</option>
-            {#each graph?.nodes.filter((node) => node.id !== objectDraft?.id && !node.metadata?.operatorObject) ?? [] as node}
+            {#each sortByName(graph?.nodes.filter((node) => node.id !== objectDraft?.id && !node.metadata?.operatorObject) ?? [], nodeLabel) as node}
               <option value={node.id}>{nodeLabel(node)}</option>
             {/each}
           </select>
@@ -3407,7 +3469,7 @@
           </button>
         {/if}
         <div class="service-icon-list">
-          {#each serviceIcons as item}
+          {#each sortByName(serviceIcons, (item) => item.label) as item}
             <button
               class:chosen={objectDraft.icon === item.icon}
               onclick={() => {
@@ -3499,10 +3561,10 @@
               <label
                 >Object type
                 <select bind:value={bindingKind}>
-                  <option value="virtual-machine">Virtual machine</option>
                   <option value="device">Device</option>
                   <option value="ip-address">IP address</option>
                   <option value="prefix">Prefix / network</option>
+                  <option value="virtual-machine">Virtual machine</option>
                 </select>
               </label>
             </div>
@@ -3558,6 +3620,7 @@
         <button
           onclick={() => {
     linkEditorOpen = false
+    linkPickEndpoint = null
     linkDraft = null
   }}
           aria-label="Close connection editor"
@@ -3565,34 +3628,66 @@
           ×
         </button>
       </div>
-      <label
-        >Source
-        <span class="editor-help"
-          >{linkDraft.from
-    ? `${diagramNodeNameById(linkDraft.from)} · blue block`
-    : 'Choose the block where the connection starts'}</span
-        >
-        <select bind:value={linkDraft.from}>
-          <option value="">Choose a block</option>
-          {#each graph?.nodes ?? [] as node}
-            <option value={node.id}>{diagramNodeName(node)}</option>
-          {/each}
-        </select>
-      </label>
-      <label
-        >Destination
-        <span class="editor-help"
-          >{linkDraft.to
-    ? `${diagramNodeNameById(linkDraft.to)} · orange block`
-    : 'Choose the block where the connection ends'}</span
-        >
-        <select bind:value={linkDraft.to}>
-          <option value="">Choose a block</option>
-          {#each graph?.nodes ?? [] as node}
-            <option value={node.id}>{diagramNodeName(node)}</option>
-          {/each}
-        </select>
-      </label>
+      <div class="endpoint-field">
+        <label for="connection-source-block">Source</label>
+        <span class="editor-help">
+          {linkPickEndpoint === 'from'
+            ? 'Click a block on the plan; press Esc to cancel'
+            : linkDraft.from
+              ? `${diagramNodeNameById(linkDraft.from)} · blue block`
+              : 'Choose the block where the connection starts'}
+        </span>
+        <div class="endpoint-picker">
+          <select
+            id="connection-source-block"
+            bind:value={linkDraft.from}
+            onchange={() => (linkPickEndpoint = null)}
+          >
+            <option value="">Choose a block</option>
+            {#each sortedDiagramNodes() as node}
+              <option value={node.id}>{diagramNodeName(node)}</option>
+            {/each}
+          </select>
+          <button
+            type="button"
+            class:active={linkPickEndpoint === 'from'}
+            aria-pressed={linkPickEndpoint === 'from'}
+            onclick={() => (linkPickEndpoint = linkPickEndpoint === 'from' ? null : 'from')}
+          >
+            Pick on plan
+          </button>
+        </div>
+      </div>
+      <div class="endpoint-field">
+        <label for="connection-destination-block">Destination</label>
+        <span class="editor-help">
+          {linkPickEndpoint === 'to'
+            ? 'Click a block on the plan; press Esc to cancel'
+            : linkDraft.to
+              ? `${diagramNodeNameById(linkDraft.to)} · orange block`
+              : 'Choose the block where the connection ends'}
+        </span>
+        <div class="endpoint-picker">
+          <select
+            id="connection-destination-block"
+            bind:value={linkDraft.to}
+            onchange={() => (linkPickEndpoint = null)}
+          >
+            <option value="">Choose a block</option>
+            {#each sortedDiagramNodes() as node}
+              <option value={node.id}>{diagramNodeName(node)}</option>
+            {/each}
+          </select>
+          <button
+            type="button"
+            class:active={linkPickEndpoint === 'to'}
+            aria-pressed={linkPickEndpoint === 'to'}
+            onclick={() => (linkPickEndpoint = linkPickEndpoint === 'to' ? null : 'to')}
+          >
+            Pick on plan
+          </button>
+        </div>
+      </div>
       <label
         >Connection label
         <input bind:value={linkDraft.label}>
@@ -3608,19 +3703,19 @@
         <label
           >Relationship
           <select bind:value={linkDraft.relationship}>
-            <option value="network">Network</option>
-            <option value="management">Management</option>
             <option value="dependency">Dependency</option>
-            <option value="traffic">Traffic flow</option>
             <option value="documentation">Documentation</option>
+            <option value="management">Management</option>
+            <option value="network">Network</option>
+            <option value="traffic">Traffic flow</option>
           </select>
         </label>
         <label
           >Direction
           <select bind:value={linkDraft.direction}>
-            <option value="forward">Source → destination</option>
-            <option value="back">Source ← destination</option>
             <option value="both">Bidirectional</option>
+            <option value="back">Source ← destination</option>
+            <option value="forward">Source → destination</option>
             <option value="none">Undirected</option>
           </select>
         </label>
@@ -3629,19 +3724,19 @@
         <label
           >Source side
           <select bind:value={linkDraft.fromSide}>
-            <option value="right">Right</option>
-            <option value="left">Left</option>
-            <option value="top">Top</option>
             <option value="bottom">Bottom</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+            <option value="top">Top</option>
           </select>
         </label>
         <label
           >Destination side
           <select bind:value={linkDraft.toSide}>
+            <option value="bottom">Bottom</option>
             <option value="left">Left</option>
             <option value="right">Right</option>
             <option value="top">Top</option>
-            <option value="bottom">Bottom</option>
           </select>
         </label>
       </div>
@@ -3678,7 +3773,7 @@
       <label
         >Block
         <select bind:value={portDraft.targetNodeId}>
-          {#each graph?.nodes ?? [] as node (node.id)}
+          {#each sortedDiagramNodes() as node (node.id)}
             <option value={node.id}>{diagramNodeName(node)}</option>
           {/each}
         </select>
@@ -3872,7 +3967,7 @@
           value={appearanceDraft.fromNode}
           onchange={(event) => selectAppearanceNode('from', event.currentTarget.value)}
         >
-          {#each graph?.nodes ?? [] as node (node.id)}
+          {#each sortedDiagramNodes() as node (node.id)}
             <option value={node.id}>{diagramNodeName(node)}</option>
           {/each}
         </select>
@@ -3881,8 +3976,8 @@
         >Source point
         <span class="editor-help">{appearanceEndpointName('from')} · blue block</span>
         <select bind:value={appearanceDraft.from}>
-          {#each appearancePorts('from') as port, index}
-            <option value={port.id}>{readablePortName(port, index, 'from')}</option>
+          {#each appearancePorts('from') as item}
+            <option value={item.port.id}>{item.label}</option>
           {/each}
         </select>
       </label>
@@ -3892,7 +3987,7 @@
           value={appearanceDraft.toNode}
           onchange={(event) => selectAppearanceNode('to', event.currentTarget.value)}
         >
-          {#each graph?.nodes ?? [] as node (node.id)}
+          {#each sortedDiagramNodes() as node (node.id)}
             <option value={node.id}>{diagramNodeName(node)}</option>
           {/each}
         </select>
@@ -3901,8 +3996,8 @@
         >Destination point
         <span class="editor-help">{appearanceEndpointName('to')} · orange block</span>
         <select bind:value={appearanceDraft.to}>
-          {#each appearancePorts('to') as port, index}
-            <option value={port.id}>{readablePortName(port, index, 'to')}</option>
+          {#each appearancePorts('to') as item}
+            <option value={item.port.id}>{item.label}</option>
           {/each}
         </select>
       </label>
@@ -3961,10 +4056,10 @@
       <label
         >Internal layout
         <select bind:value={groupDraft.direction}>
+          <option value="BT">Bottom to top</option>
           <option value="LR">Left to right</option>
           <option value="RL">Right to left</option>
           <option value="TB">Top to bottom</option>
-          <option value="BT">Bottom to top</option>
         </select>
       </label>
       <div class="object-editor-actions">
@@ -3992,7 +4087,7 @@
         <div class="empty-editor-state">No operator groups</div>
       {:else}
         <div class="group-list">
-          {#each operatorGroups as group}
+          {#each sortByName(operatorGroups, (group) => group.label) as group}
             <div class="group-list-row">
               <button class="group-name" onclick={() => startEditGroup(group)}>
                 {group.label}
@@ -4379,8 +4474,6 @@
             <div class="flow-editor-row">
               <button class="flow-name" onclick={() => editFlowDraft(flow)}>{flow.label}</button>
               {#if customTrafficFlows.some((item) => item.id === flow.id)}
-                <button title="Move up" onclick={() => moveCustomFlow(flow.id, -1)}>↑</button>
-                <button title="Move down" onclick={() => moveCustomFlow(flow.id, 1)}>↓</button>
                 <button
                   title={flow.enabled === false ? 'Enable' : 'Disable'}
                   onclick={() => toggleCustomFlow(flow)}
@@ -4427,7 +4520,7 @@
                   >Select links in traffic order. Leave empty to use the calculated shortest
                   path.</small
                 >
-                {#each graph.links as link}
+                {#each sortedFlowLinks() as link}
                   <label class="flow-link-option">
                     <input
                       type="checkbox"
@@ -4449,7 +4542,7 @@
               <fieldset>
                 <legend>Supporting control-plane links</legend>
                 <small>Highlighted alongside the data path using the control color.</small>
-                {#each graph.links as link}
+                {#each sortedFlowLinks() as link}
                   <label class="flow-link-option">
                     <input
                       type="checkbox"
@@ -4728,6 +4821,41 @@
     gap: 5px;
     font-size: 12px;
     font-weight: 600;
+  }
+
+  .endpoint-field {
+    display: grid;
+    gap: 5px;
+  }
+
+  .endpoint-field > label {
+    display: block;
+  }
+
+  .endpoint-picker {
+    display: flex;
+    gap: 6px;
+  }
+
+  .endpoint-picker select {
+    flex: 1;
+  }
+
+  .endpoint-picker button {
+    flex: none;
+    padding: 6px 8px;
+    color: var(--color-text, #111827);
+    background: var(--color-bg, #ffffff);
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+
+  .endpoint-picker button.active {
+    color: #ffffff;
+    background: var(--primary, #2563eb);
+    border-color: var(--primary, #2563eb);
   }
 
   .object-editor textarea,

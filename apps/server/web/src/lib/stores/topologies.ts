@@ -6,6 +6,7 @@
 import { derived, writable } from 'svelte/store'
 import { api } from '$lib/api'
 import type { MetricsMapping, Topology, TopologyInput } from '$lib/types'
+import { sortByName } from '$lib/utils/sort'
 
 interface TopologiesState {
   items: Topology[]
@@ -119,6 +120,6 @@ function createTopologiesStore() {
 export const topologies = createTopologiesStore()
 
 // Derived stores for easy access
-export const topologiesList = derived(topologies, ($t) => $t.items)
+export const topologiesList = derived(topologies, ($t) => sortByName($t.items, (item) => item.name))
 export const topologiesLoading = derived(topologies, ($t) => $t.loading)
 export const topologiesError = derived(topologies, ($t) => $t.error)

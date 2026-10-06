@@ -20,6 +20,7 @@
     DataSourcePluginInfo,
     PluginConfigSchema,
   } from '$lib/types'
+  import { sortByName } from '$lib/utils/sort'
 
   // Get ID from route params (always defined for this route)
   // biome-ignore lint/style/noNonNullAssertion: using depricated $page, which is not typed
@@ -225,7 +226,10 @@
 
         if (ds.type === 'manual') {
           try {
-            attachedTopologies = await api.dataSources.listAttachedTopologies(currentId)
+            attachedTopologies = sortByName(
+              await api.dataSources.listAttachedTopologies(currentId),
+              (topology) => topology.name,
+            )
           } catch (err) {
             console.warn('[Manual] Failed to list attached topologies:', err)
           }

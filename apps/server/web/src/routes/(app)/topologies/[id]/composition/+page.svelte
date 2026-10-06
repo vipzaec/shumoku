@@ -17,6 +17,7 @@
   import { type Attachment, api, type DiscoveryMode } from '$lib/api'
   import DiscoveryNodeDetail from '$lib/components/DiscoveryNodeDetail.svelte'
   import { Button } from '$lib/components/ui/button'
+  import { sortByName } from '$lib/utils/sort'
   import { useTopologyCtx } from '../_context.svelte'
 
   const ctx = useTopologyCtx()
@@ -104,19 +105,22 @@
 
   let filteredDiscoveredNodes = $derived.by(() => {
     const q = discoverySearch.trim().toLowerCase()
-    return discoveredNodes.filter((c) => {
-      if (qualityFilter !== 'all' && c.quality !== qualityFilter) return false
-      if (modeFilter !== 'all') {
-        const eff = policyView?.nodes[c.id]
-        if ((eff?.mode ?? policyView?.runtimeDefault.mode) !== modeFilter) return false
-      }
-      if (!q) return true
-      const hay = [c.label, c.model, c.vendor, c.mgmtIp, c.sysName]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-      return hay.includes(q)
-    })
+    return sortByName(
+      discoveredNodes.filter((c) => {
+        if (qualityFilter !== 'all' && c.quality !== qualityFilter) return false
+        if (modeFilter !== 'all') {
+          const eff = policyView?.nodes[c.id]
+          if ((eff?.mode ?? policyView?.runtimeDefault.mode) !== modeFilter) return false
+        }
+        if (!q) return true
+        const hay = [c.label, c.model, c.vendor, c.mgmtIp, c.sysName]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return hay.includes(q)
+      }),
+      (card) => card.label,
+    )
   })
 
   let modeCounts = $derived.by(() => {
