@@ -8,6 +8,7 @@
     computePortLabelPosition,
     getVlanStroke,
     polylinePath,
+    screenToWorld,
   } from '../../lib/svg-coords'
 
   let {
@@ -58,7 +59,35 @@
   // Edges with `edge.route` set were routed orthogonally (bus / polyline)
   // by the router and override the default Bezier; the polyline points
   // are drawn as right-angle segments with rounded corners.
-  const continuation = $derived(continuationGeometry(edge, nodes, subgraphs))
+  let terminalPreview = $state<{ index: number; x: number; y: number } | null>(null)
+  const continuation = $derived.by(() => {
+    if (!terminalPreview) return continuationGeometry(edge, nodes, subgraphs)
+    const config = edge.link.metadata?.['continuation']
+    if (!config || typeof config !== 'object' || Array.isArray(config))
+      return continuationGeometry(edge, nodes, subgraphs)
+    const absoluteKey = terminalPreview.index === 0 ? 'source' : 'destination'
+    const relativeKey = terminalPreview.index === 0 ? 'sourceRelative' : 'destinationRelative'
+    return continuationGeometry(
+      {
+        ...edge,
+        link: {
+          ...edge.link,
+          metadata: {
+            ...edge.link.metadata,
+            continuation: {
+              ...config,
+              [relativeKey]: undefined,
+              [absoluteKey]: { x: terminalPreview.x, y: terminalPreview.y },
+            },
+          },
+        },
+      },
+      // Keep the pointer preview cheap and fluid; resolve obstacle detours
+      // only once the marker is released.
+      undefined,
+      undefined,
+    )
+  })
   const pathD = $derived(
     continuation?.path ??
       (edge.link.metadata?.['routeShape'] === 'straight' &&
@@ -179,11 +208,24 @@
   }
   let draggedPoint = $state<number | null>(null)
   let draggedTerminal = $state<number | null>(null)
+  let terminalDragStart: { x: number; y: number } | null = null
+  function previewTerminal(e: PointerEvent) {
+    if (draggedTerminal === null) return
+    const svg = (e.currentTarget as SVGElement).ownerSVGElement
+    if (!svg) return
+    terminalPreview = { index: draggedTerminal, ...screenToWorld(svg, e.clientX, e.clientY) }
+  }
   function finishTerminal(e: PointerEvent) {
     if (draggedTerminal === null) return
     e.stopPropagation()
-    oncontinuationmove?.(edge.id, draggedTerminal, e.clientX, e.clientY)
+    if (
+      terminalDragStart &&
+      Math.hypot(e.clientX - terminalDragStart.x, e.clientY - terminalDragStart.y) > 4
+    )
+      oncontinuationmove?.(edge.id, draggedTerminal, e.clientX, e.clientY)
     draggedTerminal = null
+    terminalPreview = null
+    terminalDragStart = null
   }
   function finishPoint(e: PointerEvent) {
     if (draggedPoint === null) return
@@ -258,9 +300,12 @@
           if (!routeEdit || !selected) return
           e.stopPropagation()
           draggedTerminal = index
+          terminalDragStart = { x: e.clientX, y: e.clientY }
           e.currentTarget.setPointerCapture(e.pointerId)
         }}
+        onpointermove={previewTerminal}
         onpointerup={finishTerminal}
+        onpointercancel={() => { draggedTerminal = null; terminalPreview = null; terminalDragStart = null }}
         style={routeEdit && selected ? 'cursor: grab; touch-action: none' : 'cursor: pointer'}
         title={routeEdit && selected ? 'Drag to move this continuation marker' : undefined}
       >

@@ -25,7 +25,9 @@ export function projectBoundaryPort(
   const position = horizontal ? pointer.x - bounds.x : pointer.y - bounds.y
   const length = horizontal ? bounds.width : bounds.height
   const continuous = Math.max(0.1, Math.min(0.9, position / Math.max(length, 1)))
-  const offset = snap ? Math.round(continuous * 20) / 20 : continuous
+  // A one-percent landing grid avoids visible jumps on large blocks while
+  // still producing stable, repeatable saved positions.
+  const offset = snap ? Math.round(continuous * 100) / 100 : continuous
   return {
     side,
     offset,

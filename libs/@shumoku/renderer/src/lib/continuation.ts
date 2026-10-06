@@ -29,6 +29,8 @@ export function continuationGeometry(
     length?: unknown
     source?: unknown
     destination?: unknown
+    sourceRelative?: unknown
+    destinationRelative?: unknown
   }
   if (config.enabled !== true || typeof config.label !== 'string' || !config.label.trim())
     return null
@@ -37,7 +39,7 @@ export function continuationGeometry(
     typeof config.length === 'number' && Number.isFinite(config.length)
       ? Math.max(28, Math.min(160, config.length))
       : 48
-  const end = (port: NonNullable<typeof edge.fromPort>, position: unknown) => {
+  const end = (port: NonNullable<typeof edge.fromPort>, position: unknown, relative: unknown) => {
     const { x, y } = port.absolutePosition
     const normal =
       port.side === 'left'
@@ -48,16 +50,25 @@ export function continuationGeometry(
             ? { x: 0, y: 1 }
             : { x: 1, y: 0 }
     const placed: Position | null =
-      position &&
-      typeof position === 'object' &&
-      'x' in position &&
-      'y' in position &&
-      typeof position.x === 'number' &&
-      typeof position.y === 'number' &&
-      Number.isFinite(position.x) &&
-      Number.isFinite(position.y)
-        ? { x: position.x, y: position.y }
-        : null
+      relative &&
+      typeof relative === 'object' &&
+      'x' in relative &&
+      'y' in relative &&
+      typeof relative.x === 'number' &&
+      typeof relative.y === 'number' &&
+      Number.isFinite(relative.x) &&
+      Number.isFinite(relative.y)
+        ? { x: x + relative.x, y: y + relative.y }
+        : position &&
+            typeof position === 'object' &&
+            'x' in position &&
+            'y' in position &&
+            typeof position.x === 'number' &&
+            typeof position.y === 'number' &&
+            Number.isFinite(position.x) &&
+            Number.isFinite(position.y)
+          ? { x: position.x, y: position.y }
+          : null
     const badgeX = placed?.x ?? x + normal.x * (length + 30)
     const badgeY = placed?.y ?? y + normal.y * (length + 30)
     const dx = badgeX - x
@@ -74,8 +85,8 @@ export function continuationGeometry(
       startY: y,
     }
   }
-  const from = end(edge.fromPort, config.source)
-  const to = end(edge.toPort, config.destination)
+  const from = end(edge.fromPort, config.source, config.sourceRelative)
+  const to = end(edge.toPort, config.destination, config.destinationRelative)
   const segments: Position[][] = [
     nodes && subgraphs
       ? routeContinuationStub(edge, 'source', { x: from.x, y: from.y }, nodes, subgraphs)

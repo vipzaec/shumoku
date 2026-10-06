@@ -139,6 +139,10 @@ export const OperatorLayoutSchema = z.object({
         toNode: z.string().optional(),
         from: z.string().optional(),
         to: z.string().optional(),
+        fromSide: z.enum(['top', 'bottom', 'left', 'right']).optional(),
+        toSide: z.enum(['top', 'bottom', 'left', 'right']).optional(),
+        fromOffset: z.number().min(0.1).max(0.9).optional(),
+        toOffset: z.number().min(0.1).max(0.9).optional(),
       }),
     )
     .optional(),
@@ -151,6 +155,10 @@ export const OperatorLayoutSchema = z.object({
         length: z.number().min(28).max(160).optional(),
         source: z.object({ x: z.number().finite(), y: z.number().finite() }).optional(),
         destination: z.object({ x: z.number().finite(), y: z.number().finite() }).optional(),
+        sourceRelative: z.object({ x: z.number().finite(), y: z.number().finite() }).optional(),
+        destinationRelative: z
+          .object({ x: z.number().finite(), y: z.number().finite() })
+          .optional(),
       }),
     )
     .optional(),

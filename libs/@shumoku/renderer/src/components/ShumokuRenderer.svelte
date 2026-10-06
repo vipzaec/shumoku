@@ -141,6 +141,13 @@
       order: number,
       offset: number,
     ) => void
+    /** Move only one end of a selected connection. Shared ports are untouched. */
+    onedgeendpointmove?: (
+      edgeId: string,
+      endpoint: 'from' | 'to',
+      side: 'top' | 'bottom' | 'left' | 'right',
+      offset: number,
+    ) => void
     onrouteadd?: (id: string, x: number, y: number, index: number) => void
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
@@ -200,6 +207,7 @@
     hideNode,
     oncreatelink,
     onportmove,
+    onedgeendpointmove,
     onrouteadd,
     onroutemove,
     onrouteremove,
@@ -888,6 +896,36 @@
     onportmove(port.nodeId, rawPortId, newSide, newOrder, offset)
   }
 
+  function handleEdgeEndpointDragEnd(
+    edgeId: string,
+    endpoint: 'from' | 'to',
+    screenX: number,
+    screenY: number,
+  ) {
+    const edge = edges.get(edgeId)
+    const port = endpoint === 'from' ? edge?.fromPort : edge?.toPort
+    const node = port && nodes.get(port.nodeId)
+    if (!port || !node?.position || !onedgeendpointmove) return
+    const size = resolveNodeSize(node)
+    const groupBounds =
+      node.metadata?.['presentationRole'] === 'subgraph-boundary-port'
+        ? subgraphs.get(node.parent ?? '')?.bounds
+        : undefined
+    const portBounds = groupBounds ?? {
+      x: node.position.x - size.width / 2,
+      y: node.position.y - size.height / 2,
+      width: size.width,
+      height: size.height,
+    }
+    const placement = projectBoundaryPort(
+      portBounds,
+      screenToSvg(screenX, screenY),
+      port.side,
+      true,
+    )
+    onedgeendpointmove(edgeId, endpoint, placement.side, placement.offset)
+  }
+
   export async function appendLink(link: Link) {
     if (linkExists(links, link.from.node, link.from.port, link.to.node, link.to.port)) return
     links = [...links, link]
@@ -925,6 +963,7 @@
     onlinkend={handleLinkEnd}
     onportdragmove={handlePortDragMove}
     onportdragend={handlePortDragEnd}
+    onedgeendpointdragend={handleEdgeEndpointDragEnd}
     {onlabeledit}
     onrouteadd={(id, x, y) => {
       const p = screenToSvg(x, y)

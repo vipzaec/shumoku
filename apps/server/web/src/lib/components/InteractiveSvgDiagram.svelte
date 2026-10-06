@@ -273,13 +273,24 @@
     { id: 'long-dash', label: 'Long dashes', dash: '16 6' },
     { id: 'double', label: 'Double', dash: '' },
   ] as const
-  type LinkPorts = { fromNode?: string; toNode?: string; from?: string; to?: string }
+  type LinkPorts = {
+    fromNode?: string
+    toNode?: string
+    from?: string
+    to?: string
+    fromSide?: 'top' | 'bottom' | 'left' | 'right'
+    toSide?: 'top' | 'bottom' | 'left' | 'right'
+    fromOffset?: number
+    toOffset?: number
+  }
   type LinkContinuation = {
     enabled: boolean
     label: string
     length?: number
     source?: { x: number; y: number }
     destination?: { x: number; y: number }
+    sourceRelative?: { x: number; y: number }
+    destinationRelative?: { x: number; y: number }
   }
   type PortPresentation = { label?: string; description?: string }
   const defaultBlockSpacing: BlockSpacing = { top: 20, right: 20, bottom: 20, left: 20 }
@@ -287,10 +298,12 @@
   let linkAppearanceOverrides = $state<Record<string, LinkAppearance>>({})
   let linkPortOverrides = $state<Record<string, LinkPorts>>({})
   let linkContinuationOverrides = $state<Record<string, LinkContinuation>>({})
+  let latestLayout: ResolvedLayout | null = null
   let portPresentationOverrides = $state<Record<string, PortPresentation>>({})
   let portEditorOpen = $state(false)
   let portDraft = $state<{
     nodeId: string
+    targetNodeId: string
     portId: string
     label: string
     description: string
@@ -1026,6 +1039,11 @@
     } as T
   }
 
+  const exclusivePortId = (linkId: string, endpoint: 'from' | 'to') =>
+    `operator-edge-endpoint:${linkId}:${endpoint}`
+  const movedPortId = (nodeId: string, portId: string) =>
+    `operator-moved-port:${encodeURIComponent(`${nodeId}:${portId}`)}`
+
   function applyLayoutOverrides(
     source: NetworkGraph,
     pins: Record<string, { x: number; y: number }>,
@@ -1075,7 +1093,7 @@
         id: string
         label: string
         connectors: never[]
-        placement: { side: 'top' | 'bottom' | 'left' | 'right'; order: number }
+        placement: { side: 'top' | 'bottom' | 'left' | 'right'; order: number; offset?: number }
       }>
     >()
     for (const link of manualLinks) {
@@ -1095,6 +1113,62 @@
         placement: { side: link.toSide, order: toPorts.length },
       })
       operatorPorts.set(link.to, toPorts)
+    }
+    // A dragged line end gets its own point. The old point, and every other
+    // connection attached to it, retain their placement and stable IDs.
+    for (const [linkId, override] of Object.entries(linkPorts)) {
+      const sourceLink = source.links.find((link) => link.id === linkId)
+      const manualLink = manualLinks.find((link) => link.id === linkId)
+      for (const endpoint of ['from', 'to'] as const) {
+        const side = endpoint === 'from' ? override.fromSide : override.toSide
+        const offset = endpoint === 'from' ? override.fromOffset : override.toOffset
+        const portId = endpoint === 'from' ? override.from : override.to
+        if (!side || offset === undefined || portId !== exclusivePortId(linkId, endpoint)) continue
+        const nodeId =
+          (endpoint === 'from' ? override.fromNode : override.toNode) ??
+          (endpoint === 'from' ? sourceLink?.from.node : sourceLink?.to.node) ??
+          (endpoint === 'from' ? manualLink?.from : manualLink?.to)
+        if (!nodeId) continue
+        const originalPortId = endpoint === 'from' ? sourceLink?.from.port : sourceLink?.to.port
+        const original = source.nodes
+          .find((node) => node.id === nodeId)
+          ?.ports?.find((port) => port.id === originalPortId)
+        const list = operatorPorts.get(nodeId) ?? []
+        list.push({
+          id: portId,
+          label: original?.label ?? '',
+          connectors: [],
+          placement: { side, order: list.length, offset },
+        })
+        operatorPorts.set(nodeId, list)
+      }
+    }
+    for (const [linkId, override] of Object.entries(linkPorts)) {
+      const sourceLink = source.links.find((link) => link.id === linkId)
+      const manualLink = manualLinks.find((link) => link.id === linkId)
+      for (const endpoint of ['from', 'to'] as const) {
+        const portId = endpoint === 'from' ? override.from : override.to
+        if (!portId?.startsWith('operator-moved-port:')) continue
+        const nodeId =
+          (endpoint === 'from' ? override.fromNode : override.toNode) ??
+          (endpoint === 'from' ? sourceLink?.from.node : sourceLink?.to.node) ??
+          (endpoint === 'from' ? manualLink?.from : manualLink?.to)
+        if (!nodeId) continue
+        const list = operatorPorts.get(nodeId) ?? []
+        if (list.some((port) => port.id === portId)) continue
+        const key = `${nodeId}:${portId}`
+        list.push({
+          id: portId,
+          label: portPresentations[key]?.label ?? '',
+          connectors: [],
+          placement: {
+            side: sides[key] ?? 'left',
+            order: orders[key] ?? list.length,
+            offset: offsets[key] ?? 0.5,
+          },
+        })
+        operatorPorts.set(nodeId, list)
+      }
     }
     const mergedSubgraphs: NonNullable<NetworkGraph['subgraphs']> = [
       ...(source.subgraphs ?? []),
@@ -1214,7 +1288,12 @@
             },
           },
           ports: [
-            ...(node.ports ?? []).filter((port) => !port.id.startsWith('operator-link-')),
+            ...(node.ports ?? []).filter(
+              (port) =>
+                !port.id.startsWith('operator-link-') &&
+                !port.id.startsWith('operator-edge-endpoint:') &&
+                !port.id.startsWith('operator-moved-port:'),
+            ),
             ...(operatorPorts.get(node.id) ?? []),
             ...(!node.ports?.length && !operatorPorts.has(node.id)
               ? [
@@ -1522,6 +1601,7 @@
     if (!node || !port) return
     portDraft = {
       nodeId: node.id,
+      targetNodeId: node.id,
       portId: port.id,
       label: port.label,
       description: portPresentationOverrides[resolvedId]?.description ?? port.notes ?? '',
@@ -1531,7 +1611,43 @@
 
   function savePortDraft() {
     if (!graph || !portDraft) return
-    const key = `${portDraft.nodeId}:${portDraft.portId}`
+    const moving = portDraft.targetNodeId !== portDraft.nodeId
+    const targetPortId = moving ? movedPortId(portDraft.nodeId, portDraft.portId) : portDraft.portId
+    const key = `${portDraft.targetNodeId}:${targetPortId}`
+    if (moving) {
+      const nextLinks = { ...linkPortOverrides }
+      const nextRoutes = { ...edgeRoutes }
+      for (const link of graph.links) {
+        if (!link.id) continue
+        const current = { ...(nextLinks[link.id] ?? {}) }
+        let changed = false
+        if (link.from.node === portDraft.nodeId && link.from.port === portDraft.portId) {
+          current.fromNode = portDraft.targetNodeId
+          current.from = targetPortId
+          delete current.fromSide
+          delete current.fromOffset
+          changed = true
+        }
+        if (link.to.node === portDraft.nodeId && link.to.port === portDraft.portId) {
+          current.toNode = portDraft.targetNodeId
+          current.to = targetPortId
+          delete current.toSide
+          delete current.toOffset
+          changed = true
+        }
+        if (changed) {
+          nextLinks[link.id] = current
+          delete nextRoutes[link.id]
+        }
+      }
+      linkPortOverrides = nextLinks
+      edgeRoutes = nextRoutes
+      const original = graph.nodes
+        .find((node) => node.id === portDraft?.nodeId)
+        ?.ports?.find((port) => port.id === portDraft?.portId)
+      portSides = { ...portSides, [key]: original?.placement?.side ?? 'left' }
+      portOffsets = { ...portOffsets, [key]: original?.placement?.offset ?? 0.5 }
+    }
     portPresentationOverrides = {
       ...portPresentationOverrides,
       [key]: { label: portDraft.label.trim(), description: portDraft.description.trim() },
@@ -1603,6 +1719,39 @@
     void persistOperatorLayout(pinnedPositions, next, nextOrders, nextOffsets, edgeRoutes)
     graph = applyLayoutOverrides(graph, pinnedPositions, next, nextOrders, nextOffsets)
     serverLayout = undefined
+  }
+
+  function handleEdgeEndpointMove(
+    linkId: string,
+    endpoint: 'from' | 'to',
+    side: 'top' | 'bottom' | 'left' | 'right',
+    offset: number,
+  ) {
+    if (!layoutEdit || !graph?.links.some((link) => link.id === linkId)) return
+    const current = linkPortOverrides[linkId] ?? {}
+    const next = {
+      ...linkPortOverrides,
+      [linkId]: {
+        ...current,
+        [endpoint]: exclusivePortId(linkId, endpoint),
+        [endpoint === 'from' ? 'fromSide' : 'toSide']: side,
+        [endpoint === 'from' ? 'fromOffset' : 'toOffset']: offset,
+      },
+    }
+    const nextRoutes = { ...edgeRoutes }
+    delete nextRoutes[linkId]
+    linkPortOverrides = next
+    edgeRoutes = nextRoutes
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, nextRoutes)
+    graph = applyLayoutOverrides(
+      baseGraph ?? graph,
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+    )
+    serverLayout = undefined
+    selectedLayoutLinkId = linkId
   }
 
   function unpinSelected() {
@@ -2273,6 +2422,12 @@
         ...(previousContinuation?.destination
           ? { destination: previousContinuation.destination }
           : {}),
+        ...(previousContinuation?.sourceRelative
+          ? { sourceRelative: previousContinuation.sourceRelative }
+          : {}),
+        ...(previousContinuation?.destinationRelative
+          ? { destinationRelative: previousContinuation.destinationRelative }
+          : {}),
       }
     }
     const selectedPorts = {
@@ -2282,6 +2437,22 @@
       ...(appearanceDraft.toNode !== link.to.node ? { toNode: appearanceDraft.toNode } : {}),
       ...(appearanceDraft.from !== link.from.port ? { from: appearanceDraft.from } : {}),
       ...(appearanceDraft.to !== link.to.port ? { to: appearanceDraft.to } : {}),
+      ...(appearanceDraft.from === exclusivePortId(link.id, 'from') &&
+      linkPortOverrides[link.id]?.fromSide &&
+      linkPortOverrides[link.id]?.fromOffset !== undefined
+        ? {
+            fromSide: linkPortOverrides[link.id].fromSide,
+            fromOffset: linkPortOverrides[link.id].fromOffset,
+          }
+        : {}),
+      ...(appearanceDraft.to === exclusivePortId(link.id, 'to') &&
+      linkPortOverrides[link.id]?.toSide &&
+      linkPortOverrides[link.id]?.toOffset !== undefined
+        ? {
+            toSide: linkPortOverrides[link.id].toSide,
+            toOffset: linkPortOverrides[link.id].toOffset,
+          }
+        : {}),
     }
     if (Object.keys(selectedPorts).length) nextPorts[link.id] = selectedPorts
     else delete nextPorts[link.id]
@@ -2296,7 +2467,9 @@
       appearanceDraft.routeShape !== priorShape ||
       appearanceDraft.routePolicy !== priorPolicy ||
       appearanceDraft.fromNode !== link.from.node ||
-      appearanceDraft.toNode !== link.to.node
+      appearanceDraft.toNode !== link.to.node ||
+      appearanceDraft.from !== link.from.port ||
+      appearanceDraft.to !== link.to.port
     ) {
       delete nextRoutes[link.id]
     }
@@ -2328,14 +2501,22 @@
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return
     const continuation = raw as Partial<LinkContinuation>
     if (continuation.enabled !== true || !continuation.label?.trim()) return
+    const port =
+      index === 0 ? latestLayout?.edges.get(id)?.fromPort : latestLayout?.edges.get(id)?.toPort
+    const key = index === 0 ? 'source' : 'destination'
+    const relativeKey = index === 0 ? 'sourceRelative' : 'destinationRelative'
+    const updated: LinkContinuation = {
+      ...continuation,
+      enabled: true,
+      label: continuation.label,
+      ...(port
+        ? { [relativeKey]: { x: x - port.absolutePosition.x, y: y - port.absolutePosition.y } }
+        : { [key]: { x, y } }),
+    }
+    if (port) delete updated[key]
     const next = {
       ...linkContinuationOverrides,
-      [id]: {
-        ...continuation,
-        enabled: true,
-        label: continuation.label,
-        [index === 0 ? 'source' : 'destination']: { x, y },
-      },
+      [id]: updated,
     }
     linkContinuationOverrides = next
     void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
@@ -2348,8 +2529,52 @@
     const id = appearanceDraft.id
     const current = linkContinuationOverrides[id]
     if (!current) return
-    const { source: _source, destination: _destination, ...rest } = current
+    const {
+      source: _source,
+      destination: _destination,
+      sourceRelative: _sourceRelative,
+      destinationRelative: _destinationRelative,
+      ...rest
+    } = current
     linkContinuationOverrides = { ...linkContinuationOverrides, [id]: rest }
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
+    graph = applyLayoutOverrides(
+      baseGraph ?? graph,
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+    )
+    serverLayout = undefined
+  }
+
+  function handleResolvedLayout(layout: ResolvedLayout) {
+    latestLayout = layout
+    // Older saved markers used absolute canvas coordinates and therefore
+    // stayed behind when their parent VM/group moved. Rebase them once onto
+    // the resolved endpoint position; subsequent moves follow that endpoint.
+    let changed = false
+    const next = { ...linkContinuationOverrides }
+    for (const [id, config] of Object.entries(next)) {
+      const edge = layout.edges.get(id)
+      if (!edge) continue
+      const migrated = { ...config }
+      for (const endpoint of ['source', 'destination'] as const) {
+        const position = config[endpoint]
+        const relativeKey = endpoint === 'source' ? 'sourceRelative' : 'destinationRelative'
+        const port = endpoint === 'source' ? edge.fromPort : edge.toPort
+        if (!position || config[relativeKey] || !port) continue
+        migrated[relativeKey] = {
+          x: position.x - port.absolutePosition.x,
+          y: position.y - port.absolutePosition.y,
+        }
+        delete migrated[endpoint]
+        changed = true
+      }
+      next[id] = migrated
+    }
+    if (!changed || !graph) return
+    linkContinuationOverrides = next
     void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
     graph = applyLayoutOverrides(
       baseGraph ?? graph,
@@ -2985,7 +3210,9 @@
       sheetCacheStrategy="lazy"
       onselect={handleSelect}
       ondragend={handleLayoutDragEnd}
+      onlayoutready={handleResolvedLayout}
       onportmove={handlePortMove}
+      onedgeendpointmove={handleEdgeEndpointMove}
       routeOverrides={edgeRoutes}
       onrouteadd={addRoutePoint}
       onroutemove={moveRoutePoint}
@@ -3448,6 +3675,18 @@
           ×
         </button>
       </div>
+      <label
+        >Block
+        <select bind:value={portDraft.targetNodeId}>
+          {#each graph?.nodes ?? [] as node (node.id)}
+            <option value={node.id}>{diagramNodeName(node)}</option>
+          {/each}
+        </select>
+      </label>
+      <p class="editor-help">
+        Moving this point to another block keeps every connection attached to it. To move only one
+        line, select the line and drag its endpoint handle.
+      </p>
       <label>Label <input bind:value={portDraft.label} placeholder="LAN, WAN, API…"></label>
       <label
         >Description

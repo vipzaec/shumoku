@@ -44,6 +44,20 @@ describe('paired continuation geometry', () => {
     expect(geometry?.path).toContain('M 500 300 L')
   })
 
+  it('moves a saved marker together with its endpoint block', () => {
+    const connection = edge({
+      enabled: true,
+      label: '1C KEY',
+      sourceRelative: { x: 80, y: 40 },
+    })
+    expect(continuationGeometry(connection)?.ends[0]).toMatchObject({ badgeX: 180, badgeY: 240 })
+    connection.fromPort = {
+      ...connection.fromPort,
+      absolutePosition: { x: 220, y: 260 },
+    }
+    expect(continuationGeometry(connection)?.ends[0]).toMatchObject({ badgeX: 300, badgeY: 300 })
+  })
+
   it('routes a moved marker around a lower nested service and rounds the turn', () => {
     const link = edge({
       enabled: true,

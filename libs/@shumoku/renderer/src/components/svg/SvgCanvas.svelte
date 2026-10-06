@@ -45,6 +45,7 @@
     onlinkend,
     onportdragmove,
     onportdragend,
+    onedgeendpointdragend,
     onlabeledit,
     oncontextmenu: onctx,
     onbackgroundclick,
@@ -82,6 +83,12 @@
     onlinkend?: (portId: string) => void
     onportdragmove?: (portId: string, screenX: number, screenY: number) => void
     onportdragend?: (portId: string, screenX: number, screenY: number) => void
+    onedgeendpointdragend?: (
+      edgeId: string,
+      endpoint: 'from' | 'to',
+      screenX: number,
+      screenY: number,
+    ) => void
     onlabeledit?: (portId: string, label: string, screenX: number, screenY: number) => void
     oncontextmenu?: (id: string, type: string, e: MouseEvent) => void
     onbackgroundclick?: () => void
@@ -102,6 +109,63 @@
     const fit = continuationBoundsFromEdges(bounds, edges.values(), nodes, subgraphs)
     return `${fit.x - 50} ${fit.y - 50} ${fit.width + 100} ${fit.height + 100}`
   })
+
+  // Endpoint handles belong to the selected *line*, not to its shared port.
+  // Keep them outside the port hit area so dragging the square point still
+  // moves every connection that uses that point.
+  let endpointDrag = $state<{
+    edgeId: string
+    endpoint: 'from' | 'to'
+    pointerId: number
+    startScreenX: number
+    startScreenY: number
+    x: number
+    y: number
+  } | null>(null)
+  function endpointHandlePosition(port: ResolvedPort) {
+    const { x, y } = port.absolutePosition
+    return port.side === 'left'
+      ? { x: x - 22, y }
+      : port.side === 'right'
+        ? { x: x + 22, y }
+        : port.side === 'top'
+          ? { x, y: y - 22 }
+          : { x, y: y + 22 }
+  }
+  function startEndpointDrag(edgeId: string, endpoint: 'from' | 'to', e: PointerEvent) {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const svg = svgEl
+    if (!svg) return
+    const point = screenToWorld(svg, e.clientX, e.clientY)
+    endpointDrag = {
+      edgeId,
+      endpoint,
+      pointerId: e.pointerId,
+      startScreenX: e.clientX,
+      startScreenY: e.clientY,
+      ...point,
+    }
+    ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+  }
+  function moveEndpointDrag(e: PointerEvent) {
+    if (!endpointDrag || endpointDrag.pointerId !== e.pointerId || !svgEl) return
+    endpointDrag = { ...endpointDrag, ...screenToWorld(svgEl, e.clientX, e.clientY) }
+  }
+  function finishEndpointDrag(e: PointerEvent) {
+    if (!endpointDrag || endpointDrag.pointerId !== e.pointerId) return
+    e.stopPropagation()
+    const { edgeId, endpoint, startScreenX, startScreenY } = endpointDrag
+    endpointDrag = null
+    ;(e.currentTarget as Element).releasePointerCapture(e.pointerId)
+    if (Math.hypot(e.clientX - startScreenX, e.clientY - startScreenY) >= 3)
+      onedgeendpointdragend?.(edgeId, endpoint, e.clientX, e.clientY)
+  }
+  function cancelEndpointDrag(e: PointerEvent) {
+    if (endpointDrag?.pointerId !== e.pointerId) return
+    endpointDrag = null
+  }
 
   // Camera (pan/zoom) is intentionally NOT attached here. Different host
   // apps have different pan/zoom requirements, so the canvas only
@@ -388,7 +452,7 @@
     {/each}
 
     {#if interactive && portDragGuide}
-      <!-- 5% landing marks appear only while moving a boundary port. -->
+      <!-- Sparse reference marks; the actual landing grid is 1%. -->
       <g pointer-events="none" aria-hidden="true">
         {#each Array.from({ length: 17 }, (_, index) => (index + 2) / 20) as fraction}
           <circle
@@ -402,12 +466,28 @@
               : portDragGuide.side === 'bottom'
                 ? portDragGuide.bounds.y + portDragGuide.bounds.height
                 : portDragGuide.bounds.y + portDragGuide.bounds.height * fraction}
-            r={Math.round(portDragGuide.offset * 20) / 20 === fraction ? 5 : 3}
-            fill={Math.round(portDragGuide.offset * 20) / 20 === fraction ? '#2563eb' : '#ffffff'}
+            r="3"
+            fill="#ffffff"
             stroke="#2563eb"
             stroke-width="1.5"
           />
         {/each}
+        <circle
+          cx={portDragGuide.side === 'left'
+            ? portDragGuide.bounds.x
+            : portDragGuide.side === 'right'
+              ? portDragGuide.bounds.x + portDragGuide.bounds.width
+              : portDragGuide.bounds.x + portDragGuide.bounds.width * portDragGuide.offset}
+          cy={portDragGuide.side === 'top'
+            ? portDragGuide.bounds.y
+            : portDragGuide.side === 'bottom'
+              ? portDragGuide.bounds.y + portDragGuide.bounds.height
+              : portDragGuide.bounds.y + portDragGuide.bounds.height * portDragGuide.offset}
+          r="5"
+          fill="#2563eb"
+          stroke="#ffffff"
+          stroke-width="1.5"
+        />
       </g>
     {/if}
 
@@ -433,6 +513,50 @@
         />
       {/if}
     {/each}
+
+    {#if interactive && onedgeendpointdragend}
+      {#each edges.values() as edge (edge.id)}
+        {#if selection.has(edge.id)}
+          {#each [{ kind: 'from' as const, port: edge.fromPort }, { kind: 'to' as const, port: edge.toPort }] as terminal (terminal.kind)}
+            {#if terminal.port}
+              {@const anchor = endpointHandlePosition(terminal.port)}
+              {@const active = endpointDrag?.edgeId === edge.id && endpointDrag.endpoint === terminal.kind}
+              <g
+                class="edge-endpoint-handle"
+                aria-label={`Move ${terminal.kind === 'from' ? 'source' : 'destination'} of selected connection`}
+                onpointerdown={(event) => startEndpointDrag(edge.id, terminal.kind, event)}
+                onpointermove={moveEndpointDrag}
+                onpointerup={finishEndpointDrag}
+                onpointercancel={cancelEndpointDrag}
+                style="cursor: grab; touch-action: none"
+              >
+                <line
+                  x1={terminal.port.absolutePosition.x}
+                  y1={terminal.port.absolutePosition.y}
+                  x2={active ? endpointDrag?.x : anchor.x}
+                  y2={active ? endpointDrag?.y : anchor.y}
+                  stroke="#2563eb"
+                  stroke-width="1.5"
+                  stroke-dasharray="3 2"
+                  pointer-events="none"
+                />
+                <circle
+                  cx={active ? endpointDrag?.x : anchor.x}
+                  cy={active ? endpointDrag?.y : anchor.y}
+                  r="8"
+                  fill="#ffffff"
+                  stroke="#2563eb"
+                  stroke-width="2"
+                />
+                <title>
+                  Drag this line end to a new point on its block; the shared point stays in place
+                </title>
+              </g>
+            {/if}
+          {/each}
+        {/if}
+      {/each}
+    {/if}
 
     <!-- Keep container titles above edges and ports; the text halo masks crossings. -->
     {#each subgraphs.values() as subgraph (subgraph.id)}

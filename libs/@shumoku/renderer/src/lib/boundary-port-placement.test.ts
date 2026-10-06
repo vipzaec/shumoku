@@ -5,14 +5,14 @@ import { projectBoundaryPort } from './boundary-port-placement'
 const vm = { x: 100, y: 200, width: 400, height: 300 }
 
 describe('boundary port placement', () => {
-  it('follows the parent outline continuously, then settles on a 5% anchor', () => {
+  it('follows the parent outline continuously, then settles on a 1% anchor', () => {
     const preview = projectBoundaryPort(vm, { x: 104, y: 343 }, 'left', false)
     expect(preview.side).toBe('left')
     expect(preview.point).toEqual({ x: 100, y: 343 })
     expect(preview.offset).toBeCloseTo(143 / 300)
 
     const committed = projectBoundaryPort(vm, { x: 104, y: 343 }, 'left', true)
-    expect(committed).toEqual({ side: 'left', offset: 0.5, point: { x: 100, y: 350 } })
+    expect(committed).toEqual({ side: 'left', offset: 0.48, point: { x: 100, y: 344 } })
   })
 
   it('does not jump to the top when the pointer drifts near the left corner', () => {

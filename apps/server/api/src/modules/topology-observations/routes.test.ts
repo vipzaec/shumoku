@@ -130,7 +130,14 @@ describe('topology display settings', () => {
           routePolicy: 'avoid',
         },
       },
-      linkPortOverrides: { ingress: { toNode: 'opnsense-netbird', to: 'ctrl' } },
+      linkPortOverrides: {
+        ingress: {
+          toNode: 'opnsense-netbird',
+          to: 'operator-edge-endpoint:ingress:to',
+          toSide: 'left' as const,
+          toOffset: 0.37,
+        },
+      },
       linkContinuationOverrides: {
         ingress: {
           enabled: true,
@@ -138,6 +145,7 @@ describe('topology display settings', () => {
           length: 56,
           source: { x: 175, y: 210 },
           destination: { x: 630, y: 210 },
+          sourceRelative: { x: 55, y: -30 },
         },
       },
       portPresentationOverrides: {

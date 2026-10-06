@@ -111,6 +111,12 @@
       order: number,
       offset: number,
     ) => void
+    onedgeendpointmove?: (
+      edgeId: string,
+      endpoint: 'from' | 'to',
+      side: 'top' | 'bottom' | 'left' | 'right',
+      offset: number,
+    ) => void
     onrouteadd?: (id: string, x: number, y: number, index: number) => void
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
@@ -139,6 +145,7 @@
     onlayoutready,
     ondragend,
     onportmove,
+    onedgeendpointmove,
     onrouteadd,
     onroutemove,
     onrouteremove,
@@ -483,6 +490,7 @@
       oncontextmenu={handleContextMenu}
       ondragend={(id) => ondragend?.(id, getPinnedPositions(id))}
       {onportmove}
+      {onedgeendpointmove}
       {onrouteadd}
       {onroutemove}
       {onrouteremove}

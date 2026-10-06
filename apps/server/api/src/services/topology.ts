@@ -166,7 +166,16 @@ export interface OperatorLayoutState {
   >
   linkPortOverrides?: Record<
     string,
-    { fromNode?: string; toNode?: string; from?: string; to?: string }
+    {
+      fromNode?: string
+      toNode?: string
+      from?: string
+      to?: string
+      fromSide?: 'top' | 'bottom' | 'left' | 'right'
+      toSide?: 'top' | 'bottom' | 'left' | 'right'
+      fromOffset?: number
+      toOffset?: number
+    }
   >
   linkContinuationOverrides?: Record<
     string,
@@ -176,6 +185,8 @@ export interface OperatorLayoutState {
       length?: number
       source?: { x: number; y: number }
       destination?: { x: number; y: number }
+      sourceRelative?: { x: number; y: number }
+      destinationRelative?: { x: number; y: number }
     }
   >
   portPresentationOverrides?: Record<string, { label?: string; description?: string }>
