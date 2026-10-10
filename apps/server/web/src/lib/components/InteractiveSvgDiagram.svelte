@@ -2696,8 +2696,10 @@
 
   function diagramNodeName(node: NetworkGraph['nodes'][number]): string {
     if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port' && node.parent) {
-      const group = graph?.subgraphs.find((candidate) => candidate.id === node.parent)
-      return `${nodeLabel({ id: node.parent, label: group?.label })} · interface`
+      const group = graph?.subgraphs?.find((candidate) => candidate.id === node.parent)
+      const port = node.ports?.find((candidate) => candidate.label?.trim()) ?? node.ports?.[0]
+      const portName = port?.label?.trim() || port?.id
+      return `${nodeLabel({ id: node.parent, label: group?.label })} · ${portName ? `${portName} interface` : 'interface'}`
     }
     return nodeLabel(node)
   }
