@@ -114,6 +114,10 @@
      */
     ondragstart?: (id: string) => void
     ondragend?: (id: string) => void
+    onresizeend?: (
+      id: string,
+      bounds: { x: number; y: number; width: number; height: number },
+    ) => void
     /**
      * Predicate to skip rendering specific nodes — useful when the
      * host stores extra nodes the user shouldn't see in this view
@@ -204,6 +208,7 @@
     onnodeadd,
     ondragstart,
     ondragend,
+    onresizeend,
     hideNode,
     oncreatelink,
     onportmove,
@@ -956,6 +961,7 @@
     ondragstart={handleDragStart}
     ondragmove={handleDragMove}
     ondragend={handleDragEnd}
+    {onresizeend}
     {hideNode}
     onselect={handleSelect}
     onaddport={handleAddPort}

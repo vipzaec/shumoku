@@ -1,5 +1,12 @@
 <script lang="ts">
-  import type { Node, ResolvedEdge, ResolvedPort, Subgraph, Theme } from '@shumoku/core'
+  import {
+    type Node,
+    type ResolvedEdge,
+    type ResolvedPort,
+    resolveNodeSize,
+    type Subgraph,
+    type Theme,
+  } from '@shumoku/core'
   import { continuationBoundsFromEdges } from '../../lib/continuation'
   import type { RendererOverlaySnippets } from '../../lib/overlays'
   import type { RenderColors } from '../../lib/render-colors'
@@ -39,6 +46,7 @@
     ondragstart,
     ondragmove,
     ondragend,
+    onresizeend,
     onselect,
     onaddport,
     onlinkstart,
@@ -77,6 +85,10 @@
     ondragstart?: (id: string) => void
     ondragmove?: (id: string, x: number, y: number) => void
     ondragend?: (id: string) => void
+    onresizeend?: (
+      id: string,
+      bounds: { x: number; y: number; width: number; height: number },
+    ) => void
     onselect?: (id: string, e?: MouseEvent) => void
     onaddport?: (nodeId: string, side: 'top' | 'bottom' | 'left' | 'right') => void
     onlinkstart?: (portId: string, x: number, y: number) => void
@@ -122,6 +134,91 @@
     x: number
     y: number
   } | null>(null)
+  type ResizeBounds = { x: number; y: number; width: number; height: number }
+  type ResizeSide = 'top' | 'right' | 'bottom' | 'left'
+  let resizeDrag = $state<{
+    id: string
+    side: ResizeSide
+    pointerId: number
+    origin: ResizeBounds
+    start: { x: number; y: number }
+    current: ResizeBounds
+  } | null>(null)
+  const selectedResizable = $derived.by(() => {
+    if (!interactive) return [] as Array<{ id: string; bounds: ResizeBounds }>
+    const result: Array<{ id: string; bounds: ResizeBounds }> = []
+    for (const id of selection) {
+      const node = nodes.get(id)
+      if (node?.position && !hideNode?.(node)) {
+        const size = resolveNodeSize(node)
+        result.push({
+          id,
+          bounds: {
+            x: node.position.x - size.width / 2,
+            y: node.position.y - size.height / 2,
+            width: size.width,
+            height: size.height,
+          },
+        })
+        continue
+      }
+      const group = subgraphs.get(id)
+      if (group?.bounds) result.push({ id, bounds: group.bounds })
+    }
+    return result
+  })
+  function startResize(id: string, side: ResizeSide, bounds: ResizeBounds, event: PointerEvent) {
+    if (event.button !== 0 || !svgEl) return
+    event.preventDefault()
+    event.stopPropagation()
+    resizeDrag = {
+      id,
+      side,
+      pointerId: event.pointerId,
+      origin: { ...bounds },
+      start: screenToWorld(svgEl, event.clientX, event.clientY),
+      current: { ...bounds },
+    }
+    ;(event.currentTarget as Element).setPointerCapture(event.pointerId)
+  }
+  function moveResize(event: PointerEvent) {
+    if (!resizeDrag || resizeDrag.pointerId !== event.pointerId || !svgEl) return
+    const point = screenToWorld(svgEl, event.clientX, event.clientY)
+    const dx = point.x - resizeDrag.start.x
+    const dy = point.y - resizeDrag.start.y
+    const { origin, side } = resizeDrag
+    const current = { ...origin }
+    if (side === 'left') {
+      current.x = Math.min(origin.x + dx, origin.x + origin.width - 40)
+      current.width = origin.x + origin.width - current.x
+    } else if (side === 'right') {
+      current.width = Math.max(40, origin.width + dx)
+    } else if (side === 'top') {
+      current.y = Math.min(origin.y + dy, origin.y + origin.height - 30)
+      current.height = origin.y + origin.height - current.y
+    } else {
+      current.height = Math.max(30, origin.height + dy)
+    }
+    resizeDrag = { ...resizeDrag, current }
+  }
+  function finishResize(event: PointerEvent) {
+    if (!resizeDrag || resizeDrag.pointerId !== event.pointerId) return
+    event.stopPropagation()
+    const { id, current, origin } = resizeDrag
+    resizeDrag = null
+    ;(event.currentTarget as Element).releasePointerCapture(event.pointerId)
+    if (
+      current.x !== origin.x ||
+      current.y !== origin.y ||
+      current.width !== origin.width ||
+      current.height !== origin.height
+    ) {
+      onresizeend?.(id, current)
+    }
+  }
+  function cancelResize(event: PointerEvent) {
+    if (resizeDrag?.pointerId === event.pointerId) resizeDrag = null
+  }
   function endpointHandlePosition(port: ResolvedPort) {
     const { x, y } = port.absolutePosition
     return port.side === 'left'
@@ -492,6 +589,52 @@
     {/if}
 
     <!-- Ports layer (above nodes so they're always clickable) -->
+    {#each selectedResizable as item (item.id)}
+      {#each ['top', 'right', 'bottom', 'left'] as side (side)}
+        {@const b = item.bounds}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <rect
+          class="resize-side"
+          x={side === 'left' ? b.x - 5 : side === 'right' ? b.x + b.width - 5 : b.x + 8}
+          y={side === 'top' ? b.y - 5 : side === 'bottom' ? b.y + b.height - 5 : b.y + 8}
+          width={side === 'left' || side === 'right' ? 10 : Math.max(8, b.width - 16)}
+          height={side === 'top' || side === 'bottom' ? 10 : Math.max(8, b.height - 16)}
+          fill="transparent"
+          stroke="none"
+          style={`cursor: ${side === 'left' || side === 'right' ? 'ew-resize' : 'ns-resize'}; touch-action: none`}
+          onpointerdown={(event) => startResize(item.id, side as ResizeSide, b, event)}
+          onpointermove={moveResize}
+          onpointerup={finishResize}
+          onpointercancel={cancelResize}
+        >
+          <title>Drag to resize {side} side</title>
+        </rect>
+        <rect
+          x={side === 'left' ? b.x - 4 : side === 'right' ? b.x + b.width - 4 : b.x + b.width / 2 - 9}
+          y={side === 'top' ? b.y - 4 : side === 'bottom' ? b.y + b.height - 4 : b.y + b.height / 2 - 9}
+          width={side === 'left' || side === 'right' ? 8 : 18}
+          height={side === 'top' || side === 'bottom' ? 8 : 18}
+          rx="3"
+          fill="#ffffff"
+          stroke="#2563eb"
+          stroke-width="2"
+          pointer-events="none"
+        />
+      {/each}
+    {/each}
+    {#if resizeDrag}
+      <rect
+        x={resizeDrag.current.x}
+        y={resizeDrag.current.y}
+        width={resizeDrag.current.width}
+        height={resizeDrag.current.height}
+        fill="none"
+        stroke="#2563eb"
+        stroke-width="2"
+        stroke-dasharray="6 4"
+        pointer-events="none"
+      />
+    {/if}
     {#each ports.values() as port (port.id)}
       {#if linkedPorts.has(port.id) || (interactive && (selection.has(port.id) || selection.has(port.nodeId) || selection.has(nodes.get(port.nodeId)?.parent ?? '')))}
         <SvgPort

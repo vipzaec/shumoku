@@ -99,6 +99,7 @@
     lightTheme,
     type NetworkGraph,
     type ResolvedLayout,
+    resolveNodeSize,
   } from '@shumoku/core'
   import {
     ArrowCounterClockwiseIcon,
@@ -296,6 +297,8 @@
   type PortPresentation = { label?: string; description?: string }
   const defaultBlockSpacing: BlockSpacing = { top: 20, right: 20, bottom: 20, left: 20 }
   let blockSpacingOverrides = $state<Record<string, BlockSpacing>>({})
+  type BlockBounds = { x: number; y: number; width: number; height: number }
+  let blockBoundsOverrides = $state<Record<string, BlockBounds>>({})
   let linkAppearanceOverrides = $state<Record<string, LinkAppearance>>({})
   let linkPortOverrides = $state<Record<string, LinkPorts>>({})
   let linkContinuationOverrides = $state<Record<string, LinkContinuation>>({})
@@ -745,6 +748,7 @@
     operatorLinks?: OperatorLink[]
     operatorGroups?: OperatorGroup[]
     blockSpacingOverrides?: Record<string, BlockSpacing>
+    blockBoundsOverrides?: Record<string, BlockBounds>
     linkAppearanceOverrides?: Record<string, LinkAppearance>
     linkPortOverrides?: Record<string, LinkPorts>
     linkContinuationOverrides?: Record<string, LinkContinuation>
@@ -957,6 +961,7 @@
         operatorLinks: manualLinks,
         operatorGroups: manualGroups,
         blockSpacingOverrides: spacing,
+        blockBoundsOverrides,
         linkAppearanceOverrides: appearances,
         linkPortOverrides: linkPorts,
         linkContinuationOverrides: continuations,
@@ -1279,6 +1284,18 @@
             : {}),
           ...(Object.hasOwn(parents, node.id) ? { parent: parents[node.id] ?? undefined } : {}),
           ...(pins[node.id] ? { position: pins[node.id] } : {}),
+          ...(blockBoundsOverrides[node.id]
+            ? {
+                position: {
+                  x: blockBoundsOverrides[node.id].x + blockBoundsOverrides[node.id].width / 2,
+                  y: blockBoundsOverrides[node.id].y + blockBoundsOverrides[node.id].height / 2,
+                },
+                size: {
+                  width: blockBoundsOverrides[node.id].width,
+                  height: blockBoundsOverrides[node.id].height,
+                },
+              }
+            : {}),
           style: {
             ...node.style,
             outerSpacing: {
@@ -1362,6 +1379,14 @@
       ],
       subgraphs: mergedSubgraphs.map((subgraph) => ({
         ...subgraph,
+        ...(blockBoundsOverrides[subgraph.id]
+          ? {
+              metadata: {
+                ...subgraph.metadata,
+                operatorBounds: blockBoundsOverrides[subgraph.id],
+              },
+            }
+          : {}),
         style: {
           ...subgraph.style,
           outerSpacing: {
@@ -1447,6 +1472,7 @@
             (saved.operatorLinks?.length ?? 0) > 0 ||
             (saved.operatorGroups?.length ?? 0) > 0 ||
             Object.keys(saved.blockSpacingOverrides ?? {}).length > 0 ||
+            Object.keys(saved.blockBoundsOverrides ?? {}).length > 0 ||
             Object.keys(saved.linkAppearanceOverrides ?? {}).length > 0 ||
             Object.keys(saved.linkPortOverrides ?? {}).length > 0 ||
             Object.keys(saved.linkContinuationOverrides ?? {}).length > 0 ||
@@ -1476,6 +1502,7 @@
         operatorLinks = manualLinks
         operatorGroups = manualGroups
         blockSpacingOverrides = spacing
+        blockBoundsOverrides = saved?.blockBoundsOverrides ?? {}
         linkAppearanceOverrides = appearances
         linkPortOverrides = linkPorts
         linkContinuationOverrides = continuations
@@ -1702,6 +1729,29 @@
     if (!layoutEdit || Object.keys(positions).length === 0) return
     selectedLayoutNode = id
     selectedLayoutPinIds = Object.keys(positions)
+    const existing = blockBoundsOverrides[id]
+    const moved = positions[id]
+    if (existing && moved && graph?.nodes.some((node) => node.id === id)) {
+      blockBoundsOverrides = {
+        ...blockBoundsOverrides,
+        [id]: { ...existing, x: moved.x - existing.width / 2, y: moved.y - existing.height / 2 },
+      }
+    } else if (existing && graph?.subgraphs?.some((group) => group.id === id)) {
+      const first = Object.entries(positions).find(([nodeId]) =>
+        graph?.nodes.some((node) => node.id === nodeId && node.position),
+      )
+      const before = graph.nodes.find((node) => node.id === first?.[0])?.position
+      if (first && before) {
+        blockBoundsOverrides = {
+          ...blockBoundsOverrides,
+          [id]: {
+            ...existing,
+            x: existing.x + first[1].x - before.x,
+            y: existing.y + first[1].y - before.y,
+          },
+        }
+      }
+    }
     writePins({ ...pinnedPositions, ...positions })
   }
 
@@ -1791,6 +1841,7 @@
     parentOverrides = {}
     pinnedPositions = {}
     portSides = {}
+    blockBoundsOverrides = {}
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(pinStorageKey)
       localStorage.removeItem(portStorageKey)
@@ -1877,6 +1928,57 @@
     void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
     graph = applyLayoutOverrides(graph, pinnedPositions, portSides, portOrders, portOffsets)
     serverLayout = undefined
+  }
+
+  function selectedBlockBounds(): BlockBounds | null {
+    if (!selectedLayoutNode) return null
+    const saved = blockBoundsOverrides[selectedLayoutNode]
+    if (saved) return saved
+    const node = latestLayout?.nodes.get(selectedLayoutNode)
+    if (node?.position) {
+      const size = resolveNodeSize(node)
+      return {
+        x: node.position.x - size.width / 2,
+        y: node.position.y - size.height / 2,
+        width: size.width,
+        height: size.height,
+      }
+    }
+    return latestLayout?.subgraphs.get(selectedLayoutNode)?.bounds ?? null
+  }
+
+  function setBlockBounds(id: string, bounds: BlockBounds) {
+    if (!layoutEdit || !graph) return
+    const next = {
+      x: Math.round(bounds.x),
+      y: Math.round(bounds.y),
+      width: Math.min(10000, Math.max(40, Math.round(bounds.width))),
+      height: Math.min(10000, Math.max(30, Math.round(bounds.height))),
+    }
+    blockBoundsOverrides = { ...blockBoundsOverrides, [id]: next }
+    if (graph.nodes.some((node) => node.id === id)) {
+      pinnedPositions = {
+        ...pinnedPositions,
+        [id]: { x: next.x + next.width / 2, y: next.y + next.height / 2 },
+      }
+    }
+    void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
+    graph = applyLayoutOverrides(
+      baseGraph ?? graph,
+      pinnedPositions,
+      portSides,
+      portOrders,
+      portOffsets,
+    )
+    serverLayout = undefined
+  }
+
+  function setSelectedBlockDimension(dimension: 'width' | 'height', raw: string) {
+    if (!selectedLayoutNode) return
+    const current = selectedBlockBounds()
+    const value = Number(raw)
+    if (!current || !Number.isFinite(value)) return
+    setBlockBounds(selectedLayoutNode, { ...current, [dimension]: value })
   }
 
   const objectIconTypes = [
@@ -3274,6 +3376,7 @@
       sheetCacheStrategy="lazy"
       onselect={handleSelect}
       ondragend={handleLayoutDragEnd}
+      onresizeend={setBlockBounds}
       onlayoutready={handleResolvedLayout}
       onportmove={handlePortMove}
       onedgeendpointmove={handleEdgeEndpointMove}
@@ -3341,7 +3444,7 @@
   <!-- Zoom / utility controls -->
   {#if layoutEdit && selectedLayoutNode && ['node', 'subgraph'].includes(selectedLayoutType ?? '')}
     <div class="parent-editor">
-      <strong>Container</strong>
+      <strong>Selected block</strong>
       <span
         >{graph?.nodes.find((node) => node.id === selectedLayoutNode)?.label ??
     graph?.subgraphs?.find((subgraph) => subgraph.id === selectedLayoutNode)?.label ??
@@ -3357,6 +3460,33 @@
           <option value={parent.id}>{parent.label ?? parent.id}</option>
         {/each}
       </select>
+      {#if selectedBlockBounds()}
+        <strong>Block size</strong>
+        <div class="size-pickers">
+          <label
+            >Width
+            <input
+              type="number"
+              min="40"
+              max="10000"
+              step="1"
+              value={Math.round(selectedBlockBounds()?.width ?? 0)}
+              onchange={(event) => setSelectedBlockDimension('width', event.currentTarget.value)}
+            >
+          </label>
+          <label
+            >Height
+            <input
+              type="number"
+              min="30"
+              max="10000"
+              step="1"
+              value={Math.round(selectedBlockBounds()?.height ?? 0)}
+              onchange={(event) => setSelectedBlockDimension('height', event.currentTarget.value)}
+            >
+          </label>
+        </div>
+      {/if}
       <strong>Space around block</strong>
       <div class="spacing-pickers">
         {#each ['top', 'right', 'bottom', 'left'] as side}
@@ -4741,6 +4871,8 @@
     display: grid;
     gap: 6px;
     width: min(320px, calc(100% - 96px));
+    max-height: min(440px, calc(100% - 160px));
+    overflow-y: auto;
     padding: 10px 12px;
     color: var(--color-text, #111827);
     background: var(--color-bg-elevated, #ffffff);
@@ -4770,6 +4902,22 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 5px;
+  }
+  .size-pickers {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .size-pickers label {
+    display: grid;
+    gap: 3px;
+  }
+  .size-pickers input {
+    width: 100%;
+    min-width: 0;
+    padding: 5px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 5px;
   }
   .spacing-pickers label {
     display: grid;

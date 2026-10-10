@@ -19,7 +19,7 @@
  */
 
 import type { LayoutEngine } from '../hierarchical.js'
-import type { LayoutResult, NetworkGraph } from '../models/types.js'
+import type { LayoutResult, NetworkGraph, Subgraph } from '../models/types.js'
 import { autoLayoutFlatTree } from './auto-placement/flat-tree/auto-layout.js'
 import { layoutCompound } from './auto-placement/flat-tree/compound.js'
 import { shouldUseComposite } from './composite/index.js'
@@ -29,6 +29,86 @@ import { createEngine, resolveNodeSize } from './engine/index.js'
 import { getLinkWidth } from './link-utils.js'
 import type { ResolvedLayout } from './resolved-types.js'
 import { routeEdges } from './route-edges.js'
+
+/** Keep an operator-sized container large enough to contain its layout children. */
+function applyOperatorGroupBounds(graph: NetworkGraph, subgraphs: Map<string, Subgraph>): void {
+  const sources = new Map((graph.subgraphs ?? []).map((group) => [group.id, group]))
+  const depth = (group: Subgraph): number => {
+    let result = 0
+    let parent = group.parent
+    const seen = new Set<string>()
+    while (parent && !seen.has(parent)) {
+      seen.add(parent)
+      result++
+      parent = sources.get(parent)?.parent
+    }
+    return result
+  }
+  for (const group of [...subgraphs.values()].sort((a, b) => depth(b) - depth(a))) {
+    const original = sources.get(group.id)
+    const requested = original?.metadata?.['operatorBounds']
+    const current = group.bounds
+    const valid =
+      requested &&
+      typeof requested === 'object' &&
+      'x' in requested &&
+      'y' in requested &&
+      'width' in requested &&
+      'height' in requested &&
+      typeof requested.x === 'number' &&
+      typeof requested.y === 'number' &&
+      typeof requested.width === 'number' &&
+      typeof requested.height === 'number' &&
+      Number.isFinite(requested.x) &&
+      Number.isFinite(requested.y) &&
+      Number.isFinite(requested.width) &&
+      Number.isFinite(requested.height)
+    if (!current && !valid) continue
+    const childBounds = [...subgraphs.values()]
+      .filter((child) => child.parent === group.id && child.bounds)
+      .map(
+        (child) =>
+          child.bounds && {
+            x: child.bounds.x - 20,
+            y: child.bounds.y - 48,
+            width: child.bounds.width + 40,
+            height: child.bounds.height + 68,
+          },
+      )
+    const boxes = [current, ...(valid ? [requested] : []), ...childBounds].filter(
+      (box): box is { x: number; y: number; width: number; height: number } =>
+        Boolean(box) &&
+        typeof box?.x === 'number' &&
+        typeof box?.y === 'number' &&
+        typeof box?.width === 'number' &&
+        typeof box?.height === 'number',
+    )
+    if (boxes.length === 0) continue
+    const x = Math.min(...boxes.map((box) => box.x))
+    const y = Math.min(...boxes.map((box) => box.y))
+    const right = Math.max(...boxes.map((box) => box.x + box.width))
+    const bottom = Math.max(...boxes.map((box) => box.y + box.height))
+    subgraphs.set(group.id, { ...group, bounds: { x, y, width: right - x, height: bottom - y } })
+  }
+}
+
+function includeGroupBounds(
+  bounds: { x: number; y: number; width: number; height: number },
+  subgraphs: ReadonlyMap<string, Subgraph>,
+) {
+  let x = bounds.x
+  let y = bounds.y
+  let right = bounds.x + bounds.width
+  let bottom = bounds.y + bounds.height
+  for (const group of subgraphs.values()) {
+    if (!group.bounds) continue
+    x = Math.min(x, group.bounds.x)
+    y = Math.min(y, group.bounds.y)
+    right = Math.max(right, group.bounds.x + group.bounds.width)
+    bottom = Math.max(bottom, group.bounds.y + group.bounds.height)
+  }
+  return { x, y, width: right - x, height: bottom - y }
+}
 
 /**
  * Create a LayoutEngine that uses the custom network layout + libavoid routing.
@@ -71,6 +151,12 @@ export async function computeNetworkLayout(
     // routed for real and the routed-geometry score arbitrates — gaps
     // multi-start, congestion-widened channels, redundant-pair flips.
     const { comp, ports, edges } = await searchCompositeLayout(graph)
+    applyOperatorGroupBounds(graph, comp.subgraphs)
+    if ((graph.subgraphs ?? []).some((group) => group.metadata?.['operatorBounds'])) {
+      const rerouted = await routeEdges(comp.nodes, ports, graph.links, comp.subgraphs)
+      edges.clear()
+      for (const [id, edge] of rerouted) edges.set(id, edge)
+    }
     // primary dependency tree emphasis for renderers
     for (const edge of edges.values()) {
       const key =
@@ -84,7 +170,7 @@ export async function computeNetworkLayout(
       ports,
       edges,
       subgraphs: comp.subgraphs,
-      bounds: comp.bounds,
+      bounds: includeGroupBounds(comp.bounds, comp.subgraphs),
       algorithm: 'composite+octilinear',
     })
     // Standing fixture (#482): BLOCKING constraint violations throw in
@@ -119,6 +205,7 @@ export async function computeNetworkLayout(
     subgraphPadding: graph.settings?.subgraphPadding,
     fixed,
   })
+  applyOperatorGroupBounds(graph, subgraphs)
   const edges = await routeEdges(nodes, ports, graph.links, subgraphs)
 
   const results = buildResults({
@@ -126,7 +213,7 @@ export async function computeNetworkLayout(
     ports,
     edges,
     subgraphs,
-    bounds,
+    bounds: includeGroupBounds(bounds, subgraphs),
     algorithm: 'network-layout+bezier',
   })
   assertLayoutConstraints(results.resolved, 'network-layout+bezier')

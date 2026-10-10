@@ -154,6 +154,7 @@ export interface OperatorLayoutState {
     string,
     { top?: number; right?: number; bottom?: number; left?: number }
   >
+  blockBoundsOverrides?: Record<string, { x: number; y: number; width: number; height: number }>
   linkAppearanceOverrides?: Record<
     string,
     {

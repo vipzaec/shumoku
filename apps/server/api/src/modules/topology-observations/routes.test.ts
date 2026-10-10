@@ -121,6 +121,7 @@ describe('topology display settings', () => {
       portOffsets: { 'firewall:wan': 0.5 },
       edgeRoutes: {},
       blockSpacingOverrides: { firewall: { left: 48 } },
+      blockBoundsOverrides: { firewall: { x: 70, y: 180, width: 180, height: 120 } },
       linkAppearanceOverrides: {
         ingress: {
           color: '#1d4ed8',

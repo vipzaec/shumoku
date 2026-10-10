@@ -119,6 +119,17 @@ export const OperatorLayoutSchema = z.object({
       }),
     )
     .optional(),
+  blockBoundsOverrides: z
+    .record(
+      z.string(),
+      z.object({
+        x: z.number().finite(),
+        y: z.number().finite(),
+        width: z.number().finite().min(40).max(10000),
+        height: z.number().finite().min(30).max(10000),
+      }),
+    )
+    .optional(),
   linkAppearanceOverrides: z
     .record(
       z.string(),

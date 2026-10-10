@@ -13,6 +13,7 @@ export function emptyOperatorLayout(): OperatorLayoutState {
     operatorLinks: [],
     operatorGroups: [],
     blockSpacingOverrides: {},
+    blockBoundsOverrides: {},
     linkAppearanceOverrides: {},
     linkPortOverrides: {},
     linkContinuationOverrides: {},
@@ -40,6 +41,7 @@ export function parseOperatorLayout(value: string | null | undefined): OperatorL
       operatorLinks: parsed.operatorLinks ?? empty.operatorLinks,
       operatorGroups: parsed.operatorGroups ?? empty.operatorGroups,
       blockSpacingOverrides: parsed.blockSpacingOverrides ?? empty.blockSpacingOverrides,
+      blockBoundsOverrides: parsed.blockBoundsOverrides ?? empty.blockBoundsOverrides,
       linkAppearanceOverrides: parsed.linkAppearanceOverrides ?? empty.linkAppearanceOverrides,
       linkPortOverrides: parsed.linkPortOverrides ?? empty.linkPortOverrides,
       linkContinuationOverrides:

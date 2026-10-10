@@ -1083,6 +1083,9 @@ export interface ScopeFilter {
 export interface Subgraph {
   id: string
 
+  /** Host-specific presentation data, including optional operator sizing. */
+  metadata?: Record<string, unknown>
+
   /**
    * Display label
    */

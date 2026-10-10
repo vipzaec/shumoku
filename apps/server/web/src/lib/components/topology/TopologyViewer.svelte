@@ -104,6 +104,10 @@
     oncontextmenu?: (id: string, type: string, screenX: number, screenY: number) => void
     onlayoutready?: (layout: ResolvedLayout, sheetId: string | null) => void
     ondragend?: (id: string, positions: Record<string, { x: number; y: number }>) => void
+    onresizeend?: (
+      id: string,
+      bounds: { x: number; y: number; width: number; height: number },
+    ) => void
     onportmove?: (
       nodeId: string,
       portId: string,
@@ -144,6 +148,7 @@
     oncontextmenu,
     onlayoutready,
     ondragend,
+    onresizeend,
     onportmove,
     onedgeendpointmove,
     onrouteadd,
@@ -489,6 +494,7 @@
       onselect={handleSelect}
       oncontextmenu={handleContextMenu}
       ondragend={(id) => ondragend?.(id, getPinnedPositions(id))}
+      {onresizeend}
       {onportmove}
       {onedgeendpointmove}
       {onrouteadd}
