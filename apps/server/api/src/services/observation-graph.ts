@@ -466,6 +466,7 @@ const subgraphSchema = modelObject<Subgraph>()({
     .string()
     .min(1)
     .refine((id) => !id.includes('\u001f'), 'Reserved identifier separator'),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   label: z.string().optional(),
   identity: regionIdentitySchema.optional(),
   membership: z.array(membershipCriterionSchema).optional(),

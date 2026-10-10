@@ -32,6 +32,27 @@ describe('observation graph boundary', () => {
     expect(raw).toEqual(before)
   })
 
+  it('preserves container presentation metadata through observation normalization', () => {
+    const result = normalizeObservationGraph({
+      nodes: [],
+      links: [],
+      subgraphs: [
+        {
+          id: 'vm',
+          metadata: { operatorBounds: { x: 20, y: 30, width: 400, height: 260 } },
+        },
+      ],
+    })
+    expect(result.success).toBe(true)
+    if (!result.success) throw result.error
+    expect(result.data.subgraphs?.[0]?.metadata?.['operatorBounds']).toEqual({
+      x: 20,
+      y: 30,
+      width: 400,
+      height: 260,
+    })
+  })
+
   it.each([
     { nodes: [{}], links: [] },
     { nodes: [{ id: 'a', ports: {} }], links: [] },
