@@ -15,6 +15,16 @@ describe('operator-sized blocks', () => {
           position: { x: 200, y: 200 },
           size: { width: 100, height: 60 },
         },
+        {
+          id: 'vm-interface',
+          label: '',
+          parent: 'vm',
+          position: { x: 200, y: 200 },
+          metadata: { presentationRole: 'subgraph-boundary-port' },
+          ports: [
+            { id: 'lan', label: 'LAN', connectors: [], placement: { side: 'left', offset: 0.5 } },
+          ],
+        },
       ],
       links: [],
       subgraphs: [
@@ -36,5 +46,7 @@ describe('operator-sized blocks', () => {
     expect(resolved.bounds.x + resolved.bounds.width).toBeGreaterThanOrEqual(
       (bounds?.x ?? 0) + (bounds?.width ?? 0),
     )
+    expect(resolved.ports.get('vm-interface:lan')?.absolutePosition.x).toBe(bounds?.x)
+    expect(resolved.nodes.get('vm-interface')?.position?.x).toBe(bounds?.x)
   })
 })

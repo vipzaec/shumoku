@@ -19,7 +19,7 @@
  */
 
 import type { LayoutEngine } from '../hierarchical.js'
-import type { LayoutResult, NetworkGraph, Subgraph } from '../models/types.js'
+import type { LayoutResult, NetworkGraph, Node, Subgraph } from '../models/types.js'
 import { autoLayoutFlatTree } from './auto-placement/flat-tree/auto-layout.js'
 import { layoutCompound } from './auto-placement/flat-tree/compound.js'
 import { shouldUseComposite } from './composite/index.js'
@@ -27,11 +27,16 @@ import { searchCompositeLayout } from './composite/search.js'
 import { assertLayoutConstraints } from './constraints.js'
 import { createEngine, resolveNodeSize } from './engine/index.js'
 import { getLinkWidth } from './link-utils.js'
-import type { ResolvedLayout } from './resolved-types.js'
+import type { ResolvedLayout, ResolvedPort } from './resolved-types.js'
 import { routeEdges } from './route-edges.js'
 
 /** Keep an operator-sized container large enough to contain its layout children. */
-function applyOperatorGroupBounds(graph: NetworkGraph, subgraphs: Map<string, Subgraph>): void {
+function applyOperatorGroupBounds(
+  graph: NetworkGraph,
+  nodes: Map<string, Node>,
+  ports: Map<string, ResolvedPort>,
+  subgraphs: Map<string, Subgraph>,
+): void {
   const sources = new Map((graph.subgraphs ?? []).map((group) => [group.id, group]))
   const depth = (group: Subgraph): number => {
     let result = 0
@@ -89,6 +94,37 @@ function applyOperatorGroupBounds(graph: NetworkGraph, subgraphs: Map<string, Su
     const right = Math.max(...boxes.map((box) => box.x + box.width))
     const bottom = Math.max(...boxes.map((box) => box.y + box.height))
     subgraphs.set(group.id, { ...group, bounds: { x, y, width: right - x, height: bottom - y } })
+  }
+  // Boundary interfaces are physical points on the container contour. The
+  // default layout seated them before the operator's larger bounds were applied.
+  for (const [nodeId, node] of nodes) {
+    if (node.metadata?.['presentationRole'] !== 'subgraph-boundary-port' || !node.parent) continue
+    const bounds = subgraphs.get(node.parent)?.bounds
+    if (!bounds) continue
+    let firstPoint: { x: number; y: number } | undefined
+    for (const [portId, port] of ports) {
+      if (port.nodeId !== nodeId) continue
+      const modelPort = node.ports?.find((candidate) => `${nodeId}:${candidate.id}` === portId)
+      const side = modelPort?.placement?.side ?? port.side
+      const offset = Math.max(0.08, Math.min(0.92, modelPort?.placement?.offset ?? 0.5))
+      const point = {
+        x:
+          side === 'left'
+            ? bounds.x
+            : side === 'right'
+              ? bounds.x + bounds.width
+              : bounds.x + bounds.width * offset,
+        y:
+          side === 'top'
+            ? bounds.y
+            : side === 'bottom'
+              ? bounds.y + bounds.height
+              : bounds.y + bounds.height * offset,
+      }
+      firstPoint ??= point
+      ports.set(portId, { ...port, side, absolutePosition: point })
+    }
+    if (firstPoint) nodes.set(nodeId, { ...node, position: firstPoint })
   }
 }
 
@@ -151,7 +187,7 @@ export async function computeNetworkLayout(
     // routed for real and the routed-geometry score arbitrates — gaps
     // multi-start, congestion-widened channels, redundant-pair flips.
     const { comp, ports, edges } = await searchCompositeLayout(graph)
-    applyOperatorGroupBounds(graph, comp.subgraphs)
+    applyOperatorGroupBounds(graph, comp.nodes, ports, comp.subgraphs)
     if ((graph.subgraphs ?? []).some((group) => group.metadata?.['operatorBounds'])) {
       const rerouted = await routeEdges(comp.nodes, ports, graph.links, comp.subgraphs)
       edges.clear()
@@ -205,7 +241,7 @@ export async function computeNetworkLayout(
     subgraphPadding: graph.settings?.subgraphPadding,
     fixed,
   })
-  applyOperatorGroupBounds(graph, subgraphs)
+  applyOperatorGroupBounds(graph, nodes, ports, subgraphs)
   const edges = await routeEdges(nodes, ports, graph.links, subgraphs)
 
   const results = buildResults({
