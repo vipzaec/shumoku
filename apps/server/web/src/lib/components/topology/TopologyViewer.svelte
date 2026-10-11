@@ -185,7 +185,10 @@
       edges.set(id, {
         ...edge,
         points,
-        route: { kind: 'polyline', points },
+        // A hand-placed waypoint should round into both adjoining segments.
+        // The renderer clamps this radius to half of each local segment, so
+        // closely spaced bends stay stable instead of folding back on themselves.
+        route: { kind: 'polyline', points, cornerRadius: 64 },
         labelAnchor: undefined,
       })
     }
@@ -194,6 +197,15 @@
   let renderer: ReturnType<typeof ShumokuRenderer> | undefined = $state()
   let cachedGraphRef: NetworkGraph | null = null
   let activeSheetKey: string | null = null
+
+  function captureRenderedLayout(): void {
+    const current = renderer?.getResolvedLayout()
+    if (!current) return
+    const key = sheetId ?? 'root'
+    layoutsBySheet[key] = current
+    activeLayout = current
+    onlayoutready?.(current, sheetId)
+  }
 
   async function ensureSheetLayout(g: NetworkGraph, id: string | null): Promise<void> {
     const key = id ?? 'root'
@@ -506,13 +518,26 @@
       bind:svgElement
       onselect={handleSelect}
       oncontextmenu={handleContextMenu}
-      ondragend={(id) => ondragend?.(id, getPinnedPositions(id))}
+      ondragend={(id) => {
+        const positions = getPinnedPositions(id)
+        captureRenderedLayout()
+        ondragend?.(id, positions)
+      }}
       {onresizeend}
       {onportmove}
       {onedgeendpointmove}
-      {onrouteadd}
-      {onroutemove}
-      {onrouteremove}
+      onrouteadd={(id, x, y, index) => {
+        captureRenderedLayout()
+        onrouteadd?.(id, x, y, index)
+      }}
+      onroutemove={(id, index, x, y) => {
+        captureRenderedLayout()
+        onroutemove?.(id, index, x, y)
+      }}
+      onrouteremove={(id, index) => {
+        captureRenderedLayout()
+        onrouteremove?.(id, index)
+      }}
       {oncontinuationmove}
       oncontinuationnavigate={panToContinuation}
     />

@@ -302,6 +302,18 @@
     return position ? { x: position.x, y: position.y } : null
   }
 
+  /** Capture edits held by the interactive renderer before another prop update
+   *  replaces its maps (for example when a route bend is added). */
+  export function getResolvedLayout(): ResolvedLayout {
+    return {
+      nodes: new Map(nodes),
+      ports: new Map(ports),
+      edges: new Map(edges),
+      subgraphs: new Map(subgraphs),
+      bounds: { ...bounds },
+    }
+  }
+
   /** Positions that must be pinned to reproduce a dragged node or compound block. */
   export function getPinnedPositions(elementId: string): Record<string, { x: number; y: number }> {
     const direct = nodes.get(elementId)?.position
