@@ -1932,6 +1932,10 @@
 
   function selectedBlockBounds(): BlockBounds | null {
     if (!selectedLayoutNode) return null
+    // A container may grow beyond the requested size to keep its children
+    // visible. Show the rendered bounds so the numeric editor stays truthful.
+    const groupBounds = latestLayout?.subgraphs.get(selectedLayoutNode)?.bounds
+    if (groupBounds) return groupBounds
     const saved = blockBoundsOverrides[selectedLayoutNode]
     if (saved) return saved
     const node = latestLayout?.nodes.get(selectedLayoutNode)
@@ -1944,7 +1948,7 @@
         height: size.height,
       }
     }
-    return latestLayout?.subgraphs.get(selectedLayoutNode)?.bounds ?? null
+    return null
   }
 
   function setBlockBounds(id: string, bounds: BlockBounds) {

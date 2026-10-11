@@ -80,7 +80,28 @@ function applyOperatorGroupBounds(
             height: child.bounds.height + 68,
           },
       )
-    const boxes = [current, ...(valid ? [requested] : []), ...childBounds].filter(
+    // A boundary-port node is seated on the final contour below; it must not
+    // hold the old contour open while the operator shrinks this container.
+    const childNodeBounds = [...nodes.values()].flatMap((node) => {
+      if (
+        node.parent !== group.id ||
+        !node.position ||
+        node.metadata?.['presentationRole'] === 'subgraph-boundary-port'
+      )
+        return []
+      const size = resolveNodeSize(node)
+      return [
+        {
+          x: node.position.x - size.width / 2 - 20,
+          y: node.position.y - size.height / 2 - 48,
+          width: size.width + 40,
+          height: size.height + 68,
+        },
+      ]
+    })
+    // The automatically calculated `current` box is a fallback, not a minimum.
+    // Including it with an operator request made shrinking impossible.
+    const boxes = [valid ? requested : current, ...childBounds, ...childNodeBounds].filter(
       (box): box is { x: number; y: number; width: number; height: number } =>
         Boolean(box) &&
         typeof box?.x === 'number' &&
