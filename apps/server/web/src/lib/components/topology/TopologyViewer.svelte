@@ -24,6 +24,7 @@
   } from '@shumoku/renderer'
   import ShumokuRenderer from '@shumoku/renderer/components/ShumokuRenderer.svelte'
   import { type Snippet, untrack } from 'svelte'
+  import { preserveAutomaticRoutes } from './route-edit'
 
   export interface ViewerContext {
     svgElement: SVGSVGElement | null
@@ -202,9 +203,10 @@
     const current = renderer?.getResolvedLayout()
     if (!current) return
     const key = sheetId ?? 'root'
-    layoutsBySheet[key] = current
-    activeLayout = current
-    onlayoutready?.(current, sheetId)
+    const captured = preserveAutomaticRoutes(current, activeLayout, routeOverrides)
+    layoutsBySheet[key] = captured
+    activeLayout = captured
+    onlayoutready?.(captured, sheetId)
   }
 
   async function ensureSheetLayout(g: NetworkGraph, id: string | null): Promise<void> {

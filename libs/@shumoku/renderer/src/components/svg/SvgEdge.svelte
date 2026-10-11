@@ -240,6 +240,7 @@
     onrouteadd?.(edge.id, e.clientX, e.clientY)
   }
   let draggedPoint = $state<number | null>(null)
+  let pointDragStart: { x: number; y: number } | null = null
   let draggedTerminal = $state<number | null>(null)
   let terminalDragStart: { x: number; y: number } | null = null
   function previewTerminal(e: PointerEvent) {
@@ -265,8 +266,13 @@
   function finishPoint(e: PointerEvent) {
     if (draggedPoint === null) return
     e.stopPropagation()
-    onroutemove?.(edge.id, draggedPoint, e.clientX, e.clientY)
+    if (
+      pointDragStart &&
+      Math.hypot(e.clientX - pointDragStart.x, e.clientY - pointDragStart.y) > 4
+    )
+      onroutemove?.(edge.id, draggedPoint, e.clientX, e.clientY)
     draggedPoint = null
+    pointDragStart = null
   }
 </script>
 
@@ -406,9 +412,11 @@
         onpointerdown={(e) => {
     e.stopPropagation()
     draggedPoint = index
+    pointDragStart = { x: e.clientX, y: e.clientY }
     e.currentTarget.setPointerCapture(e.pointerId)
   }}
         onpointerup={finishPoint}
+        onpointercancel={() => { draggedPoint = null; pointDragStart = null }}
         ondblclick={(e) => {
     e.stopPropagation()
     onrouteremove?.(edge.id, index)
