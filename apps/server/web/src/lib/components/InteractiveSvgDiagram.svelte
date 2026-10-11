@@ -126,6 +126,7 @@
     TopologyViewer,
     WeathermapLinkOverlay,
   } from '$lib/components/topology'
+  import { editableRouteBends } from '$lib/components/topology/route-edit'
   import { semanticLayers } from '$lib/components/topology/semantic-layers'
   import { createSerialLayoutWriter } from '$lib/components/topology/serial-layout-writer'
   import { serviceIcons } from '$lib/service-icons'
@@ -3062,11 +3063,11 @@
 
   function addRoutePoint(id: string, x: number, y: number, index: number) {
     if (!layoutEdit || !graph) return
-    const bends = edgeRoutes[id] ?? []
+    const bends = editableRouteBends(edgeRoutes[id], latestLayout?.edges.get(id)?.route)
     saveRoute(id, [...bends.slice(0, index), { x, y }, ...bends.slice(index)])
   }
   function moveRoutePoint(id: string, index: number, x: number, y: number) {
-    const bends = edgeRoutes[id]
+    const bends = editableRouteBends(edgeRoutes[id], latestLayout?.edges.get(id)?.route)
     if (!layoutEdit || !bends?.[index]) return
     saveRoute(
       id,
@@ -3074,8 +3075,8 @@
     )
   }
   function removeRoutePoint(id: string, index: number) {
-    const bends = edgeRoutes[id]
-    if (!layoutEdit || !bends) return
+    const bends = editableRouteBends(edgeRoutes[id], latestLayout?.edges.get(id)?.route)
+    if (!layoutEdit || !bends[index]) return
     saveRoute(
       id,
       bends.filter((_, i) => i !== index),
