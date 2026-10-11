@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Node, ResolvedEdge, Subgraph } from '@shumoku/core'
+  import { onDestroy } from 'svelte'
   import { continuationGeometry } from '../../lib/continuation'
   import type { LinkOverlaySnippet } from '../../lib/overlays'
   import type { RenderColors } from '../../lib/render-colors'
@@ -191,6 +192,25 @@
     e.stopPropagation()
     onselect?.(edge.id, e)
   }
+  let badgeClickTimer: ReturnType<typeof setTimeout> | null = null
+  onDestroy(() => {
+    if (badgeClickTimer) clearTimeout(badgeClickTimer)
+  })
+  function onBadgeClick(e: MouseEvent) {
+    e.stopPropagation()
+    if (badgeClickTimer) clearTimeout(badgeClickTimer)
+    badgeClickTimer = setTimeout(() => {
+      badgeClickTimer = null
+      onselect?.(edge.id, e)
+    }, 250)
+  }
+  function onBadgeDoubleClick(e: MouseEvent, index: number) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (badgeClickTimer) clearTimeout(badgeClickTimer)
+    badgeClickTimer = null
+    navigateToCounterpart(index)
+  }
   function navigateToCounterpart(index: number) {
     const counterpart = continuation?.ends[1 - index]
     if (counterpart)
@@ -199,8 +219,8 @@
   function onBadgeKeydown(e: KeyboardEvent, index: number) {
     if (e.key !== 'Enter' && e.key !== ' ') return
     e.preventDefault()
-    onselect?.(edge.id)
     if (e.key === 'Enter') navigateToCounterpart(index)
+    else onselect?.(edge.id)
   }
 
   function handleContextMenu(e: MouseEvent) {
@@ -303,8 +323,8 @@
         tabindex="0"
         data-continuation-end={index}
         aria-label={`${continuation.label}: ${index === 0 ? 'source' : 'destination'} marker. Enter to jump to the other end`}
-        {onclick}
-        ondblclick={(e) => { e.preventDefault(); e.stopPropagation(); onselect?.(edge.id, e); navigateToCounterpart(index) }}
+        onclick={onBadgeClick}
+        ondblclick={(e) => onBadgeDoubleClick(e, index)}
         onkeydown={(e) => onBadgeKeydown(e, index)}
         onpointerdown={(e) => {
           if (!routeEdit || !selected) return
