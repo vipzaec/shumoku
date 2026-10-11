@@ -193,11 +193,16 @@
     onselect?.(edge.id, e)
   }
   let badgeClickTimer: ReturnType<typeof setTimeout> | null = null
+  let suppressNextBadgeClick = false
   onDestroy(() => {
     if (badgeClickTimer) clearTimeout(badgeClickTimer)
   })
   function onBadgeClick(e: MouseEvent) {
     e.stopPropagation()
+    if (suppressNextBadgeClick) {
+      suppressNextBadgeClick = false
+      return
+    }
     if (badgeClickTimer) clearTimeout(badgeClickTimer)
     badgeClickTimer = setTimeout(() => {
       badgeClickTimer = null
@@ -249,8 +254,10 @@
     if (
       terminalDragStart &&
       Math.hypot(e.clientX - terminalDragStart.x, e.clientY - terminalDragStart.y) > 4
-    )
+    ) {
+      suppressNextBadgeClick = true
       oncontinuationmove?.(edge.id, draggedTerminal, e.clientX, e.clientY)
+    }
     draggedTerminal = null
     terminalPreview = null
     terminalDragStart = null
@@ -315,6 +322,21 @@
 
   {@render overlay?.(edge, overlayContext)}
 
+  <!-- Keep the connection hit area behind continuation badges so the line cannot
+       capture a marker drag where its last segment meets the badge. -->
+  <path
+    d={pathD}
+    fill="none"
+    stroke="transparent"
+    stroke-width={Math.max(edge.width + 12, 16)}
+    stroke-linecap="round"
+    class="link-hit"
+    title={routeEdit && !continuation ? 'Double-click to add a bend' : undefined}
+    {onclick}
+    ondblclick={addPoint}
+    oncontextmenu={handleContextMenu}
+  />
+
   {#if continuation}
     {#each continuation.ends as terminal, index}
       <circle cx={terminal.x} cy={terminal.y} r="4" fill={strokeColor} pointer-events="none" />
@@ -327,8 +349,11 @@
         ondblclick={(e) => onBadgeDoubleClick(e, index)}
         onkeydown={(e) => onBadgeKeydown(e, index)}
         onpointerdown={(e) => {
-          if (!routeEdit || !selected) return
+          if (!routeEdit) return
           e.stopPropagation()
+          suppressNextBadgeClick = false
+          if (badgeClickTimer) clearTimeout(badgeClickTimer)
+          badgeClickTimer = null
           draggedTerminal = index
           terminalDragStart = { x: e.clientX, y: e.clientY }
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -336,8 +361,8 @@
         onpointermove={previewTerminal}
         onpointerup={finishTerminal}
         onpointercancel={() => { draggedTerminal = null; terminalPreview = null; terminalDragStart = null }}
-        style={routeEdit && selected ? 'cursor: grab; touch-action: none' : 'cursor: pointer'}
-        title={routeEdit && selected ? 'Drag to move this continuation marker' : undefined}
+        style={routeEdit ? 'cursor: grab; touch-action: none' : 'cursor: pointer'}
+        title={routeEdit ? 'Drag to move this continuation marker' : undefined}
       >
         <rect
           x={terminal.badgeX - 34}
@@ -366,20 +391,6 @@
       </g>
     {/each}
   {/if}
-
-  <!-- Hit area -->
-  <path
-    d={pathD}
-    fill="none"
-    stroke="transparent"
-    stroke-width={Math.max(edge.width + 12, 16)}
-    stroke-linecap="round"
-    class="link-hit"
-    title={routeEdit && !continuation ? 'Double-click to add a bend' : undefined}
-    {onclick}
-    ondblclick={addPoint}
-    oncontextmenu={handleContextMenu}
-  />
 
   {#if routeEdit && selected && edge.route?.kind === 'polyline' && !continuation}
     {#each edge.route.points.slice(1, -1) as point, index}
