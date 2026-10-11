@@ -76,6 +76,8 @@ export interface Camera {
   zoomTo(scale: number, point?: [number, number]): void
   /** Set the absolute translation (viewport-space). */
   panTo(x: number, y: number): void
+  /** Centre a world-space point without changing the current zoom. */
+  panToPoint(x: number, y: number): void
   /**
    * Pan+zoom so a node with `data-id=nodeId` fills roughly `areaRatio`
    * of the viewport (default 5%). Returns true if the node was found.
@@ -401,6 +403,17 @@ export function attachCamera(svg: SVGSVGElement, options: CameraOptions = {}): C
     panTo(x: number, y: number) {
       const current = zoomTransform(svg)
       zoomBehavior.transform(svgSel, zoomIdentity.translate(x, y).scale(current.k))
+    },
+
+    panToPoint(x: number, y: number) {
+      const current = zoomTransform(svg)
+      const vb = svg.viewBox.baseVal
+      const centreX = vb.x + vb.width / 2
+      const centreY = vb.y + vb.height / 2
+      zoomBehavior.transform(
+        svgSel,
+        zoomIdentity.translate(centreX - x * current.k, centreY - y * current.k).scale(current.k),
+      )
     },
 
     panToNode(nodeId: string, areaRatio = 0.05): boolean {

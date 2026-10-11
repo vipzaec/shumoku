@@ -156,6 +156,7 @@
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
     oncontinuationmove?: (id: string, index: number, x: number, y: number) => void
+    oncontinuationnavigate?: (id: string, index: number, x: number, y: number) => void
     /**
      * Per-element right-clicks call `preventDefault()` by default to
      * suppress the browser's native context menu. Set this to `false`
@@ -217,6 +218,7 @@
     onroutemove,
     onrouteremove,
     oncontinuationmove,
+    oncontinuationnavigate,
     subgraphOverlay,
     linkOverlay,
     nodeOverlay,
@@ -995,6 +997,7 @@
       const p = screenToSvg(x, y)
       oncontinuationmove?.(id, index, p.x, p.y)
     }}
+    {oncontinuationnavigate}
     oncontextmenu={handleContextMenu}
     onbackgroundclick={handleBackgroundClick}
     onmarquee={handleMarquee}

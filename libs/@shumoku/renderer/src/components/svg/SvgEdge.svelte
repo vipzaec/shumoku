@@ -26,6 +26,7 @@
     onroutemove,
     onrouteremove,
     oncontinuationmove,
+    oncontinuationnavigate,
   }: {
     edge: ResolvedEdge
     nodes: Map<string, Node>
@@ -43,6 +44,7 @@
     onroutemove?: (id: string, index: number, x: number, y: number) => void
     onrouteremove?: (id: string, index: number) => void
     oncontinuationmove?: (id: string, index: number, x: number, y: number) => void
+    oncontinuationnavigate?: (id: string, index: number, x: number, y: number) => void
   } = $props()
 
   // Every edge renders as a cubic Bezier flowing out of the source
@@ -189,10 +191,16 @@
     e.stopPropagation()
     onselect?.(edge.id, e)
   }
-  function onBadgeKeydown(e: KeyboardEvent) {
+  function navigateToCounterpart(index: number) {
+    const counterpart = continuation?.ends[1 - index]
+    if (counterpart)
+      oncontinuationnavigate?.(edge.id, 1 - index, counterpart.badgeX, counterpart.badgeY)
+  }
+  function onBadgeKeydown(e: KeyboardEvent, index: number) {
     if (e.key !== 'Enter' && e.key !== ' ') return
     e.preventDefault()
     onselect?.(edge.id)
+    if (e.key === 'Enter') navigateToCounterpart(index)
   }
 
   function handleContextMenu(e: MouseEvent) {
@@ -293,9 +301,11 @@
       <g
         role="button"
         tabindex="0"
-        aria-label={`${continuation.label}: ${index === 0 ? 'source' : 'destination'} of the same connection`}
+        data-continuation-end={index}
+        aria-label={`${continuation.label}: ${index === 0 ? 'source' : 'destination'} marker. Enter to jump to the other end`}
         {onclick}
-        onkeydown={onBadgeKeydown}
+        ondblclick={(e) => { e.preventDefault(); e.stopPropagation(); onselect?.(edge.id, e); navigateToCounterpart(index) }}
+        onkeydown={(e) => onBadgeKeydown(e, index)}
         onpointerdown={(e) => {
           if (!routeEdit || !selected) return
           e.stopPropagation()
@@ -330,7 +340,9 @@
         >
           {continuation.label}
         </text>
-        <title>One logical connection: {continuation.label}. Select to trace both ends.</title>
+        <title>
+          One logical connection: {continuation.label}. Double-click to jump to the other end.
+        </title>
       </g>
     {/each}
   {/if}

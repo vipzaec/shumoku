@@ -424,6 +424,19 @@
     setTimeout(() => node.classList.remove('node-highlighted'), 3000)
   }
 
+  function panToContinuation(id: string, index: number, x: number, y: number): void {
+    camera?.panToPoint(x, y)
+    const marker = svgElement?.querySelector<SVGGElement>(
+      `g.link-group[data-link-id="${CSS.escape(id)}"] g[data-continuation-end="${index}"]`,
+    )
+    if (!marker) return
+    marker.classList.remove('continuation-focused')
+    // Restart the cue when navigating repeatedly between the same markers.
+    void marker.getBoundingClientRect()
+    marker.classList.add('continuation-focused')
+    setTimeout(() => marker.classList.remove('continuation-focused'), 1800)
+  }
+
   export function getSvgElement(): SVGSVGElement | null {
     return svgElement
   }
@@ -501,6 +514,7 @@
       {onroutemove}
       {onrouteremove}
       {oncontinuationmove}
+      oncontinuationnavigate={panToContinuation}
     />
     {#if ctx}
       {@render children?.(ctx)}
@@ -520,6 +534,11 @@
   .topology-viewer :global(svg) {
     width: 100%;
     height: 100%;
+  }
+
+  .topology-viewer :global(.continuation-focused rect) {
+    stroke: #f59e0b;
+    stroke-width: 3px;
   }
 
   /* Interaction gating via pointer-events on specific element types.
