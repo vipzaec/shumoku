@@ -10,23 +10,32 @@
 interface NodeLike {
   id: string
   label?: string | string[]
+  metadata?: { displayName?: unknown }
 }
 
-/** One-line display name for a node. Empty/missing labels fall back to id. */
+/** One-line display name for a node, including composed VM boundary ports. */
 export function nodeLabel(node: NodeLike | undefined | null): string {
   if (!node) return ''
-  const raw = Array.isArray(node.label) ? node.label.join(' ') : node.label
-  if (!raw || raw.length === 0) return node.id
   // Labels may carry renderer markup ("<b>edge-rt-01</b>" renders bold on the
   // canvas). Every caller of this helper is a PLAIN-TEXT context (lists,
   // dropdowns, name matching), so strip the tags here — the one place — rather
   // than leaking "<b>…</b>" into the UI.
-  const text = raw
-    .replace(/<[^>]*>/g, '')
-    .replace(/[\u200B-\u200D\uFEFF]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return text.length > 0 ? text : node.id
+  const plainText = (raw: string) =>
+    raw
+      .replace(/<[^>]*>/g, '')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const label = plainText(Array.isArray(node.label) ? node.label.join(' ') : (node.label ?? ''))
+  if (label) return label
+  // A composed VM uses an unlabeled boundary-port node. Its readable name is
+  // retained in metadata while the visible title belongs to the parent group.
+  const displayName = node.metadata?.displayName
+  if (typeof displayName === 'string') {
+    const name = plainText(displayName)
+    if (name) return name
+  }
+  return node.id
 }
 
 /** Look up a node by id and return its label. Returns the id if not found. */
