@@ -149,6 +149,7 @@
   import { formatTraffic } from '$lib/utils/format'
   import { nodeLabel, nodeLabelById } from '$lib/utils/node-label'
   import { sortByName } from '$lib/utils/sort'
+  import { trafficDecision } from '$lib/utils/traffic-decision'
   import { getUtilizationColor, IDLE_LINK_METRICS, isLinkInstrumented } from '$lib/weathermap'
 
   // --- Props (Svelte 5 runes) ---
@@ -385,7 +386,7 @@
   let customTrafficFlows = $state<TrafficFlowProfile[]>([])
   let flowDraft = $state<TrafficFlowProfile | null>(null)
 
-  type PathHop = { linkId: string; label: string; decision: string }
+  type PathHop = { linkId: string; label: string; decision: string; decisionBasis: string }
   type TrafficPath = { nodeIds: string[]; hops: PathHop[] }
   type TrafficFlowProfile = {
     id: string
@@ -479,18 +480,6 @@
     ),
   )
 
-  function trafficDecision(link: Record<string, unknown>): string {
-    const metadata = (link.metadata ?? {}) as Record<string, unknown>
-    const explicit = String(metadata.decision ?? '').toUpperCase()
-    if (['ALLOW', 'BLOCK', 'NAT', 'VPN', 'UNKNOWN'].includes(explicit)) return explicit
-    const label = String(link.label ?? '').toLowerCase()
-    if (/block|deny|reject/.test(label)) return 'BLOCK'
-    if (/dnat|snat|nat/.test(label)) return 'NAT'
-    if (/ipsec|vpn|wireguard/.test(label)) return 'VPN'
-    if (/allow|routing|uplink|control|overlay/.test(label)) return 'ALLOW'
-    return 'UNKNOWN'
-  }
-
   function trafficHopLabel(link: Record<string, unknown>): string {
     const metadata = (link.metadata ?? {}) as Record<string, unknown>
     return String(metadata.pathLabel ?? link.label ?? '').trim() || 'unlabelled connection'
@@ -558,10 +547,12 @@
     while (cursorKey !== startKey) {
       const step = previous.get(cursorKey)
       if (!step) return null
+      const verdict = trafficDecision(step.link)
       hops.unshift({
         linkId: String(step.link.id ?? ''),
         label: trafficHopLabel(step.link),
-        decision: trafficDecision(step.link),
+        decision: verdict.status,
+        decisionBasis: verdict.basis,
       })
       nodeIds.unshift(step.nodeId)
       cursorKey = step.key
@@ -644,10 +635,12 @@
       if (!link) continue
       nodeIds.add(link.from.node)
       nodeIds.add(link.to.node)
+      const verdict = trafficDecision(link as unknown as Record<string, unknown>)
       hops.push({
         linkId: link.id,
         label: trafficHopLabel(link as unknown as Record<string, unknown>),
-        decision: trafficDecision(link as unknown as Record<string, unknown>),
+        decision: verdict.status,
+        decisionBasis: verdict.basis,
       })
     }
     return hops.length > 0 ? { nodeIds: [...nodeIds], hops } : findTrafficPath()
@@ -4725,7 +4718,12 @@
           <div class="path-result">
             {#each trafficPath.hops as hop, index}
               <div class="path-hop">
-                <span class="decision {hop.decision.toLowerCase()}">{hop.decision}</span>
+                <span
+                  class="decision {hop.decision.toLowerCase()}"
+                  title={hop.decisionBasis}
+                  aria-label={`${hop.decision}: ${hop.decisionBasis}`}
+                  >{hop.decision}</span
+                >
                 <span>{hop.label}</span>
                 {#if index < trafficPath.hops.length - 1}
                   <span class="path-arrow">→</span>
@@ -4739,6 +4737,12 @@
               </div>
             {/if}
           </div>
+          {#if trafficPath.hops.some((hop) => hop.decision === 'UNKNOWN')}
+            <div class="path-verdict-note">
+              UNKNOWN: no verified firewall policy decision for this connection. Hover a status for
+              details.
+            </div>
+          {/if}
         {:else}
           <div class="path-empty">UNKNOWN · no matching path</div>
         {/if}
@@ -5547,17 +5551,17 @@
   .decision.block {
     background: #dc2626;
   }
-  .decision.nat {
-    background: #ea580c;
-  }
-  .decision.vpn {
-    background: #7c3aed;
-  }
   .decision.control {
     background: #8b5cf6;
   }
   .decision.unknown {
     background: #64748b;
+  }
+  .path-verdict-note {
+    margin-top: 7px;
+    color: var(--color-text-muted, #64748b);
+    font-size: 10px;
+    line-height: 1.4;
   }
   .path-arrow {
     color: var(--color-text-muted, #64748b);
