@@ -8,12 +8,12 @@ export interface TrafficDecision {
 /** A route, NAT rule, or suggestive label is not a firewall policy verdict. */
 export function trafficDecision(link: Record<string, unknown>): TrafficDecision {
   const metadata =
-    link.metadata && typeof link.metadata === 'object' && !Array.isArray(link.metadata)
-      ? (link.metadata as Record<string, unknown>)
+    link['metadata'] && typeof link['metadata'] === 'object' && !Array.isArray(link['metadata'])
+      ? (link['metadata'] as Record<string, unknown>)
       : {}
-  const explicit = String(metadata.decision ?? '').toUpperCase()
+  const explicit = String(metadata['decision'] ?? '').toUpperCase()
   const evidence =
-    typeof metadata.decisionEvidence === 'string' ? metadata.decisionEvidence.trim() : ''
+    typeof metadata['decisionEvidence'] === 'string' ? metadata['decisionEvidence'].trim() : ''
 
   if ((explicit === 'ALLOW' || explicit === 'BLOCK') && evidence) {
     return { status: explicit, basis: evidence }
