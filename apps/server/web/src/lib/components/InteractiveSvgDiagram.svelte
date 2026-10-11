@@ -126,7 +126,11 @@
     TopologyViewer,
     WeathermapLinkOverlay,
   } from '$lib/components/topology'
-  import { editableRouteBends } from '$lib/components/topology/route-edit'
+  import {
+    editableRouteBends,
+    nonEmptyRouteOverrides,
+    removeEditableRouteBend,
+  } from '$lib/components/topology/route-edit'
   import { semanticLayers } from '$lib/components/topology/semantic-layers'
   import { createSerialLayoutWriter } from '$lib/components/topology/serial-layout-writer'
   import { serviceIcons } from '$lib/service-icons'
@@ -1492,7 +1496,7 @@
         const linkPorts = saved?.linkPortOverrides ?? {}
         const continuations = saved?.linkContinuationOverrides ?? {}
         const portPresentations = saved?.portPresentationOverrides ?? {}
-        edgeRoutes = saved?.edgeRoutes ?? {}
+        edgeRoutes = nonEmptyRouteOverrides(saved?.edgeRoutes)
         pinnedPositions = pins
         portSides = sides
         portOrders = orders
@@ -3077,10 +3081,13 @@
   function removeRoutePoint(id: string, index: number) {
     const bends = editableRouteBends(edgeRoutes[id], latestLayout?.edges.get(id)?.route)
     if (!layoutEdit || !bends[index]) return
-    saveRoute(
-      id,
-      bends.filter((_, i) => i !== index),
-    )
+    saveRoute(id, removeEditableRouteBend(bends, index))
+  }
+
+  function resetSelectedRoute() {
+    if (!layoutEdit || !selectedLayoutLinkId || !Object.hasOwn(edgeRoutes, selectedLayoutLinkId))
+      return
+    saveRoute(selectedLayoutLinkId, null)
   }
 
   function emitNodeSelect(nodeId: string) {
@@ -4371,6 +4378,13 @@
           </button>
           {#if (edgeRoutes[selectedLayoutLinkId]?.length ?? 0) > 0}
             <span class="route-mode" title="Drag bends to adjust the manual route">Manual</span>
+            <button
+              onclick={resetSelectedRoute}
+              title="Reset selected connection to automatic routing"
+              aria-label="Reset selected connection to automatic routing"
+            >
+              <ArrowCounterClockwiseIcon size={18} />
+            </button>
           {/if}
         {/if}
         {#if layoutEdit &&

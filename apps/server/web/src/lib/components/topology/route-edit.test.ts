@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { editableRouteBends } from './route-edit'
+import { editableRouteBends, nonEmptyRouteOverrides, removeEditableRouteBend } from './route-edit'
 
 const route = {
   kind: 'polyline' as const,
@@ -25,5 +25,24 @@ describe('manual route editing', () => {
 
   it('honors an explicitly cleared manual route instead of restoring automatic bends', () => {
     expect(editableRouteBends([], route)).toEqual([])
+  })
+
+  it('restores automatic routing when the final hand-drawn bend is removed', () => {
+    expect(removeEditableRouteBend([{ x: 60, y: -40 }], 0)).toBeNull()
+    expect(
+      removeEditableRouteBend(
+        [
+          { x: 40, y: -20 },
+          { x: 60, y: -40 },
+        ],
+        0,
+      ),
+    ).toEqual([{ x: 60, y: -40 }])
+  })
+
+  it('ignores old empty route overrides when loading a saved layout', () => {
+    expect(nonEmptyRouteOverrides({ cleared: [], handDrawn: [{ x: 60, y: -40 }] })).toEqual({
+      handDrawn: [{ x: 60, y: -40 }],
+    })
   })
 })
