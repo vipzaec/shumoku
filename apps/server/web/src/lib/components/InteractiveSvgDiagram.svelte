@@ -253,6 +253,12 @@
     notes?: string
     fromSide: 'top' | 'bottom' | 'left' | 'right'
     toSide: 'top' | 'bottom' | 'left' | 'right'
+    fromPortId?: string
+    toPortId?: string
+    fromOffset?: number
+    toOffset?: number
+    fromPointLabel?: string
+    toPointLabel?: string
   }
   type OperatorGroup = {
     id: string
@@ -1100,22 +1106,57 @@
       }>
     >()
     for (const link of manualLinks) {
-      const fromPorts = operatorPorts.get(link.from) ?? []
-      fromPorts.push({
-        id: `${link.id}:from`,
-        label: link.label,
-        connectors: [],
-        placement: { side: link.fromSide, order: fromPorts.length },
-      })
-      operatorPorts.set(link.from, fromPorts)
-      const toPorts = operatorPorts.get(link.to) ?? []
-      toPorts.push({
-        id: `${link.id}:to`,
-        label: link.label,
-        connectors: [],
-        placement: { side: link.toSide, order: toPorts.length },
-      })
-      operatorPorts.set(link.to, toPorts)
+      if (!link.fromPortId) {
+        const fromPorts = operatorPorts.get(link.from) ?? []
+        fromPorts.push({
+          id: `${link.id}:from`,
+          label: link.fromPointLabel ?? '',
+          connectors: [],
+          placement: {
+            side: link.fromSide,
+            order: fromPorts.length,
+            offset: link.fromOffset ?? 0.5,
+          },
+        })
+        operatorPorts.set(link.from, fromPorts)
+      }
+      if (!link.toPortId) {
+        const toPorts = operatorPorts.get(link.to) ?? []
+        toPorts.push({
+          id: `${link.id}:to`,
+          label: link.toPointLabel ?? '',
+          connectors: [],
+          placement: { side: link.toSide, order: toPorts.length, offset: link.toOffset ?? 0.5 },
+        })
+        operatorPorts.set(link.to, toPorts)
+      }
+    }
+    // A point may be shared by several operator connections. Preserve it
+    // even if the connection that originally created it was removed.
+    for (const link of manualLinks) {
+      for (const endpoint of ['from', 'to'] as const) {
+        const nodeId = link[endpoint]
+        const portId = link[endpoint === 'from' ? 'fromPortId' : 'toPortId']
+        if (!portId) continue
+        if (
+          !portId.startsWith('operator-link-') &&
+          source.nodes.find((node) => node.id === nodeId)?.ports?.some((port) => port.id === portId)
+        )
+          continue
+        const list = operatorPorts.get(nodeId) ?? []
+        if (list.some((port) => port.id === portId)) continue
+        list.push({
+          id: portId,
+          label: link[endpoint === 'from' ? 'fromPointLabel' : 'toPointLabel'] ?? '',
+          connectors: [],
+          placement: {
+            side: link[endpoint === 'from' ? 'fromSide' : 'toSide'],
+            order: list.length,
+            offset: link[endpoint === 'from' ? 'fromOffset' : 'toOffset'] ?? 0.5,
+          },
+        })
+        operatorPorts.set(nodeId, list)
+      }
     }
     // A dragged line end gets its own point. The old point, and every other
     // connection attached to it, retain their placement and stable IDs.
@@ -1335,6 +1376,7 @@
                 ? {
                     placement: {
                       ...port.placement,
+                      auto: false,
                       ...(side ? { side } : {}),
                       ...(order !== undefined ? { order } : {}),
                       ...(offset !== undefined ? { offset } : {}),
@@ -1355,8 +1397,8 @@
             applyLinkPresentation(
               {
                 id: link.id,
-                from: { node: link.from, port: `${link.id}:from` },
-                to: { node: link.to, port: `${link.id}:to` },
+                from: { node: link.from, port: link.fromPortId || `${link.id}:from` },
+                to: { node: link.to, port: link.toPortId || `${link.id}:to` },
                 label: link.label,
                 arrow: link.direction ?? 'forward',
                 metadata: {
@@ -1599,8 +1641,17 @@
     if (layoutEdit) {
       if (linkEditorOpen && linkPickEndpoint) {
         if (!id || !graph) return
+        const chosenPort =
+          type === 'port'
+            ? graph.nodes.flatMap((node) =>
+                (node.ports ?? [])
+                  .filter((port) => `${node.id}:${port.id}` === id)
+                  .map((port) => ({ node, port })),
+              )[0]
+            : undefined
         const target =
-          type === 'node'
+          chosenPort?.node ??
+          (type === 'node'
             ? graph.nodes.find((node) => node.id === id)
             : type === 'subgraph'
               ? graph.nodes.find(
@@ -1608,9 +1659,11 @@
                     node.parent === id &&
                     node.metadata?.['presentationRole'] === 'subgraph-boundary-port',
                 )
-              : undefined
+              : undefined)
         if (!target || !linkDraft) return
         linkDraft[linkPickEndpoint] = target.id
+        linkDraft[linkPickEndpoint === 'from' ? 'fromPortId' : 'toPortId'] =
+          chosenPort?.port.id ?? ''
         linkPickEndpoint = null
         linkDraftError = ''
         if (linkDraft.from && linkDraft.to) autoPlaceLinkSides()
@@ -2457,6 +2510,8 @@
       notes: '',
       fromSide: 'right',
       toSide: 'left',
+      fromOffset: 0.5,
+      toOffset: 0.5,
     }
     linkDraftError = ''
     linkPickEndpoint = null
@@ -2817,6 +2872,14 @@
     return sortByName(graph?.nodes ?? [], diagramNodeName)
   }
 
+  function linkEndpointPorts(nodeId: string) {
+    const node = graph?.nodes.find((candidate) => candidate.id === nodeId)
+    return sortByName(
+      node?.ports ?? [],
+      (port) => (port.label ?? '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim() || port.id,
+    )
+  }
+
   function sortedFlowLinks() {
     return sortByName(graph?.links ?? [], flowLinkLabel)
   }
@@ -2825,10 +2888,10 @@
     port: NonNullable<NetworkGraph['nodes'][number]['ports']>[number],
     index: number,
     endpoint: 'from' | 'to',
+    nodeId = endpoint === 'from' ? appearanceDraft?.fromNode : appearanceDraft?.toNode,
   ): string {
     const label = (port.label ?? '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
     const side = port.placement?.side
-    const nodeId = endpoint === 'from' ? appearanceDraft?.fromNode : appearanceDraft?.toNode
     const peers = new Set<string>()
     for (const link of graph?.links ?? []) {
       const otherId =
@@ -2874,17 +2937,26 @@
   }
 
   function saveLinkDraft() {
-    if (!graph || !linkDraft?.from || !linkDraft.to || linkDraft.from === linkDraft.to) return
+    if (!graph || !linkDraft?.from || !linkDraft.to) return
     const normalized = { ...linkDraft, label: linkDraft.label.trim() || 'connection' }
-    const duplicate = operatorLinks.some(
-      (link) =>
-        link.id !== normalized.id &&
-        ((link.from === normalized.from && link.to === normalized.to) ||
-          (link.from === normalized.to && link.to === normalized.from)),
-    )
-    if (duplicate) {
-      linkDraftError = 'A manual connection between these blocks already exists.'
-      return
+    for (const endpoint of ['from', 'to'] as const) {
+      const node = graph.nodes.find((candidate) => candidate.id === normalized[endpoint])
+      const portId = normalized[endpoint === 'from' ? 'fromPortId' : 'toPortId']
+      const port = node?.ports?.find((candidate) => candidate.id === portId)
+      if (!node || (portId && !port)) {
+        linkDraftError = 'Choose an existing point or create a new one on each block.'
+        return
+      }
+      const key = endpoint === 'from' ? 'fromOffset' : 'toOffset'
+      if (port) {
+        normalized[endpoint === 'from' ? 'fromSide' : 'toSide'] =
+          port.placement?.side ?? normalized[endpoint === 'from' ? 'fromSide' : 'toSide']
+        normalized[endpoint === 'from' ? 'fromPointLabel' : 'toPointLabel'] = port.label
+      }
+      const offset = port?.placement?.offset ?? normalized[key]
+      normalized[key] = Number.isFinite(offset)
+        ? Math.max(0.04, Math.min(0.96, offset ?? 0.5))
+        : 0.5
     }
     const index = operatorLinks.findIndex((link) => link.id === normalized.id)
     const next =
@@ -3778,7 +3850,10 @@
           <select
             id="connection-source-block"
             bind:value={linkDraft.from}
-            onchange={() => (linkPickEndpoint = null)}
+            onchange={() => {
+              linkPickEndpoint = null
+              if (linkDraft) linkDraft.fromPortId = ''
+            }}
           >
             <option value="">Choose a block</option>
             {#each sortedDiagramNodes() as node}
@@ -3791,9 +3866,49 @@
             aria-pressed={linkPickEndpoint === 'from'}
             onclick={() => (linkPickEndpoint = linkPickEndpoint === 'from' ? null : 'from')}
           >
-            Pick on plan
+            Pick block or point
           </button>
         </div>
+        <label
+          >Source point
+          <select bind:value={linkDraft.fromPortId}>
+            <option value="">Create a new point</option>
+            {#each linkEndpointPorts(linkDraft.from) as port, index}
+              <option value={port.id}>
+                {readablePortName(port, index, 'from', linkDraft.from)}
+              </option>
+            {/each}
+          </select>
+        </label>
+        {#if !linkDraft.fromPortId}
+          <div class="side-pickers">
+            <label
+              >Side
+              <select bind:value={linkDraft.fromSide}>
+                <option value="bottom">Bottom</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+                <option value="top">Top</option>
+              </select>
+            </label>
+            <label
+              >Position, %
+              <input
+                type="number"
+                min="4"
+                max="96"
+                step="1"
+                value={Math.round((linkDraft.fromOffset ?? 0.5) * 100)}
+                oninput={(event) => {
+                  if (linkDraft) linkDraft.fromOffset = Number(event.currentTarget.value) / 100
+                }}
+              >
+            </label>
+          </div>
+          <label
+            >Point label <input bind:value={linkDraft.fromPointLabel} placeholder="Optional"></label
+          >
+        {/if}
       </div>
       <div class="endpoint-field">
         <label for="connection-destination-block">Destination</label>
@@ -3808,7 +3923,10 @@
           <select
             id="connection-destination-block"
             bind:value={linkDraft.to}
-            onchange={() => (linkPickEndpoint = null)}
+            onchange={() => {
+              linkPickEndpoint = null
+              if (linkDraft) linkDraft.toPortId = ''
+            }}
           >
             <option value="">Choose a block</option>
             {#each sortedDiagramNodes() as node}
@@ -3821,9 +3939,49 @@
             aria-pressed={linkPickEndpoint === 'to'}
             onclick={() => (linkPickEndpoint = linkPickEndpoint === 'to' ? null : 'to')}
           >
-            Pick on plan
+            Pick block or point
           </button>
         </div>
+        <label
+          >Destination point
+          <select bind:value={linkDraft.toPortId}>
+            <option value="">Create a new point</option>
+            {#each linkEndpointPorts(linkDraft.to) as port, index}
+              <option value={port.id}>
+                {readablePortName(port, index, 'to', linkDraft.to)}
+              </option>
+            {/each}
+          </select>
+        </label>
+        {#if !linkDraft.toPortId}
+          <div class="side-pickers">
+            <label
+              >Side
+              <select bind:value={linkDraft.toSide}>
+                <option value="bottom">Bottom</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+                <option value="top">Top</option>
+              </select>
+            </label>
+            <label
+              >Position, %
+              <input
+                type="number"
+                min="4"
+                max="96"
+                step="1"
+                value={Math.round((linkDraft.toOffset ?? 0.5) * 100)}
+                oninput={(event) => {
+                  if (linkDraft) linkDraft.toOffset = Number(event.currentTarget.value) / 100
+                }}
+              >
+            </label>
+          </div>
+          <label
+            >Point label <input bind:value={linkDraft.toPointLabel} placeholder="Optional"></label
+          >
+        {/if}
       </div>
       <label
         >Connection label
@@ -3857,27 +4015,9 @@
           </select>
         </label>
       </div>
-      <div class="side-pickers">
-        <label
-          >Source side
-          <select bind:value={linkDraft.fromSide}>
-            <option value="bottom">Bottom</option>
-            <option value="left">Left</option>
-            <option value="right">Right</option>
-            <option value="top">Top</option>
-          </select>
-        </label>
-        <label
-          >Destination side
-          <select bind:value={linkDraft.toSide}>
-            <option value="bottom">Bottom</option>
-            <option value="left">Left</option>
-            <option value="right">Right</option>
-            <option value="top">Top</option>
-          </select>
-        </label>
-      </div>
-      <button onclick={autoPlaceLinkSides}>Choose sides from current placement</button>
+      {#if !linkDraft.fromPortId || !linkDraft.toPortId}
+        <button onclick={autoPlaceLinkSides}>Choose new point sides from placement</button>
+      {/if}
       {#if linkDraftError}
         <div class="editor-error">{linkDraftError}</div>
       {/if}
@@ -3885,11 +4025,7 @@
         {#if operatorLinks.some((link) => link.id === linkDraft?.id)}
           <button class="danger" onclick={deleteLinkDraft}>Delete connection</button>
         {/if}
-        <button
-          class="primary"
-          disabled={!linkDraft.from || !linkDraft.to || linkDraft.from === linkDraft.to}
-          onclick={saveLinkDraft}
-        >
+        <button class="primary" disabled={!linkDraft.from || !linkDraft.to} onclick={saveLinkDraft}>
           Create connection
         </button>
       </div>

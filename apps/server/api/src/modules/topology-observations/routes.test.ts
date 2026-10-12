@@ -160,6 +160,19 @@ describe('topology display settings', () => {
           icon: 'data:image/svg+xml;charset=utf-8,%3Csvg%2F%3E',
         },
       ],
+      operatorLinks: [
+        {
+          id: 'operator-link-1',
+          from: 'firewall',
+          to: 'operator-1',
+          label: 'Custom connection',
+          fromSide: 'right' as const,
+          toSide: 'left' as const,
+          fromPortId: 'wan',
+          toOffset: 0.35,
+          toPointLabel: 'service',
+        },
+      ],
     }
     const response = await app(observations).request('/topologies/topology-1/display-settings', {
       method: 'PUT',

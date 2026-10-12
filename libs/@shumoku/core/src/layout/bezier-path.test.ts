@@ -1,7 +1,7 @@
 // bezier-path lateralOffset coverage. The path generator should:
 //   - leave the existing (no-offset) shape unchanged when offset is 0
-//   - shift the source endpoint perpendicular to the port's outward
-//     normal when fromLateralOffset is set; same for the target
+//   - keep both endpoints attached to their ports while shifting only
+//     the adjacent control points
 //   - leave the SOURCE x intact when only `to.lateralOffset` is set
 //     (i.e. offsets are scoped to their own endpoint)
 //   - produce two distinct paths for two lanes at the same port
@@ -48,27 +48,24 @@ test('each end reduces its own radius as the opposite block approaches its norma
   expect(near[5]).toBe(40)
 })
 
-test('positive fromLateralOffset on a bottom port shifts the source rightward', () => {
+test('positive fromLateralOffset on a bottom port fans right without detaching', () => {
   const a = { absolutePosition: { x: 0, y: 0 }, side: 'bottom' as const }
   const b = { absolutePosition: { x: 0, y: 100 }, side: 'top' as const }
   const base = parseSvgPath(bezierEdgePath(a, b))
   const shifted = parseSvgPath(bezierEdgePath({ ...a, lateralOffset: 5 }, b))
-  // Source moved right by 5; target x unchanged.
-  expect(shifted[0]).toBeCloseTo((base[0] ?? 0) + 5, 5)
+  expect(shifted[0]).toBeCloseTo(base[0] ?? 0, 5)
+  expect(shifted[2]).toBeCloseTo((base[2] ?? 0) + 5, 5)
   expect(shifted[6]).toBeCloseTo(base[6] ?? 0, 5)
 })
 
-test('toLateralOffset on a top port shifts the target without moving the source', () => {
+test('toLateralOffset on a top port fans the arrival without moving the target', () => {
   const a = { absolutePosition: { x: 0, y: 0 }, side: 'bottom' as const }
   const b = { absolutePosition: { x: 0, y: 100 }, side: 'top' as const }
   const base = parseSvgPath(bezierEdgePath(a, b))
   const shifted = parseSvgPath(bezierEdgePath(a, { ...b, lateralOffset: 7 }))
-  // For top ports the lateral axis is also x; sign convention keeps
-  // positive offset = right-of-normal. The renderer doesn't care about
-  // the absolute sign so long as adjacent lanes spread apart — assert
-  // magnitude and that source x stayed put.
   expect(shifted[0]).toBeCloseTo(base[0] ?? 0, 5)
-  expect(Math.abs((shifted[6] ?? 0) - (base[6] ?? 0))).toBeCloseTo(7, 5)
+  expect(shifted[6]).toBeCloseTo(base[6] ?? 0, 5)
+  expect(Math.abs((shifted[4] ?? 0) - (base[4] ?? 0))).toBeCloseTo(7, 5)
 })
 
 test('two opposite-sign offsets at the same port produce distinct paths', () => {
@@ -80,7 +77,8 @@ test('two opposite-sign offsets at the same port produce distinct paths', () => 
   expect(left).not.toBe(right)
   const leftPts = parseSvgPath(left)
   const rightPts = parseSvgPath(right)
-  expect(leftPts[0]).toBeLessThan(rightPts[0] ?? 0)
+  expect(leftPts[0]).toBe(rightPts[0])
+  expect(leftPts[2]).toBeLessThan(rightPts[2] ?? 0)
 })
 
 test('lateralOffset on a left/right port shifts perpendicular (vertical)', () => {
@@ -88,7 +86,8 @@ test('lateralOffset on a left/right port shifts perpendicular (vertical)', () =>
   const b = { absolutePosition: { x: 100, y: 50 }, side: 'left' as const }
   const base = parseSvgPath(bezierEdgePath(a, b))
   const shifted = parseSvgPath(bezierEdgePath({ ...a, lateralOffset: 6 }, b))
-  // x stays, y moves.
+  // Endpoint stays attached; only its control point moves vertically.
   expect(shifted[0]).toBeCloseTo(base[0] ?? 0, 5)
-  expect(Math.abs((shifted[1] ?? 0) - (base[1] ?? 0))).toBeCloseTo(6, 5)
+  expect(shifted[1]).toBeCloseTo(base[1] ?? 0, 5)
+  expect(Math.abs((shifted[3] ?? 0) - (base[3] ?? 0))).toBeCloseTo(6, 5)
 })

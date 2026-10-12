@@ -156,8 +156,9 @@ describe('shared subgraph boundary port', () => {
     expect(edges.size).toBe(3)
     expect(edges.get('app')?.fromPortId).toBe('vm-lan:lan')
     expect(edges.get('db')?.fromPortId).toBe('vm-lan:lan')
-    expect(edges.get('app')?.fromLateralOffset).toBeUndefined()
-    expect(edges.get('db')?.fromLateralOffset).toBeUndefined()
+    expect(edges.get('app')?.fromLateralOffset).toBeGreaterThan(
+      edges.get('db')?.fromLateralOffset ?? 0,
+    )
     expect(edges.get('ingress')?.toPort.side).toBe('left')
     expect(edges.get('app')?.fromPort.side).toBe('right')
     expect(edges.get('db')?.fromPort.side).toBe('right')

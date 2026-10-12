@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from 'vitest'
 import type { Link, Node } from '../models/types.js'
+import { bezierEdgePath } from './bezier-path.js'
 import type { ResolvedPort } from './resolved-types.js'
 import { routeEdges } from './route-edges.js'
 
@@ -356,6 +357,43 @@ describe('routeEdges — lane offset', () => {
     expect(get('c1:p1')?.fromLateralOffset).toBe(4)
   })
 
+  test('shared boundary point keeps one anchor and fans toward upper and lower peers', async () => {
+    const nodes = new Map<string, Node>([
+      [
+        'boundary',
+        { id: 'boundary', label: '', metadata: { presentationRole: 'subgraph-boundary-port' } },
+      ],
+    ])
+    const ports = makePorts([
+      ['boundary:lan', port('boundary:lan', 'boundary', 100, 200, 'right')],
+      ['upper:lan', port('upper:lan', 'upper', 400, 100, 'left')],
+      ['lower:lan', port('lower:lan', 'lower', 400, 300, 'left')],
+    ])
+    const edges = await routeEdges(nodes, ports, [
+      link('boundary:lan', 'upper:lan'),
+      link('boundary:lan', 'lower:lan'),
+    ])
+    const upper = edges.get('__link_0')
+    const lower = edges.get('__link_1')
+    expect(upper).toBeDefined()
+    expect(lower).toBeDefined()
+    if (!upper || !lower) return
+    const path = (edge: typeof upper) =>
+      bezierEdgePath(
+        { ...edge.fromPort, lateralOffset: edge.fromLateralOffset },
+        { ...edge.toPort, lateralOffset: edge.toLateralOffset },
+      )
+        .replace(/[MC]/g, '')
+        .trim()
+        .split(/\s+/)
+        .map(Number)
+    const up = path(upper)
+    const down = path(lower)
+    expect(up.slice(0, 2)).toEqual([100, 200])
+    expect(down.slice(0, 2)).toEqual([100, 200])
+    expect(up[3]).toBeLessThan(down[3] ?? 0)
+  })
+
   test('fan-out of 3+ from one node falls through to lateral-offset bezier', async () => {
     // Bus routing is currently disabled — every edge stays as
     // the default port-anchored bezier and the lane-offset pass
@@ -416,7 +454,9 @@ describe('routeEdges — lane offset', () => {
       (a, b) => a.fromPort.absolutePosition.x - b.fromPort.absolutePosition.x,
     )
     const offsets = list.map((e) => e.toLateralOffset)
-    expect(offsets).toEqual([-8, 0, 8])
+    // A top-side port's positive lateral offset points left in screen
+    // coordinates; the signed offsets must still fan in source order.
+    expect(offsets).toEqual([8, -0, -8])
     // Each source is unique, so no source-side offset.
     for (const e of list) expect(e.fromLateralOffset).toBeUndefined()
   })

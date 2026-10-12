@@ -141,6 +141,12 @@ export interface OperatorLayoutState {
     notes?: string
     fromSide: 'top' | 'bottom' | 'left' | 'right'
     toSide: 'top' | 'bottom' | 'left' | 'right'
+    fromPortId?: string
+    toPortId?: string
+    fromOffset?: number
+    toOffset?: number
+    fromPointLabel?: string
+    toPointLabel?: string
   }>
   operatorGroups?: Array<{
     id: string

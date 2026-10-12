@@ -42,7 +42,7 @@
  */
 
 import type { Bounds, Link, Node, Position, Subgraph } from '../models/types.js'
-import { bezierTangentReach } from './bezier-path.js'
+import { bezierCurvePoints } from './bezier-path.js'
 import { getLinkWidth } from './link-utils.js'
 import type { ResolvedEdge, ResolvedPort } from './resolved-types.js'
 
@@ -168,16 +168,6 @@ export async function routeEdges(
   // underneath a device after manual placement.
   void assignBusRoutes
   assignLaneOffsets(edges)
-  // Multiple links on a container boundary represent one physical/logical
-  // interface. Keep every stroke anchored to precisely the same point.
-  for (const edge of edges.values()) {
-    if (nodes.get(edge.fromNodeId)?.metadata?.['presentationRole'] === 'subgraph-boundary-port') {
-      edge.fromLateralOffset = undefined
-    }
-    if (nodes.get(edge.toNodeId)?.metadata?.['presentationRole'] === 'subgraph-boundary-port') {
-      edge.toLateralOffset = undefined
-    }
-  }
   detourAroundObstacles(edges, nodes, subgraphs ?? new Map())
   separateCoincidentDetours(edges, nodes, subgraphs ?? new Map())
   return edges
@@ -632,22 +622,10 @@ function endpointInsideGroup(edge: ResolvedEdge, bounds: Bounds): boolean {
 
 /** Approximate the renderer's port-anchored bezier with N samples. */
 function sampleBezier(edge: ResolvedEdge): Array<{ x: number; y: number }> {
-  const fp = edge.fromPort.absolutePosition
-  const tp = edge.toPort.absolutePosition
-  const dx = tp.x - fp.x
-  const dy = tp.y - fp.y
-  const normal = (side: ResolvedPort['side']): { x: number; y: number } => {
-    if (side === 'top') return { x: 0, y: -1 }
-    if (side === 'bottom') return { x: 0, y: 1 }
-    if (side === 'left') return { x: -1, y: 0 }
-    return { x: 1, y: 0 }
-  }
-  const fn = normal(edge.fromPort.side)
-  const tn = normal(edge.toPort.side)
-  const fromReach = bezierTangentReach(edge.fromPort.side, dx, dy)
-  const toReach = bezierTangentReach(edge.toPort.side, -dx, -dy)
-  const c1 = { x: fp.x + fn.x * fromReach, y: fp.y + fn.y * fromReach }
-  const c2 = { x: tp.x + tn.x * toReach, y: tp.y + tn.y * toReach }
+  const [fp, c1, c2, tp] = bezierCurvePoints(
+    { ...edge.fromPort, lateralOffset: edge.fromLateralOffset },
+    { ...edge.toPort, lateralOffset: edge.toLateralOffset },
+  )
   const out: Array<{ x: number; y: number }> = []
   for (let i = 0; i <= DETOUR_SAMPLES; i++) {
     const t = i / DETOUR_SAMPLES
@@ -960,7 +938,9 @@ function assignLaneOffsets(edges: Map<string, ResolvedEdge>): void {
     )
     const stride = pickStride(group.length)
     for (const [i, edge] of group.entries()) {
-      edge.fromLateralOffset = (i - (group.length - 1) / 2) * stride
+      const side = edge.fromPort.side
+      const sign = side === 'top' || side === 'right' ? -1 : 1
+      edge.fromLateralOffset = (i - (group.length - 1) / 2) * stride * sign
     }
   }
   for (const group of toGroups.values()) {
@@ -972,7 +952,9 @@ function assignLaneOffsets(edges: Map<string, ResolvedEdge>): void {
     )
     const stride = pickStride(group.length)
     for (const [i, edge] of group.entries()) {
-      edge.toLateralOffset = (i - (group.length - 1) / 2) * stride
+      const side = edge.toPort.side
+      const sign = side === 'top' || side === 'right' ? -1 : 1
+      edge.toLateralOffset = (i - (group.length - 1) / 2) * stride * sign
     }
   }
 }

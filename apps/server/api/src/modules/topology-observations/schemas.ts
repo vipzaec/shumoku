@@ -93,6 +93,12 @@ export const OperatorLayoutSchema = z.object({
         notes: z.string().optional(),
         fromSide: z.enum(['top', 'bottom', 'left', 'right']),
         toSide: z.enum(['top', 'bottom', 'left', 'right']),
+        fromPortId: z.string().optional(),
+        toPortId: z.string().optional(),
+        fromOffset: z.number().min(0).max(1).optional(),
+        toOffset: z.number().min(0).max(1).optional(),
+        fromPointLabel: z.string().optional(),
+        toPointLabel: z.string().optional(),
       }),
     )
     .optional(),

@@ -256,6 +256,44 @@ describe('placePorts', () => {
       expect(pb.absolutePosition.x).toBeLessThan(pa.absolutePosition.x)
     })
 
+    it('reorders generated ports after peers move despite stale snapshot offsets', () => {
+      const nodes = new Map<string, Node>([
+        [
+          'lan',
+          {
+            id: 'lan',
+            label: 'LAN',
+            position: { x: 300, y: 300 },
+            size: { width: 80, height: 400 },
+            ports: [
+              {
+                id: 'upper',
+                label: 'upper',
+                connectors: [],
+                placement: { side: 'left', order: 1, offset: 0.8, auto: true },
+              },
+              {
+                id: 'lower',
+                label: 'lower',
+                connectors: [],
+                placement: { side: 'left', order: 0, offset: 0.2, auto: true },
+              },
+            ],
+          },
+        ],
+        ['upper', { id: 'upper', label: 'Upper', position: { x: 0, y: 150 } }],
+        ['lower', { id: 'lower', label: 'Lower', position: { x: 0, y: 450 } }],
+      ])
+      const links: Link[] = [
+        { from: { node: 'upper', port: 'out' }, to: { node: 'lan', port: 'upper' } },
+        { from: { node: 'lower', port: 'out' }, to: { node: 'lan', port: 'lower' } },
+      ]
+      const ports = placePorts(nodes, links, 'LR')
+      expect(ports.get('lan:upper')?.absolutePosition.y).toBeLessThan(
+        ports.get('lan:lower')?.absolutePosition.y ?? 0,
+      )
+    })
+
     it('respects explicit order override regardless of peer position', () => {
       const nodes = new Map([
         [

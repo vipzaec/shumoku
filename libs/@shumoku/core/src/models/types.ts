@@ -254,6 +254,8 @@ export interface NodePort {
     order?: number
     /** Normalized position along the selected side (0=start, 1=end). */
     offset?: number
+    /** Generator hint: recompute order and offset from final peer positions. */
+    auto?: boolean
   }
   /**
    * Observation provenance (which source last asserted this port).

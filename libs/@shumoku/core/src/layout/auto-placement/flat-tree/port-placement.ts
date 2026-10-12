@@ -61,7 +61,7 @@ function getNodePortLabel(node: Node | undefined, portId: string): string {
 function getPortPlacement(
   node: Node | undefined,
   portId: string,
-): { side?: Side; order?: number; offset?: number } | undefined {
+): { side?: Side; order?: number; offset?: number; auto?: boolean } | undefined {
   return node?.ports?.find((p) => p.id === portId)?.placement
 }
 
@@ -215,7 +215,8 @@ export function orderPortsOnSide(
   const explicit: Array<{ a: PortAssignment; order: number }> = []
   const auto: PortAssignment[] = []
   for (const a of assignments) {
-    const ord = getPortPlacement(nodes.get(a.nodeId), a.portId)?.order
+    const placement = getPortPlacement(nodes.get(a.nodeId), a.portId)
+    const ord = placement?.auto ? undefined : placement?.order
     if (typeof ord === 'number' && Number.isFinite(ord)) {
       explicit.push({ a, order: ord })
     } else {
@@ -448,7 +449,8 @@ export function placePorts(
     for (const [i, a] of ordered.entries()) {
       const portId = `${a.nodeId}:${a.portId}`
       const absolutePosition = (() => {
-        const offset = getPortPlacement(node, a.portId)?.offset
+        const placement = getPortPlacement(node, a.portId)
+        const offset = placement?.auto ? undefined : placement?.offset
         if (typeof offset !== 'number')
           return coords[i] ?? computePortPosition(positioned, a.side, i, ordered.length)
         const size = resolveNodeSize(positioned)

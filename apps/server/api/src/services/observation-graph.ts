@@ -243,6 +243,7 @@ const nodePortSchema = modelObject<NodePort>()({
       side: z.enum(['top', 'bottom', 'left', 'right']).optional(),
       order: z.number().optional(),
       offset: z.number().min(0).max(1).optional(),
+      auto: z.boolean().optional(),
     })
     .optional(),
   provenance: provenanceSchema.optional(),

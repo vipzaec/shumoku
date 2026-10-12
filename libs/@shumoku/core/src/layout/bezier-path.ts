@@ -50,29 +50,43 @@ export function bezierTangentReach(side: PortSide, dx: number, dy: number): numb
  * side's outward normal, sweeps through two symmetric control points,
  * and enters `to` along its own side's inward normal.
  *
- * `lateralOffset` (optional, on either endpoint) shifts that endpoint
- * **and** its control point perpendicular to the port's outward
- * normal, so the curve still leaves / arrives straight along the
- * normal but starts (or ends) sideways from the port centre. Used by
- * the router to fan multiple edges sharing one port apart visually
- * without rerouting through orthogonal segments. Positive = right of
- * the outward normal in screen coords (y-down). The endpoint *visibly
- * detaches from the port centre* by the offset — fine for fan-out
- * decoration but not for tight-tolerance hit testing on the port itself.
+ * `lateralOffset` moves only the adjacent control point, not the endpoint.
+ * Several links can therefore fan out while remaining attached to exactly
+ * the same physical port. Positive = right of the outward normal in screen
+ * coordinates (y-down).
  */
 export function bezierEdgePath(
   from: { absolutePosition: { x: number; y: number }; side?: PortSide; lateralOffset?: number },
   to: { absolutePosition: { x: number; y: number }; side?: PortSide; lateralOffset?: number },
 ): string {
+  const [a, c1, c2, b] = bezierCurvePoints(from, to)
+  return `M ${a.x} ${a.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${b.x} ${b.y}`
+}
+
+/** Shared geometry for the renderer and obstacle/crossing checks. */
+export function bezierCurvePoints(
+  from: { absolutePosition: { x: number; y: number }; side?: PortSide; lateralOffset?: number },
+  to: { absolutePosition: { x: number; y: number }; side?: PortSide; lateralOffset?: number },
+): [
+  { x: number; y: number },
+  { x: number; y: number },
+  { x: number; y: number },
+  { x: number; y: number },
+] {
   const fromSide = from.side ?? 'bottom'
   const toSide = to.side ?? 'top'
   const [aShiftX, aShiftY] = lateralShift(fromSide, from.lateralOffset ?? 0)
   const [bShiftX, bShiftY] = lateralShift(toSide, to.lateralOffset ?? 0)
-  const a = { x: from.absolutePosition.x + aShiftX, y: from.absolutePosition.y + aShiftY }
-  const b = { x: to.absolutePosition.x + bShiftX, y: to.absolutePosition.y + bShiftY }
+  const a = from.absolutePosition
+  const b = to.absolutePosition
   const [ax, ay] = tangentOffset(fromSide, bezierTangentReach(fromSide, b.x - a.x, b.y - a.y))
   const [bx, by] = tangentOffset(toSide, bezierTangentReach(toSide, a.x - b.x, a.y - b.y))
-  return `M ${a.x} ${a.y} C ${a.x + ax} ${a.y + ay} ${b.x + bx} ${b.y + by} ${b.x} ${b.y}`
+  return [
+    a,
+    { x: a.x + ax + aShiftX, y: a.y + ay + aShiftY },
+    { x: b.x + bx + bShiftX, y: b.y + by + bShiftY },
+    b,
+  ]
 }
 
 /**
