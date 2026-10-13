@@ -204,12 +204,12 @@ function reduceLineCrossings(
     const a = points(first)
     const b = points(second)
     const crossings: RoutePoint[] = []
-    for (let i = 1; i < a.length; i++) {
-      for (let j = 1; j < b.length; j++) {
+    for (const [i, aEnd] of a.entries()) {
+      if (i === 0) continue
+      for (const [j, bEnd] of b.entries()) {
+        if (j === 0) continue
         const aStart = a[i - 1],
-          aEnd = a[i],
-          bStart = b[j - 1],
-          bEnd = b[j]
+          bStart = b[j - 1]
         if (!aStart || !aEnd || !bStart || !bEnd) continue
         const hit = intersection(aStart, aEnd, bStart, bEnd)
         if (!hit) continue
@@ -226,24 +226,19 @@ function reduceLineCrossings(
   }
   const total = () => {
     let count = 0
-    for (let i = 0; i < list.length; i++)
-      for (let j = i + 1; j < list.length; j++) {
-        const first = list[i],
-          second = list[j]
-        if (first && second) count += hits(first, second).length
-      }
+    for (const [i, first] of list.entries())
+      for (const second of list.slice(i + 1)) count += hits(first, second).length
     return count
   }
   let score = total()
   if (!score) return
   // Each accepted move removes at least one crossing, so the pass ends.
-  for (let attempt = 0; attempt < Math.min(24, score * 2); attempt++) {
+  for (const _attempt of Array.from({ length: Math.min(24, score * 2) })) {
     let improved = false
-    for (let i = 0; i < list.length && !improved; i++) {
-      for (let j = i + 1; j < list.length && !improved; j++) {
-        const first = list[i]
-        const second = list[j]
-        if (!first || !second) continue
+    for (const [i, first] of list.entries()) {
+      if (improved) break
+      for (const second of list.slice(i + 1)) {
+        if (improved) break
         const conflict = hits(first, second)[0]
         if (!conflict) continue
         for (const edge of [first, second]) {
@@ -259,7 +254,8 @@ function reduceLineCrossings(
           const other = edge === first ? second : first
           const otherPath = points(other)
           const barriers: RouteRect[] = []
-          for (let index = 1; index < otherPath.length; index += 2) {
+          for (const [index] of otherPath.entries()) {
+            if (index === 0 || index % 2 === 0) continue
             const a = otherPath[index - 1]
             const b = otherPath[Math.min(index + 1, otherPath.length - 1)]
             if (!a || !b) continue
