@@ -170,7 +170,149 @@ export async function routeEdges(
   assignLaneOffsets(edges)
   detourAroundObstacles(edges, nodes, subgraphs ?? new Map())
   separateCoincidentDetours(edges, nodes, subgraphs ?? new Map())
+  reduceLineCrossings(edges, nodes, subgraphs ?? new Map())
   return edges
+}
+
+/**
+ * Resolve avoidable crossings left after node-aware detours. A crossing is
+ * tested against the actual routed polyline or sampled Bezier, not the
+ * straight line between endpoints. Reroute one line around the crossing
+ * only when doing so strictly reduces the total crossing count. This keeps
+ * a dense generated plan from regressing into a bundle of intersecting
+ * links while respecting deliberate straight/pass-through settings.
+ */
+function reduceLineCrossings(
+  edges: Map<string, ResolvedEdge>,
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+): void {
+  if (edges.size > 120) return // bounded layout cost for very large diagrams
+  const list = [...edges.values()]
+  const points = (edge: ResolvedEdge): RoutePoint[] =>
+    edge.route?.kind === 'polyline' ? edge.route.points : sampleBezier(edge)
+  const intersection = (a: RoutePoint, b: RoutePoint, c: RoutePoint, d: RoutePoint) => {
+    const denominator = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y)
+    if (Math.abs(denominator) < 1e-8) return null
+    const u = ((d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)) / denominator
+    const v = ((b.x - a.x) * (a.y - c.y) - (b.y - a.y) * (a.x - c.x)) / denominator
+    return u > 0 && u < 1 && v > 0 && v < 1
+      ? { x: a.x + u * (b.x - a.x), y: a.y + u * (b.y - a.y) }
+      : null
+  }
+  const hits = (first: ResolvedEdge, second: ResolvedEdge): RoutePoint[] => {
+    const a = points(first)
+    const b = points(second)
+    const crossings: RoutePoint[] = []
+    for (let i = 1; i < a.length; i++) {
+      for (let j = 1; j < b.length; j++) {
+        const aStart = a[i - 1],
+          aEnd = a[i],
+          bStart = b[j - 1],
+          bEnd = b[j]
+        if (!aStart || !aEnd || !bStart || !bEnd) continue
+        const hit = intersection(aStart, aEnd, bStart, bEnd)
+        if (!hit) continue
+        if (
+          [a[0], a.at(-1), b[0], b.at(-1)].some(
+            (end) => end && Math.hypot(end.x - hit.x, end.y - hit.y) < 15,
+          )
+        )
+          continue
+        crossings.push(hit)
+      }
+    }
+    return crossings
+  }
+  const total = () => {
+    let count = 0
+    for (let i = 0; i < list.length; i++)
+      for (let j = i + 1; j < list.length; j++) {
+        const first = list[i],
+          second = list[j]
+        if (first && second) count += hits(first, second).length
+      }
+    return count
+  }
+  let score = total()
+  if (!score) return
+  // Each accepted move removes at least one crossing, so the pass ends.
+  for (let attempt = 0; attempt < Math.min(24, score * 2); attempt++) {
+    let improved = false
+    for (let i = 0; i < list.length && !improved; i++) {
+      for (let j = i + 1; j < list.length && !improved; j++) {
+        const first = list[i]
+        const second = list[j]
+        if (!first || !second) continue
+        const conflict = hits(first, second)[0]
+        if (!conflict) continue
+        for (const edge of [first, second]) {
+          if (
+            edge.link.metadata?.['routePolicy'] === 'under' ||
+            edge.link.metadata?.['routeShape'] === 'straight'
+          )
+            continue
+          const savedRoute = edge.route
+          const savedPoints = edge.points
+          const savedFromLane = edge.fromLateralOffset
+          const savedToLane = edge.toLateralOffset
+          const other = edge === first ? second : first
+          const otherPath = points(other)
+          const barriers: RouteRect[] = []
+          for (let index = 1; index < otherPath.length; index += 2) {
+            const a = otherPath[index - 1]
+            const b = otherPath[Math.min(index + 1, otherPath.length - 1)]
+            if (!a || !b) continue
+            if (
+              [a, b].some(
+                (point) =>
+                  Math.hypot(
+                    point.x - edge.toPort.absolutePosition.x,
+                    point.y - edge.toPort.absolutePosition.y,
+                  ) < 48,
+              )
+            )
+              continue
+            barriers.push({
+              x: Math.min(a.x, b.x) - 6,
+              y: Math.min(a.y, b.y) - 6,
+              width: Math.abs(a.x - b.x) + 12,
+              height: Math.abs(a.y - b.y) + 12,
+            })
+          }
+          const candidates: RouteRect[][] = [16, 32, 64, 128, 256].map((radius) => [
+            {
+              x: conflict.x - radius,
+              y: conflict.y - radius,
+              width: 2 * radius,
+              height: 2 * radius,
+            },
+          ])
+          if (barriers.length) candidates.push(barriers)
+          for (const extraObstacles of candidates) {
+            const detour = routeViaGrid(edge, nodes, subgraphs, extraObstacles)
+            if (!detour) continue
+            edge.route = { kind: 'polyline', points: detour, cornerRadius: 12 }
+            edge.points = detour
+            edge.fromLateralOffset = undefined
+            edge.toLateralOffset = undefined
+            const candidateScore = total()
+            if (candidateScore < score) {
+              score = candidateScore
+              improved = true
+              break
+            }
+          }
+          if (improved) break
+          edge.route = savedRoute
+          edge.points = savedPoints
+          edge.fromLateralOffset = savedFromLane
+          edge.toLateralOffset = savedToLane
+        }
+      }
+    }
+    if (!improved) break
+  }
 }
 
 /** Margin (in SVG units) between an automatically routed wire and a node. */

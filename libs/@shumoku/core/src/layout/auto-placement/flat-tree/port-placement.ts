@@ -446,25 +446,72 @@ export function placePorts(
     const positioned = node as Node & { position: { x: number; y: number } }
     const coords = distributePortsAlongSide(ordered, positioned, first.side, nodes)
 
+    const positions = ordered.map((a, i) => {
+      const placement = getPortPlacement(node, a.portId)
+      const offset = placement?.auto ? undefined : placement?.offset
+      if (typeof offset !== 'number')
+        return coords[i] ?? computePortPosition(positioned, a.side, i, ordered.length)
+      const size = resolveNodeSize(positioned)
+      const ratio = Math.max(0.04, Math.min(0.96, offset))
+      if (a.side === 'top' || a.side === 'bottom')
+        return {
+          x: positioned.position.x - size.width / 2 + size.width * ratio,
+          y: positioned.position.y + (a.side === 'top' ? -size.height / 2 : size.height / 2),
+        }
+      return {
+        x: positioned.position.x + (a.side === 'left' ? -size.width / 2 : size.width / 2),
+        y: positioned.position.y - size.height / 2 + size.height * ratio,
+      }
+    })
+
+    // Two different ports may carry the same saved offset (for example LAN
+    // and a publication on one VM). Keep them distinct; intentional fan-in
+    // uses the *same port id*, not overlapping coordinates for two ids.
+    const horizontal = first.side === 'top' || first.side === 'bottom'
+    const size = resolveNodeSize(positioned)
+    const span = horizontal ? size.width : size.height
+    const center = horizontal ? positioned.position.x : positioned.position.y
+    const margin = Math.min(6, span / 4)
+    const lo = center - span / 2 + margin
+    const hi = center + span / 2 - margin
+    const gap = positions.length > 1 ? Math.min(12, (hi - lo) / (positions.length - 1)) : 0
+    const positionAt = (index: number): Position => positions[index] ?? { x: center, y: center }
+    const indices = positions
+      .map((_, i) => i)
+      .sort((a, b) => {
+        const pa = positionAt(a)
+        const pb = positionAt(b)
+        return (horizontal ? pa.x - pb.x : pa.y - pb.y) || a - b
+      })
+    const along = indices.map((i) => (horizontal ? positionAt(i).x : positionAt(i).y))
+    const blocks: Array<{ sum: number; n: number; value: number }> = []
+    for (const [i, value] of along.entries()) {
+      let sum = value - i * gap
+      let n = 1
+      while ((blocks.at(-1)?.value ?? -Infinity) > sum / n) {
+        const previous = blocks.pop()
+        if (!previous) break
+        sum += previous.sum
+        n += previous.n
+      }
+      blocks.push({ sum, n, value: sum / n })
+    }
+    const fitted = blocks.flatMap((block) => Array(block.n).fill(block.value) as number[])
+    const separated = fitted.map((value, i) => value + i * gap)
+    const firstSeparated = separated[0] ?? center
+    const lastSeparated = separated.at(-1) ?? center
+    const shift =
+      firstSeparated < lo ? lo - firstSeparated : lastSeparated > hi ? hi - lastSeparated : 0
+    for (const [rank, i] of indices.entries()) {
+      const coordinate = (separated[rank] ?? center) + shift
+      positions[i] = horizontal
+        ? { ...positionAt(i), x: coordinate }
+        : { ...positionAt(i), y: coordinate }
+    }
+
     for (const [i, a] of ordered.entries()) {
       const portId = `${a.nodeId}:${a.portId}`
-      const absolutePosition = (() => {
-        const placement = getPortPlacement(node, a.portId)
-        const offset = placement?.auto ? undefined : placement?.offset
-        if (typeof offset !== 'number')
-          return coords[i] ?? computePortPosition(positioned, a.side, i, ordered.length)
-        const size = resolveNodeSize(positioned)
-        const ratio = Math.max(0.04, Math.min(0.96, offset))
-        if (a.side === 'top' || a.side === 'bottom')
-          return {
-            x: positioned.position.x - size.width / 2 + size.width * ratio,
-            y: positioned.position.y + (a.side === 'top' ? -size.height / 2 : size.height / 2),
-          }
-        return {
-          x: positioned.position.x + (a.side === 'left' ? -size.width / 2 : size.width / 2),
-          y: positioned.position.y - size.height / 2 + size.height * ratio,
-        }
-      })()
+      const absolutePosition = positionAt(i)
       ports.set(portId, {
         id: portId,
         nodeId: a.nodeId,

@@ -273,6 +273,7 @@
   let operatorLinks = $state<OperatorLink[]>([])
   let operatorGroups = $state<OperatorGroup[]>([])
   type LinkAppearance = {
+    label?: string
     color: string
     width: number
     preset: 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash' | 'double'
@@ -329,6 +330,7 @@
     | (LinkAppearance &
         LinkPorts & {
           id: string
+          label: string
           continuationEnabled: boolean
           continuationLabel: string
           continuationLength: number
@@ -1002,6 +1004,7 @@
               : ''
     return {
       ...link,
+      ...(appearance?.label !== undefined ? { label: appearance.label } : {}),
       ...(ports?.fromNode || ports?.from
         ? {
             from: {
@@ -1039,6 +1042,7 @@
                 ? {
                     routePolicy: appearance.routePolicy,
                     routeShape: appearance.routeShape ?? 'bent',
+                    ...(appearance.label !== undefined ? { pathLabel: appearance.label } : {}),
                   }
                 : {}),
               ...(continuation ? { continuation } : {}),
@@ -1700,7 +1704,7 @@
       nodeId: node.id,
       targetNodeId: node.id,
       portId: port.id,
-      label: port.label,
+      label: portPresentationOverrides[resolvedId]?.label ?? port.label,
       description: portPresentationOverrides[resolvedId]?.description ?? port.notes ?? '',
     }
     portEditorOpen = true
@@ -1893,6 +1897,8 @@
     pinnedPositions = {}
     portSides = {}
     blockBoundsOverrides = {}
+    blockSpacingOverrides = {}
+    linkPortOverrides = {}
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(pinStorageKey)
       localStorage.removeItem(portStorageKey)
@@ -2552,6 +2558,9 @@
                 : 'solid'
     appearanceDraft = {
       id: link.id,
+      label:
+        saved?.label ??
+        (Array.isArray(link.label) ? link.label.join(' / ') : (link.label ?? '')),
       color: saved?.color ?? link.style?.stroke ?? '#475569',
       width: saved?.width ?? link.style?.strokeWidth ?? 3,
       preset: saved?.preset ?? preset,
@@ -2596,6 +2605,7 @@
     const nextAppearance = {
       ...linkAppearanceOverrides,
       [link.id]: {
+        label: appearanceDraft.label.trim(),
         color: appearanceDraft.color,
         width: Math.min(12, Math.max(1, Number(appearanceDraft.width) || 3)),
         preset: appearanceDraft.preset,
@@ -4055,7 +4065,7 @@
         Moving this point to another block keeps every connection attached to it. To move only one
         line, select the line and drag its endpoint handle.
       </p>
-      <label>Label <input bind:value={portDraft.label} placeholder="LAN, WAN, API…"></label>
+      <label>Label <input maxlength="100" bind:value={portDraft.label} placeholder="LAN, WAN, API…"></label>
       <label
         >Description
         <textarea
@@ -4083,6 +4093,7 @@
           ×
         </button>
       </div>
+      <label>Connection label <input maxlength="100" bind:value={appearanceDraft.label} placeholder="Name shown on the line"></label>
       <div class="side-pickers">
         <label>Color <input type="color" bind:value={appearanceDraft.color}></label>
         <label
@@ -4520,7 +4531,12 @@
     (Object.keys(pinnedPositions).length > 0 ||
       Object.keys(portSides).length > 0 ||
       Object.keys(edgeRoutes).length > 0 ||
-      Object.keys(parentOverrides).length > 0)}
+      Object.keys(parentOverrides).length > 0 ||
+      Object.keys(portOrders).length > 0 ||
+      Object.keys(portOffsets).length > 0 ||
+      Object.keys(blockBoundsOverrides).length > 0 ||
+      Object.keys(blockSpacingOverrides).length > 0 ||
+      Object.keys(linkPortOverrides).length > 0)}
           <button
             onclick={resetOperatorLayout}
             title="Reset all saved layout"

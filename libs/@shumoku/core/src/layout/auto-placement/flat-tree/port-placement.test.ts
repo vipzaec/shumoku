@@ -44,6 +44,29 @@ function makeNodes(): Map<string, Node> {
 }
 
 describe('placePorts', () => {
+  it('separates distinct LAN-facing ports with the same saved offset', () => {
+    const nodes = makeNodes()
+    const sw1 = nodes.get('sw1')
+    if (!sw1) throw new Error('Missing switch fixture')
+    sw1.ports = [
+      { id: 'lan', label: 'LAN', connectors: [], placement: { side: 'left', offset: 0.5 } },
+      {
+        id: 'publication',
+        label: 'DNAT',
+        connectors: [],
+        placement: { side: 'left', offset: 0.5 },
+      },
+    ]
+    const ports = placePorts(nodes, [], 'LR')
+    const lan = ports.get('sw1:lan')
+    const publication = ports.get('sw1:publication')
+    if (!lan || !publication) throw new Error('Missing LAN-facing port')
+    expect(lan.absolutePosition.x).toBe(publication.absolutePosition.x)
+    expect(
+      Math.abs(lan.absolutePosition.y - publication.absolutePosition.y),
+    ).toBeGreaterThanOrEqual(12)
+  })
+
   it('keeps free connection points visible on ordinary nodes and group boundaries', () => {
     const nodes = makeNodes()
     const sw1 = nodes.get('sw1')

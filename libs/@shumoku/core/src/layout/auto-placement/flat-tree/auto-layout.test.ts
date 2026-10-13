@@ -48,6 +48,42 @@ describe('autoLayoutFlatTree (engine-driven entry)', () => {
     expect(b?.size?.width).toBeGreaterThan(0)
   })
 
+  test('orders auto hub ports after fixed peers settle into their final positions', () => {
+    const hub: Node = {
+      ...node('hub'),
+      position: { x: 0, y: 500 },
+      size: { width: 180, height: 1000 },
+      ports: ['low', 'high', 'middle'].map((id) => ({
+        id,
+        label: id,
+        connectors: [],
+        placement: { side: 'right' as const, auto: true },
+      })),
+    }
+    const peers: Node[] = [
+      { ...node('low'), position: { x: 700, y: 900 } },
+      { ...node('high'), position: { x: 700, y: 100 } },
+      { ...node('middle'), position: { x: 700, y: 500 } },
+    ]
+    const graph: NetworkGraph = {
+      version: '1',
+      name: 'fixed fan',
+      nodes: [hub, ...peers],
+      links: peers.map((peer) => ({
+        from: { node: 'hub', port: peer.id },
+        to: { node: peer.id, port: 'in' },
+      })),
+      subgraphs: [],
+    }
+    const result = autoLayoutFlatTree(graph, createEngine(), {
+      direction: 'LR',
+      fixed: new Set(graph.nodes.map((item) => item.id)),
+    })
+    const y = (id: string) => result.ports.get(`hub:${id}`)?.absolutePosition.y ?? NaN
+    expect(y('high')).toBeLessThan(y('middle'))
+    expect(y('middle')).toBeLessThan(y('low'))
+  })
+
   test('engine + manual placement use the same rules', () => {
     const engine = createEngine()
     const a = node('a')

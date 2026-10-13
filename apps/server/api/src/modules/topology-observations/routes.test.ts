@@ -124,6 +124,7 @@ describe('topology display settings', () => {
       blockBoundsOverrides: { firewall: { x: 70, y: 180, width: 180, height: 120 } },
       linkAppearanceOverrides: {
         ingress: {
+          label: 'Internet ingress',
           color: '#1d4ed8',
           width: 3,
           preset: 'dashed',

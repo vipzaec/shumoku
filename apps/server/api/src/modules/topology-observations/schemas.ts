@@ -140,6 +140,7 @@ export const OperatorLayoutSchema = z.object({
     .record(
       z.string(),
       z.object({
+        label: z.string().max(100).optional(),
         color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
         width: z.number().min(1).max(12),
         preset: z.enum(['solid', 'dashed', 'dotted', 'dash-dot', 'long-dash', 'double']),

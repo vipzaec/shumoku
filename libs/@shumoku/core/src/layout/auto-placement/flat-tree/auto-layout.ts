@@ -325,6 +325,18 @@ export function autoLayoutFlatTree(
     direction: opts.direction,
   })
 
+  // Fixed-position restoration and subgraph collision resolution can reorder
+  // peers after the first port pass. Re-seat ordinary ports against the final
+  // node positions so their order still follows the links' destinations.
+  // Boundary connectors were placed on their container outline by
+  // rebalanceSubgraphs; keep those exact outline coordinates.
+  const settledPorts = placePorts(nodes, graph.links, opts.direction)
+  for (const [portId, port] of settledPorts) {
+    if (nodes.get(port.nodeId)?.metadata?.['presentationRole'] === 'subgraph-boundary-port')
+      continue
+    ports.set(portId, port)
+  }
+
   // 6. Bounds with comfortable margin. Recompute from the
   // post-rebalance state — `result.rootBounds` describes the
   // pre-rebalance layout, so any shift from 5b would otherwise

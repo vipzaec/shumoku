@@ -949,6 +949,7 @@ export const topologies = {
           linkAppearanceOverrides?: Record<
             string,
             {
+              label?: string
               color: string
               width: number
               preset: 'solid' | 'dashed' | 'dotted' | 'dash-dot' | 'long-dash' | 'double'
