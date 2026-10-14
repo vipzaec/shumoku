@@ -7,6 +7,7 @@
  * Renders NetworkGraph to PNG (Node.js only)
  */
 
+import { existsSync } from 'node:fs'
 import { Resvg } from '@resvg/resvg-js'
 import type { LayoutResult, NetworkGraph, ResolvedLayout, Theme } from '@shumoku/core'
 import { renderSvgString } from '@shumoku/renderer/static'
@@ -29,6 +30,24 @@ export interface PngOptions {
   iconDimensions?: Map<string, IconDimensions>
   /** Theme used by the canonical static renderer. */
   theme?: Theme
+}
+
+function fontOptions(loadSystemFonts: boolean) {
+  // Slim Linux images have fonts on disk, but resvg's system-font discovery
+  // does not necessarily scan them. Explicitly load the installed family.
+  const dejavuDir = '/usr/share/fonts/truetype/dejavu'
+  const hasDejavu = loadSystemFonts && process.platform === 'linux' && existsSync(dejavuDir)
+  return {
+    loadSystemFonts,
+    ...(hasDejavu
+      ? {
+          fontDirs: [dejavuDir],
+          defaultFontFamily: 'DejaVu Sans',
+          sansSerifFamily: 'DejaVu Sans',
+          monospaceFamily: 'DejaVu Sans Mono',
+        }
+      : {}),
+  }
 }
 
 /**
@@ -93,7 +112,7 @@ export async function render(
 
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'zoom', value: scale },
-    font: { loadSystemFonts },
+    font: fontOptions(loadSystemFonts),
     background: options.theme?.colors.background ?? '#ffffff',
   })
 
@@ -114,7 +133,7 @@ export async function renderResolved(
 
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'zoom', value: scale },
-    font: { loadSystemFonts },
+    font: fontOptions(loadSystemFonts),
     background: options.theme?.colors.background ?? '#ffffff',
   })
   return resvg.render().asPng()
@@ -135,7 +154,7 @@ export function renderSync(
   const svgString = svg.render(graph, layout, { iconDimensions: options.iconDimensions })
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'zoom', value: scale },
-    font: { loadSystemFonts },
+    font: fontOptions(loadSystemFonts),
     background: options.theme?.colors.background ?? '#ffffff',
   })
 
