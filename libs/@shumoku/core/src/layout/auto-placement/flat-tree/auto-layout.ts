@@ -202,7 +202,11 @@ function applyFixedOverride(
       })
     }
   }
-  if (anyMoved) rebalanceSubgraphs(nodes, subgraphs, ports)
+  if (anyMoved) {
+    rebalanceSubgraphs(nodes, subgraphs, ports, {
+      preservePositions: fixed.size === inputNodes.length,
+    })
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -323,6 +327,7 @@ export function autoLayoutFlatTree(
     subgraphPadding: opts.subgraphPadding,
     subgraphLabelHeight: opts.subgraphLabelHeight,
     direction: opts.direction,
+    preservePositions: opts.fixed.size === graph.nodes.length,
   })
 
   // Fixed-position restoration and subgraph collision resolution can reorder

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Link, Node, Subgraph } from '../models/types.js'
-import { isPortLinked, linkExists, rebalanceSubgraphs } from './interaction.js'
+import {
+  isPortLinked,
+  linkExists,
+  moveNode,
+  moveSubgraph,
+  rebalanceSubgraphs,
+} from './interaction.js'
 import type { ResolvedPort } from './resolved-types.js'
 import { routeEdges } from './route-edges.js'
 
@@ -75,6 +81,78 @@ describe('outer spacing', () => {
     expect(bounds?.y).toBe(77)
     expect(bounds?.width).toBe(240)
     expect(bounds?.height).toBe(188)
+  })
+})
+
+describe('manual group movement', () => {
+  it('keeps a resized outer container when an inner block moves', async () => {
+    const outerBounds = { x: 0, y: 0, width: 500, height: 350 }
+    const nodes = new Map<string, Node>([
+      [
+        'service',
+        {
+          id: 'service',
+          label: 'Service',
+          parent: 'vm',
+          position: { x: 180, y: 160 },
+          size: { width: 100, height: 60 },
+        },
+      ],
+    ])
+    const subgraphs = new Map<string, Subgraph>([
+      ['vm', { id: 'vm', label: 'VM', bounds: outerBounds }],
+    ])
+    const moved = await moveNode('service', 220, 180, { nodes, ports: new Map(), subgraphs }, [])
+    expect(moved?.nodes.get('service')?.position).toEqual({ x: 220, y: 180 })
+    expect(moved?.subgraphs?.get('vm')?.bounds).toEqual(outerBounds)
+  })
+
+  it('moves only the selected group and leaves a neighboring group in place', async () => {
+    const nodes = new Map<string, Node>([
+      [
+        'a',
+        {
+          id: 'a',
+          label: 'A',
+          parent: 'group-a',
+          position: { x: 100, y: 100 },
+          size: { width: 60, height: 40 },
+        },
+      ],
+      [
+        'b',
+        {
+          id: 'b',
+          label: 'B',
+          parent: 'group-b',
+          position: { x: 300, y: 100 },
+          size: { width: 60, height: 40 },
+        },
+      ],
+    ])
+    const subgraphs = new Map<string, Subgraph>([
+      ['group-a', { id: 'group-a', bounds: { x: 50, y: 50, width: 100, height: 100 } }],
+      ['group-b', { id: 'group-b', bounds: { x: 250, y: 50, width: 100, height: 100 } }],
+    ])
+    const moved = await moveSubgraph(
+      'group-a',
+      230,
+      50,
+      {
+        nodes,
+        ports: new Map(),
+        subgraphs,
+      },
+      [],
+    )
+    expect(moved?.nodes.get('a')?.position).toEqual({ x: 280, y: 100 })
+    expect(moved?.nodes.get('b')?.position).toEqual({ x: 300, y: 100 })
+    expect(moved?.subgraphs.get('group-b')?.bounds).toEqual({
+      x: 250,
+      y: 50,
+      width: 100,
+      height: 100,
+    })
   })
 })
 

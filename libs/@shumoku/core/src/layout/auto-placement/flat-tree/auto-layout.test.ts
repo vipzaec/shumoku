@@ -84,6 +84,27 @@ describe('autoLayoutFlatTree (engine-driven entry)', () => {
     expect(y('middle')).toBeLessThan(y('low'))
   })
 
+  test('keeps every authored node coordinate when a port change recomputes a pinned layout', () => {
+    const graph: NetworkGraph = {
+      version: '1',
+      name: 'pinned groups',
+      nodes: [
+        { ...node('a', 'group-a'), position: { x: 100, y: 100 } },
+        { ...node('b', 'group-b'), position: { x: 220, y: 100 } },
+      ],
+      links: [],
+      subgraphs: [
+        { id: 'group-a', label: 'A' },
+        { id: 'group-b', label: 'B' },
+      ],
+    }
+    const result = autoLayoutFlatTree(graph, createEngine(), {
+      fixed: new Set(['a', 'b']),
+    })
+    expect(result.nodes.get('a')?.position).toEqual({ x: 100, y: 100 })
+    expect(result.nodes.get('b')?.position).toEqual({ x: 220, y: 100 })
+  })
+
   test('engine + manual placement use the same rules', () => {
     const engine = createEngine()
     const a = node('a')

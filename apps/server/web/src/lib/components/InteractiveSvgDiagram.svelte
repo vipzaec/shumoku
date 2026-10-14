@@ -912,11 +912,23 @@
     }
   }
 
-  function writePins(next: Record<string, { x: number; y: number }>) {
+  function stagePins(next: Record<string, { x: number; y: number }>) {
     pinnedPositions = next
     if (typeof localStorage !== 'undefined')
       localStorage.setItem(pinStorageKey, JSON.stringify(next))
+  }
+
+  function writePins(next: Record<string, { x: number; y: number }>) {
+    stagePins(next)
     void persistOperatorLayout(next, portSides, portOrders, portOffsets, edgeRoutes)
+  }
+
+  function renderedNodePositions(): Record<string, { x: number; y: number }> {
+    const positions = { ...pinnedPositions }
+    for (const [id, node] of latestLayout?.nodes ?? []) {
+      if (node.position) positions[id] = { ...node.position }
+    }
+    return positions
   }
 
   function readPortSides(): Record<string, 'top' | 'bottom' | 'left' | 'right'> {
@@ -1813,7 +1825,9 @@
         }
       }
     }
-    writePins({ ...pinnedPositions, ...positions })
+    // A drag is a local edit. Freeze every visible peer at its current
+    // coordinate so a later port move cannot trigger a new auto arrangement.
+    writePins({ ...renderedNodePositions(), ...positions })
   }
 
   function handlePortMove(
@@ -1845,9 +1859,9 @@
     portOrders = nextOrders
     const nextOffsets = { ...portOffsets, [`${nodeId}:${portId}`]: offset }
     portOffsets = nextOffsets
+    stagePins(renderedNodePositions())
     writePortSides(next)
-    void persistOperatorLayout(pinnedPositions, next, nextOrders, nextOffsets, edgeRoutes)
-    graph = applyLayoutOverrides(graph, pinnedPositions, next, nextOrders, nextOffsets)
+    graph = applyLayoutOverrides(baseGraph ?? graph, pinnedPositions, next, nextOrders, nextOffsets)
     serverLayout = undefined
   }
 
@@ -1872,6 +1886,7 @@
     delete nextRoutes[linkId]
     linkPortOverrides = next
     edgeRoutes = nextRoutes
+    stagePins(renderedNodePositions())
     void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, nextRoutes)
     graph = applyLayoutOverrides(
       baseGraph ?? graph,
@@ -2016,6 +2031,7 @@
 
   function setBlockBounds(id: string, bounds: BlockBounds) {
     if (!layoutEdit || !graph) return
+    stagePins(renderedNodePositions())
     const next = {
       x: Math.round(bounds.x),
       y: Math.round(bounds.y),
@@ -2565,8 +2581,7 @@
     appearanceDraft = {
       id: link.id,
       label:
-        saved?.label ??
-        (Array.isArray(link.label) ? link.label.join(' / ') : (link.label ?? '')),
+        saved?.label ?? (Array.isArray(link.label) ? link.label.join(' / ') : (link.label ?? '')),
       color: saved?.color ?? link.style?.stroke ?? '#475569',
       width: saved?.width ?? link.style?.strokeWidth ?? 3,
       preset: saved?.preset ?? preset,
@@ -2606,28 +2621,33 @@
   function connectionChoices() {
     if (!graph) return []
     const activeGraph = graph
-    return activeGraph.links.flatMap((link) => {
-      if (!link.id) return []
-      const name = linkAppearanceOverrides[link.id]?.label ??
-        (Array.isArray(link.label) ? link.label.join(' / ') : link.label ?? '')
-      const source = nodeLabelById(activeGraph.nodes, link.from.node)
-      const destination = nodeLabelById(activeGraph.nodes, link.to.node)
-      return [{ id: link.id, text: `${name || 'Unnamed'} · ${source} → ${destination}` }]
-    }).sort((a, b) => a.text.localeCompare(b.text))
+    return activeGraph.links
+      .flatMap((link) => {
+        if (!link.id) return []
+        const name =
+          linkAppearanceOverrides[link.id]?.label ??
+          (Array.isArray(link.label) ? link.label.join(' / ') : (link.label ?? ''))
+        const source = nodeLabelById(activeGraph.nodes, link.from.node)
+        const destination = nodeLabelById(activeGraph.nodes, link.to.node)
+        return [{ id: link.id, text: `${name || 'Unnamed'} · ${source} → ${destination}` }]
+      })
+      .sort((a, b) => a.text.localeCompare(b.text))
   }
 
   function pointChoices() {
     if (!graph) return []
     const activeGraph = graph
-    return activeGraph.nodes.flatMap((node) =>
-      (node.ports ?? []).map((port) => {
-        const key = `${node.id}:${port.id}`
-        return {
-          id: key,
-          text: `${nodeLabelById(activeGraph.nodes, node.id)} · ${portPresentationOverrides[key]?.label ?? port.label ?? 'Unnamed'}`,
-        }
-      }),
-    ).sort((a, b) => a.text.localeCompare(b.text))
+    return activeGraph.nodes
+      .flatMap((node) =>
+        (node.ports ?? []).map((port) => {
+          const key = `${node.id}:${port.id}`
+          return {
+            id: key,
+            text: `${nodeLabelById(activeGraph.nodes, node.id)} · ${portPresentationOverrides[key]?.label ?? port.label ?? 'Unnamed'}`,
+          }
+        }),
+      )
+      .sort((a, b) => a.text.localeCompare(b.text))
   }
 
   function saveSelectedAppearance(clearManualRoute = false) {
@@ -4142,7 +4162,10 @@
         Moving this point to another block keeps every connection attached to it. To move only one
         line, select the line and drag its endpoint handle.
       </p>
-      <label>Label <input maxlength="100" bind:value={portDraft.label} placeholder="LAN, WAN, API…"></label>
+      <label
+        >Label
+        <input maxlength="100" bind:value={portDraft.label} placeholder="LAN, WAN, API…"></label
+      >
       <label
         >Description
         <textarea
@@ -4170,7 +4193,14 @@
           ×
         </button>
       </div>
-      <label>Connection label <input maxlength="100" bind:value={appearanceDraft.label} placeholder="Name shown on the line"></label>
+      <label
+        >Connection label
+        <input
+          maxlength="100"
+          bind:value={appearanceDraft.label}
+          placeholder="Name shown on the line"
+        ></label
+      >
       <div class="side-pickers">
         <label>Color <input type="color" bind:value={appearanceDraft.color}></label>
         <label

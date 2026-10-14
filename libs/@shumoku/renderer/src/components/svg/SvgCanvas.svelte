@@ -119,6 +119,18 @@
     oncontinuationnavigate?: (id: string, index: number, x: number, y: number) => void
   } = $props()
 
+  function portGuideFractions(guide: NonNullable<typeof portDragGuide>): number[] {
+    const length =
+      guide.side === 'top' || guide.side === 'bottom' ? guide.bounds.width : guide.bounds.height
+    // Keep roughly one visible reference every 20 px. Each reference is
+    // aligned to the same 1% grid used when the port is dropped.
+    const count = Math.max(3, Math.min(81, Math.round(length / 22)))
+    return Array.from(
+      { length: count },
+      (_, index) => Math.round((0.1 + (index * 0.8) / (count - 1)) * 100) / 100,
+    )
+  }
+
   const viewBox = $derived.by(() => {
     const fit = continuationBoundsFromEdges(bounds, edges.values(), nodes, subgraphs)
     return `${fit.x - 50} ${fit.y - 50} ${fit.width + 100} ${fit.height + 100}`
@@ -552,9 +564,9 @@
     {/each}
 
     {#if interactive && portDragGuide}
-      <!-- Sparse reference marks; the actual landing grid is 1%. -->
+      <!-- Reference density follows the length of the selected block side. -->
       <g pointer-events="none" aria-hidden="true">
-        {#each Array.from({ length: 17 }, (_, index) => (index + 2) / 20) as fraction}
+        {#each portGuideFractions(portDragGuide) as fraction}
           <circle
             cx={portDragGuide.side === 'left'
               ? portDragGuide.bounds.x

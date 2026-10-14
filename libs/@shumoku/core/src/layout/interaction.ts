@@ -267,6 +267,10 @@ export function rebalanceSubgraphs(
     subgraphLabelHeight?: number
     /** Layout direction retained for API compatibility. */
     direction?: 'TB' | 'BT' | 'LR' | 'RL'
+    /** Keep manually placed peers fixed while updating container hulls and boundary ports. */
+    preservePositions?: boolean
+    /** Recompute only the edited container and its ancestors during a drag. */
+    affectedGroupIds?: ReadonlySet<string>
   } = {},
 ): void {
   const padding = opts.subgraphPadding ?? SUBGRAPH_PADDING
@@ -292,6 +296,7 @@ export function rebalanceSubgraphs(
    */
   const recomputeHulls = () => {
     for (const sgId of sorted) {
+      if (opts.affectedGroupIds && !opts.affectedGroupIds.has(sgId)) continue
       const sg = subgraphs.get(sgId)
       if (!sg) continue
 
@@ -354,7 +359,20 @@ export function rebalanceSubgraphs(
         width: maxX - minX + padding * 2,
         height: maxY - minY + padding * 2 + labelHeight,
       }
-      subgraphs.set(sgId, { ...sg, bounds })
+      if (opts.preservePositions && sg.bounds) {
+        // Dragging one child may enlarge its parent, but it must not shrink
+        // or shift a manually sized container elsewhere in the diagram.
+        const x = Math.min(bounds.x, sg.bounds.x)
+        const y = Math.min(bounds.y, sg.bounds.y)
+        const right = Math.max(bounds.x + bounds.width, sg.bounds.x + sg.bounds.width)
+        const bottom = Math.max(bounds.y + bounds.height, sg.bounds.y + sg.bounds.height)
+        subgraphs.set(sgId, {
+          ...sg,
+          bounds: { x, y, width: right - x, height: bottom - y },
+        })
+      } else {
+        subgraphs.set(sgId, { ...sg, bounds })
+      }
     }
   }
 
@@ -439,12 +457,14 @@ export function rebalanceSubgraphs(
   // shumoku-typical nesting depth ≤3 the layout converges
   // within 2–3 rounds; anything beyond suggests pathological
   // input we'd rather degrade than spin on.
-  const MAX_ROUNDS = 5
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    recomputeHulls()
-    const a = resolveSiblingCollisions()
-    const b = pushFreeNodes()
-    if (!a && !b) break
+  if (!opts.preservePositions) {
+    const MAX_ROUNDS = 5
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      recomputeHulls()
+      const a = resolveSiblingCollisions()
+      const b = pushFreeNodes()
+      if (!a && !b) break
+    }
   }
   // Final recompute so the hulls reflect the post-converge state.
   recomputeHulls()
@@ -478,6 +498,16 @@ export function rebalanceSubgraphs(
       ports.set(portId, { ...port, absolutePosition: point, side })
     }
   }
+}
+
+function groupAndAncestors(id: string | undefined, subgraphs: Map<string, Subgraph>): Set<string> {
+  const result = new Set<string>()
+  let current = id
+  while (current && !result.has(current)) {
+    result.add(current)
+    current = subgraphs.get(current)?.parent
+  }
+  return result
 }
 
 export async function moveNode(
@@ -536,7 +566,10 @@ export async function moveNode(
   let newSubgraphs: Map<string, Subgraph> | undefined
   if (layout.subgraphs) {
     newSubgraphs = new Map(layout.subgraphs)
-    rebalanceSubgraphs(newNodes, newSubgraphs, newPorts)
+    rebalanceSubgraphs(newNodes, newSubgraphs, newPorts, {
+      preservePositions: true,
+      affectedGroupIds: groupAndAncestors(node.parent, newSubgraphs),
+    })
   }
 
   // 5. Re-route edges
@@ -584,7 +617,10 @@ export async function moveSubgraph(
   shiftContents(sgId, dx, dy, newNodes, newSubgraphs, newPorts)
 
   // Resolve sibling collisions at this level and above
-  rebalanceSubgraphs(newNodes, newSubgraphs, newPorts)
+  rebalanceSubgraphs(newNodes, newSubgraphs, newPorts, {
+    preservePositions: true,
+    affectedGroupIds: groupAndAncestors(sgId, newSubgraphs),
+  })
 
   // Re-route edges
   const edges = await routeFn(newNodes, newPorts, links)
