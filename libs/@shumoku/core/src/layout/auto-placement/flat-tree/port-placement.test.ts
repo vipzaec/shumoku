@@ -44,6 +44,48 @@ function makeNodes(): Map<string, Node> {
 }
 
 describe('placePorts', () => {
+  it('uses the longer sides for overflow on a wide block', () => {
+    const nodes = makeNodes()
+    const wide = nodes.get('sw1')
+    if (!wide) throw new Error('Missing switch fixture')
+    wide.size = { width: 420, height: 60 }
+    wide.ports = Array.from({ length: 6 }, (_, index) => ({
+      id: `out-${index}`,
+      label: `P${index}`,
+      connectors: [],
+    }))
+    const links: Link[] = wide.ports.map((port) => ({
+      from: { node: 'sw1', port: port.id },
+      to: { node: 'sw3', port: 'eth0' },
+    }))
+    const ports = placePorts(nodes, links, 'LR')
+    const sides = wide.ports.map((port) => ports.get(`sw1:${port.id}`)?.side)
+    expect(sides.filter((side) => side === 'right')).toHaveLength(2)
+    expect(sides.filter((side) => side === 'top' || side === 'bottom')).toHaveLength(4)
+  })
+
+  it('keeps an explicitly positioned point on its chosen short side', () => {
+    const nodes = makeNodes()
+    const wide = nodes.get('sw1')
+    if (!wide) throw new Error('Missing switch fixture')
+    wide.size = { width: 420, height: 60 }
+    wide.ports = Array.from({ length: 6 }, (_, index) => ({
+      id: `out-${index}`,
+      label: `P${index}`,
+      connectors: [],
+      ...(index === 0 ? { placement: { side: 'right' as const, offset: 0.5 } } : {}),
+    }))
+    const links: Link[] = wide.ports.map((port) => ({
+      from: { node: 'sw1', port: port.id },
+      to: { node: 'sw3', port: 'eth0' },
+    }))
+    const ports = placePorts(nodes, links, 'LR')
+    expect(ports.get('sw1:out-0')?.side).toBe('right')
+    expect(wide.ports.filter((port) => ports.get(`sw1:${port.id}`)?.side === 'right')).toHaveLength(
+      2,
+    )
+  })
+
   it('separates distinct LAN-facing ports with the same saved offset', () => {
     const nodes = makeNodes()
     const sw1 = nodes.get('sw1')

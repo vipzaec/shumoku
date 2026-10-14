@@ -213,6 +213,7 @@
   let selectedLayoutNode = $state<string | null>(null)
   let selectedLayoutType = $state<string | null>(null)
   let selectedLayoutLinkId = $state<string | null>(null)
+  let namePickerOpen = $state(false)
   let selectedLayoutPinIds = $state<string[]>([])
   let pinnedPositions = $state<Record<string, { x: number; y: number }>>({})
   let portSides = $state<Record<string, 'top' | 'bottom' | 'left' | 'right'>>({})
@@ -2534,8 +2535,8 @@
     linkEditorOpen = true
   }
 
-  function startEditSelectedAppearance() {
-    const link = graph?.links.find((candidate) => candidate.id === selectedLayoutLinkId)
+  function startEditSelectedAppearance(linkId = selectedLayoutLinkId) {
+    const link = graph?.links.find((candidate) => candidate.id === linkId)
     if (!link?.id) return
     const saved = linkAppearanceOverrides[link.id]
     const rawContinuation = linkContinuationOverrides[link.id] ?? link.metadata?.['continuation']
@@ -2580,6 +2581,48 @@
     }
     appearanceDraftError = ''
     appearanceEditorOpen = true
+  }
+
+  function editConnectionFromList(linkId: string) {
+    if (!linkId) return
+    selectedLayoutLinkId = linkId
+    selectedLayoutNode = linkId
+    selectedLayoutType = 'edge'
+    namePickerOpen = false
+    startEditSelectedAppearance(linkId)
+  }
+
+  function editPointFromList(portKey: string) {
+    if (!portKey) return
+    namePickerOpen = false
+    startEditPort(portKey)
+  }
+
+  function connectionChoices() {
+    if (!graph) return []
+    const activeGraph = graph
+    return activeGraph.links.flatMap((link) => {
+      if (!link.id) return []
+      const name = linkAppearanceOverrides[link.id]?.label ??
+        (Array.isArray(link.label) ? link.label.join(' / ') : link.label ?? '')
+      const source = nodeLabelById(activeGraph.nodes, link.from.node)
+      const destination = nodeLabelById(activeGraph.nodes, link.to.node)
+      return [{ id: link.id, text: `${name || 'Unnamed'} · ${source} → ${destination}` }]
+    }).sort((a, b) => a.text.localeCompare(b.text))
+  }
+
+  function pointChoices() {
+    if (!graph) return []
+    const activeGraph = graph
+    return activeGraph.nodes.flatMap((node) =>
+      (node.ports ?? []).map((port) => {
+        const key = `${node.id}:${port.id}`
+        return {
+          id: key,
+          text: `${nodeLabelById(activeGraph.nodes, node.id)} · ${portPresentationOverrides[key]?.label ?? port.label ?? 'Unnamed'}`,
+        }
+      }),
+    ).sort((a, b) => a.text.localeCompare(b.text))
   }
 
   function saveSelectedAppearance(clearManualRoute = false) {
@@ -3529,7 +3572,36 @@
   {/if}
 
   <!-- Zoom / utility controls -->
-  {#if layoutEdit && selectedLayoutNode && ['node', 'subgraph'].includes(selectedLayoutType ?? '')}
+  {#if layoutEdit && namePickerOpen}
+    <div class="parent-editor name-picker">
+      <strong>Edit connection or point name</strong>
+      <label for="connection-name-picker">Connection</label>
+      <select
+        id="connection-name-picker"
+        aria-label="Choose connection to rename"
+        value=""
+        onchange={(event) => editConnectionFromList(event.currentTarget.value)}
+      >
+        <option value="">Choose a connection…</option>
+        {#each connectionChoices() as choice (choice.id)}
+          <option value={choice.id}>{choice.text}</option>
+        {/each}
+      </select>
+      <label for="point-name-picker">Connection point</label>
+      <select
+        id="point-name-picker"
+        aria-label="Choose point to rename"
+        value=""
+        onchange={(event) => editPointFromList(event.currentTarget.value)}
+      >
+        <option value="">Choose a point…</option>
+        {#each pointChoices() as choice (choice.id)}
+          <option value={choice.id}>{choice.text}</option>
+        {/each}
+      </select>
+    </div>
+  {/if}
+  {#if layoutEdit && !namePickerOpen && selectedLayoutNode && ['node', 'subgraph'].includes(selectedLayoutType ?? '')}
     <div class="parent-editor">
       <strong>Selected block</strong>
       <span
@@ -4411,6 +4483,14 @@
         </button>
         {#if layoutEdit}
           <button
+            onclick={() => (namePickerOpen = !namePickerOpen)}
+            title="Edit connection and point names"
+            aria-label="Edit connection and point names"
+            class:active={namePickerOpen}
+          >
+            <PencilSimpleIcon size={18} />
+          </button>
+          <button
             onclick={startAddObject}
             title="Add standalone block"
             aria-label="Add standalone block"
@@ -4461,7 +4541,7 @@
         {/if}
         {#if layoutEdit && selectedLayoutType === 'edge' && selectedLayoutLinkId}
           <button
-            onclick={startEditSelectedAppearance}
+            onclick={() => startEditSelectedAppearance()}
             title="Connection appearance, routing and shared points"
             aria-label="Connection appearance and shared points"
           >

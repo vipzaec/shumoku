@@ -321,6 +321,73 @@ function reseatPortsByGeometry(
 }
 
 /**
+ * A long edge can hold more distinct connection points than a short one.
+ * Move only automatically placed overflow ports to an adjacent, longer edge;
+ * operator-selected sides and offsets remain authoritative.
+ */
+function balancePortsBySideLength(
+  assignments: PortAssignment[],
+  nodes: Map<string, Node>,
+): PortAssignment[] {
+  const result = assignments.map((assignment) => ({ ...assignment }))
+  for (const node of nodes.values()) {
+    if (!node.position) continue
+    const position = node.position
+    const size = resolveNodeSize(node)
+    if (Math.min(size.width, size.height) <= 0) continue
+    const verticalLong = size.height >= size.width * 1.5
+    const horizontalLong = size.width >= size.height * 1.5
+    if (!verticalLong && !horizontalLong) continue
+    const shortSides: Side[] = verticalLong ? ['top', 'bottom'] : ['left', 'right']
+    const longSides: Side[] = verticalLong ? ['left', 'right'] : ['top', 'bottom']
+    const shortSpan = verticalLong ? size.width : size.height
+    const longSpan = verticalLong ? size.height : size.width
+    const shortCapacity = Math.max(1, Math.floor((shortSpan - 12) / 24))
+    const longCapacity = Math.max(1, Math.floor((longSpan - 12) / 24))
+    const countOn = (side: Side) =>
+      result.filter((a) => a.nodeId === node.id && a.side === side).length
+
+    for (const shortSide of shortSides) {
+      let overflow = countOn(shortSide) - shortCapacity
+      if (overflow <= 0) continue
+      const candidates = result
+        .filter((a) => a.nodeId === node.id && a.side === shortSide)
+        .filter((a) => {
+          const placement = getPortPlacement(node, a.portId)
+          return !placement?.side && placement?.offset === undefined
+        })
+        .sort((a, b) => {
+          const peerA = nodes.get(a.peerNodeId)?.position
+          const peerB = nodes.get(b.peerNodeId)?.position
+          const displacement = (peer: Position | undefined) =>
+            peer ? Math.abs(verticalLong ? peer.x - position.x : peer.y - position.y) : 0
+          return displacement(peerB) - displacement(peerA) || a.portId.localeCompare(b.portId)
+        })
+      for (const candidate of candidates) {
+        if (overflow <= 0) break
+        const peer = nodes.get(candidate.peerNodeId)?.position
+        const preferred = verticalLong
+          ? (peer?.x ?? position.x) < position.x
+            ? 'left'
+            : 'right'
+          : (peer?.y ?? position.y) < position.y
+            ? 'top'
+            : 'bottom'
+        const alternatives = [
+          preferred,
+          ...longSides.filter((side) => side !== preferred),
+        ] as Side[]
+        const destination = alternatives.find((side) => countOn(side) < longCapacity)
+        if (!destination) break
+        candidate.side = destination
+        overflow--
+      }
+    }
+  }
+  return result
+}
+
+/**
  * Distribute a side's ports by aligning each to its peer, so wires drop
  * (near-)straight to the node above/below instead of fanning evenly
  * across a wide switch. Keeps the order {@link orderPortsOnSide} chose;
@@ -425,7 +492,10 @@ export function placePorts(
   links: Link[],
   direction: Direction = 'TB',
 ): Map<string, ResolvedPort> {
-  const assignments = reseatPortsByGeometry(decidePortSides(links, nodes, direction), nodes)
+  const assignments = balancePortsBySideLength(
+    reseatPortsByGeometry(decidePortSides(links, nodes, direction), nodes),
+    nodes,
+  )
 
   const bySide = new Map<string, PortAssignment[]>()
   for (const a of assignments) {
