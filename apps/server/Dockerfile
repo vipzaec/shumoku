@@ -117,8 +117,8 @@ LABEL org.opencontainers.image.created=$SHUMOKU_BUILD_DATE
 
 WORKDIR /app
 
-# Install curl for health check
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# Install curl for health check and fonts for PNG text rasterization.
+RUN apt-get update && apt-get install -y --no-install-recommends curl fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user (use existing group if GID 1000 exists)
