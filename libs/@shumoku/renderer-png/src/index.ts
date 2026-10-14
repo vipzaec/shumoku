@@ -62,6 +62,7 @@ export async function renderPng(
   return png.render(prepared.graph, prepared.layout, {
     scale: options?.scale,
     iconDimensions: prepared.iconDimensions ?? undefined,
+    theme: options?.theme ?? (prepared.graph.settings?.theme === 'dark' ? darkTheme : lightTheme),
   })
 }
 

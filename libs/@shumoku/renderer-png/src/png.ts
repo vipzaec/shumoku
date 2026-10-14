@@ -94,6 +94,7 @@ export async function render(
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'zoom', value: scale },
     font: { loadSystemFonts },
+    background: options.theme?.colors.background ?? '#ffffff',
   })
 
   return resvg.render().asPng()
@@ -114,6 +115,7 @@ export async function renderResolved(
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'zoom', value: scale },
     font: { loadSystemFonts },
+    background: options.theme?.colors.background ?? '#ffffff',
   })
   return resvg.render().asPng()
 }
@@ -134,6 +136,7 @@ export function renderSync(
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'zoom', value: scale },
     font: { loadSystemFonts },
+    background: options.theme?.colors.background ?? '#ffffff',
   })
 
   return resvg.render().asPng()
