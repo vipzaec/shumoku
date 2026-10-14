@@ -491,7 +491,12 @@
 
   function trafficHopLabel(link: Record<string, unknown>): string {
     const metadata = (link.metadata ?? {}) as Record<string, unknown>
-    return String(metadata.pathLabel ?? link.label ?? '').trim() || 'unlabelled connection'
+    const label = String(metadata.pathLabel ?? link.label ?? '').trim()
+    if (label) return label
+    const from = String((link.from as { node?: string } | undefined)?.node ?? '')
+    const to = String((link.to as { node?: string } | undefined)?.node ?? '')
+    if (!from || !to) return 'connection'
+    return `${nodeLabelById(graph?.nodes, from)} → ${nodeLabelById(graph?.nodes, to)}`
   }
 
   function findTrafficPath(requiredService = 'any'): TrafficPath | null {
