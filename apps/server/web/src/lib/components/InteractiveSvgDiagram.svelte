@@ -912,7 +912,12 @@
     }
   }
 
+  let localLayoutRevision = 0
+
   function stagePins(next: Record<string, { x: number; y: number }>) {
+    // A graph refresh already in flight must not restore positions from
+    // before this local edit, even if its server save has not started yet.
+    localLayoutRevision++
     pinnedPositions = next
     if (typeof localStorage !== 'undefined')
       localStorage.setItem(pinStorageKey, JSON.stringify(next))
@@ -970,6 +975,7 @@
     continuations: Record<string, LinkContinuation> = linkContinuationOverrides,
   ) {
     if (!topologyId || readOnly) return
+    localLayoutRevision++
     const id = topologyId
     // Capture a plain snapshot now: later Svelte edits must not mutate a queued write.
     const operatorLayout = JSON.parse(
@@ -1492,15 +1498,19 @@
   // it as a dependency, and since loadGraph also WRITES `graph`, that loops
   // forever (refetch → new graph → effect refires → refetch …).
   let hasGraph = false
+  let graphLoadSequence = 0
 
   async function loadGraph() {
+    const loadSequence = ++graphLoadSequence
     // Keep the current diagram visible during a stale-refresh poll — only
     // show the loading state when there is nothing on screen yet.
     loading = !hasGraph
     error = ''
     try {
       // A refresh must never restore a server copy older than the last edit.
-      await layoutWriter.flush().catch(() => undefined)
+      await layoutWriter.flush()
+      if (loadSequence !== graphLoadSequence) return
+      const layoutRevision = localLayoutRevision
       loadLayerPreferences()
       const loader = graphLoader ?? (() => api.topologies.getView(topologyId))
       const [res, display] = await Promise.all([
@@ -1510,6 +1520,14 @@
           : api.topologies.displaySettings.get(topologyId),
       ])
       await loadCustomTrafficFlows()
+      if (loadSequence !== graphLoadSequence) return
+      if (layoutRevision !== localLayoutRevision) {
+        // A local edit began while the request was pending. Fetch the saved
+        // layout again after its queued write instead of applying stale data.
+        loading = false
+        scheduleRefresh(0)
+        return
+      }
       if (res.deriving) {
         building = true
         loading = !hasGraph
@@ -1545,6 +1563,12 @@
         const offsets = serverHasLayout ? (saved.portOffsets ?? {}) : {}
         const parents = saved?.parentOverrides ?? {}
         const manualNodes = await refreshBoundNodes(saved?.operatorNodes ?? [])
+        if (loadSequence !== graphLoadSequence) return
+        if (layoutRevision !== localLayoutRevision) {
+          loading = false
+          scheduleRefresh(0)
+          return
+        }
         const overrides = saved?.presentationOverrides ?? {}
         const manualLinks = saved?.operatorLinks ?? []
         const manualGroups = saved?.operatorGroups ?? []
@@ -1603,6 +1627,7 @@
       if (res.stale) scheduleRefresh(5000)
       loading = false
     } catch (e) {
+      if (loadSequence !== graphLoadSequence) return
       error = e instanceof Error ? e.message : 'Unknown error'
       loading = false
     }
