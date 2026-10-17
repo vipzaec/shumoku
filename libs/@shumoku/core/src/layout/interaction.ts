@@ -118,6 +118,36 @@ export function collectObstacles(
   return obstacles
 }
 
+/** Interactive moves only collide with peers in the same container. */
+function collectSiblingObstacles(
+  node: Node,
+  nodes: Map<string, Node>,
+  subgraphs?: Map<string, Subgraph>,
+): { x: number; y: number; w: number; h: number }[] {
+  const obstacles: { x: number; y: number; w: number; h: number }[] = []
+  for (const peer of nodes.values()) {
+    if (
+      peer.id === node.id ||
+      peer.parent !== node.parent ||
+      peer.metadata?.['presentationRole'] === 'subgraph-boundary-port' ||
+      !peer.position
+    )
+      continue
+    const size = resolveNodeSize(peer)
+    obstacles.push(
+      spacedRect(
+        { x: peer.position.x, y: peer.position.y, w: size.width, h: size.height },
+        peer.style?.outerSpacing,
+      ),
+    )
+  }
+  for (const group of subgraphs?.values() ?? []) {
+    if (group.parent !== node.parent || !group.bounds) continue
+    obstacles.push(spacedRect(boundsToRect(group.bounds), group.style?.outerSpacing))
+  }
+  return obstacles
+}
+
 /**
  * Resolve position of any rectangle against all obstacles
  * (nodes + subgraphs). Delegates to the engine's geometric
@@ -531,14 +561,14 @@ export async function moveNode(
   const node = layout.nodes.get(id)
   if (!node?.position) return null
 
-  // 1. Resolve collisions (nodes + subgraphs)
-  const { x: finalX, y: finalY } = resolveNodePosition(
-    id,
-    x,
-    y,
-    layout.nodes,
-    gap,
-    layout.subgraphs,
+  // Only direct peers can block an interactive move. Other containers may
+  // have oversized or overlapping hulls, but must never eject a child from
+  // its own parent when the operator moves it by a few pixels.
+  const size = resolveNodeSize(node)
+  const spaced = spacedRect({ x, y, w: size.width, h: size.height }, node.style?.outerSpacing)
+  const { x: finalX, y: finalY } = unspacePosition(
+    resolvePosition(spaced, collectSiblingObstacles(node, layout.nodes, layout.subgraphs), gap),
+    node.style?.outerSpacing,
   )
 
   const dx = finalX - node.position.x

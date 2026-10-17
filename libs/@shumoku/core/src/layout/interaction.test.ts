@@ -85,6 +85,43 @@ describe('outer spacing', () => {
 })
 
 describe('manual group movement', () => {
+  it('does not eject a service from its parent when unrelated group hulls overlap it', async () => {
+    const parentBounds = { x: 100, y: 100, width: 400, height: 300 }
+    const nodes = new Map<string, Node>([
+      [
+        'service',
+        {
+          id: 'service',
+          label: 'MSSQL',
+          parent: 'vm',
+          position: { x: 300, y: 250 },
+          size: { width: 100, height: 60 },
+        },
+      ],
+      [
+        'other-service',
+        {
+          id: 'other-service',
+          label: 'Other service',
+          parent: 'other-vm',
+          position: { x: 300, y: 250 },
+          size: { width: 100, height: 60 },
+        },
+      ],
+    ])
+    const subgraphs = new Map<string, Subgraph>([
+      ['vm', { id: 'vm', bounds: parentBounds }],
+      ['other-vm', { id: 'other-vm', bounds: { x: 80, y: 80, width: 500, height: 400 } }],
+    ])
+
+    const moved = await moveNode('service', 308, 255, { nodes, ports: new Map(), subgraphs }, [])
+
+    expect(moved?.nodes.get('service')?.position).toEqual({ x: 308, y: 255 })
+    expect(moved?.nodes.get('other-service')?.position).toEqual({ x: 300, y: 250 })
+    expect(moved?.subgraphs?.get('vm')?.bounds).toEqual(parentBounds)
+    expect(moved?.subgraphs?.get('other-vm')?.bounds).toEqual(subgraphs.get('other-vm')?.bounds)
+  })
+
   it('keeps a resized outer container when an inner block moves', async () => {
     const outerBounds = { x: 0, y: 0, width: 500, height: 350 }
     const nodes = new Map<string, Node>([
