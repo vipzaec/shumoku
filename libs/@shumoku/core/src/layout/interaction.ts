@@ -118,17 +118,18 @@ export function collectObstacles(
   return obstacles
 }
 
-/** Interactive moves only collide with peers in the same container. */
-function collectSiblingObstacles(
-  node: Node,
+/** Placement and movement collide only with peers at the same hierarchy level. */
+export function collectPeerObstacles(
+  excludeId: string,
+  parent: string | undefined,
   nodes: Map<string, Node>,
   subgraphs?: Map<string, Subgraph>,
 ): { x: number; y: number; w: number; h: number }[] {
   const obstacles: { x: number; y: number; w: number; h: number }[] = []
   for (const peer of nodes.values()) {
     if (
-      peer.id === node.id ||
-      peer.parent !== node.parent ||
+      peer.id === excludeId ||
+      peer.parent !== parent ||
       peer.metadata?.['presentationRole'] === 'subgraph-boundary-port' ||
       !peer.position
     )
@@ -142,7 +143,7 @@ function collectSiblingObstacles(
     )
   }
   for (const group of subgraphs?.values() ?? []) {
-    if (group.parent !== node.parent || !group.bounds) continue
+    if (group.id === excludeId || group.parent !== parent || !group.bounds) continue
     obstacles.push(spacedRect(boundsToRect(group.bounds), group.style?.outerSpacing))
   }
   return obstacles
@@ -178,16 +179,16 @@ export function resolveNodePosition(
   const node = nodes.get(id)
   if (!node) return { x, y }
   const size = resolveNodeSize(node)
-  const obstacles = collectObstacles(id, node.parent, nodes, subgraphs)
+  const obstacles = collectPeerObstacles(id, node.parent, nodes, subgraphs)
   const spaced = spacedRect({ x, y, w: size.width, h: size.height }, node.style?.outerSpacing)
   return unspacePosition(resolvePosition(spaced, obstacles, gap), node.style?.outerSpacing)
 }
 
 /**
  * **Geometric** placement for a single unpositioned node: find the
- * point nearest `initial` that doesn't overlap any existing node or
- * subgraph. The graph's link structure is deliberately ignored — this
- * is the primitive for "drop the node exactly where the user clicked",
+ * point nearest `initial` that doesn't overlap a peer node or subgraph
+ * at the same hierarchy level. The graph's link structure is deliberately
+ * ignored — this is the primitive for "drop the node exactly where the user clicked",
  * "paste at cursor", "convert BOM item to diagram node at the canvas
  * edge", i.e. user-driven placement where the surrounding topology
  * should not influence the outcome.
@@ -205,7 +206,7 @@ export function placeNode(
   gap = DEFAULT_NODE_GAP,
 ): { x: number; y: number } {
   const size = resolveNodeSize(node)
-  const obstacles = collectObstacles(node.id, node.parent, graph.nodes, graph.subgraphs)
+  const obstacles = collectPeerObstacles(node.id, node.parent, graph.nodes, graph.subgraphs)
   const spaced = spacedRect(
     { x: initial.x, y: initial.y, w: size.width, h: size.height },
     node.style?.outerSpacing,
@@ -451,7 +452,7 @@ export function rebalanceSubgraphs(
       if (!node.position) continue
       if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
       const size = resolveNodeSize(node)
-      const obstacles = collectObstacles(nodeId, node.parent, nodes, subgraphs)
+      const obstacles = collectPeerObstacles(nodeId, node.parent, nodes, subgraphs)
       const spaced = spacedRect(
         { x: node.position.x, y: node.position.y, w: size.width, h: size.height },
         node.style?.outerSpacing,
@@ -567,7 +568,11 @@ export async function moveNode(
   const size = resolveNodeSize(node)
   const spaced = spacedRect({ x, y, w: size.width, h: size.height }, node.style?.outerSpacing)
   const { x: finalX, y: finalY } = unspacePosition(
-    resolvePosition(spaced, collectSiblingObstacles(node, layout.nodes, layout.subgraphs), gap),
+    resolvePosition(
+      spaced,
+      collectPeerObstacles(id, node.parent, layout.nodes, layout.subgraphs),
+      gap,
+    ),
     node.style?.outerSpacing,
   )
 

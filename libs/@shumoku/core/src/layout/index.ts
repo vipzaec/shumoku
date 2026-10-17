@@ -98,6 +98,7 @@ export {
   addLink,
   addPort,
   collectObstacles,
+  collectPeerObstacles,
   detectClickSide,
   isPortLinked,
   linkExists,

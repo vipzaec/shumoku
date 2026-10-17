@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Link, Node, Subgraph } from '../models/types.js'
 import {
+  collectPeerObstacles,
   isPortLinked,
   linkExists,
   moveNode,
   moveSubgraph,
+  nodesOverlap,
+  placeNode,
   rebalanceSubgraphs,
+  resolveNodePosition,
 } from './interaction.js'
 import type { ResolvedPort } from './resolved-types.js'
 import { routeEdges } from './route-edges.js'
@@ -81,6 +85,103 @@ describe('outer spacing', () => {
     expect(bounds?.y).toBe(77)
     expect(bounds?.width).toBe(240)
     expect(bounds?.height).toBe(188)
+  })
+})
+
+describe('hierarchy-aware placement', () => {
+  const candidate: Node = {
+    id: 'candidate',
+    label: 'Service',
+    parent: 'vm',
+    size: { width: 100, height: 60 },
+  }
+  const nodes = new Map<string, Node>([
+    [
+      'foreign-service',
+      {
+        id: 'foreign-service',
+        label: 'Foreign service',
+        parent: 'other-vm',
+        position: { x: 300, y: 250 },
+        size: { width: 100, height: 60 },
+      },
+    ],
+    [
+      'peer',
+      {
+        id: 'peer',
+        label: 'Peer',
+        parent: 'vm',
+        position: { x: 500, y: 250 },
+        size: { width: 100, height: 60 },
+      },
+    ],
+  ])
+  const subgraphs = new Map<string, Subgraph>([
+    ['vm', { id: 'vm', bounds: { x: 100, y: 100, width: 600, height: 400 } }],
+    ['other-vm', { id: 'other-vm', bounds: { x: 100, y: 100, width: 500, height: 400 } }],
+    [
+      'nested-peer',
+      { id: 'nested-peer', parent: 'vm', bounds: { x: 600, y: 200, width: 100, height: 100 } },
+    ],
+  ])
+
+  it('places every new child near its requested position despite overlapping foreign groups', () => {
+    expect(placeNode(candidate, { nodes, subgraphs }, { x: 300, y: 250 })).toEqual({
+      x: 300,
+      y: 250,
+    })
+  })
+
+  it('uses the same peer scope for the legacy position resolver', () => {
+    const positioned = new Map(nodes).set(candidate.id, {
+      ...candidate,
+      position: { x: 300, y: 250 },
+    })
+    expect(resolveNodePosition(candidate.id, 308, 255, positioned, 8, subgraphs)).toEqual({
+      x: 308,
+      y: 255,
+    })
+  })
+
+  it('still avoids nodes and group outlines in the same container', () => {
+    const peerPlacement = placeNode(candidate, { nodes, subgraphs }, { x: 500, y: 250 })
+    expect(
+      nodesOverlap({ ...peerPlacement, w: 100, h: 60 }, { x: 500, y: 250, w: 100, h: 60 }),
+    ).toBe(false)
+    const groupPlacement = placeNode(candidate, { nodes, subgraphs }, { x: 650, y: 250 })
+    expect(
+      nodesOverlap({ ...groupPlacement, w: 100, h: 60 }, { x: 650, y: 250, w: 100, h: 100 }),
+    ).toBe(false)
+    expect(collectPeerObstacles(candidate.id, candidate.parent, nodes, subgraphs)).toHaveLength(2)
+  })
+
+  it('does not eject a nested block during automatic hull recalculation', () => {
+    const childNodes = new Map<string, Node>([
+      [
+        'service',
+        {
+          ...candidate,
+          id: 'service',
+          position: { x: 300, y: 250 },
+        },
+      ],
+    ])
+    const overlappingGroups = new Map<string, Subgraph>([
+      ['vm', { id: 'vm', parent: 'tenant', bounds: { x: 200, y: 180, width: 200, height: 140 } }],
+      [
+        'foreign-vm',
+        {
+          id: 'foreign-vm',
+          parent: 'msp',
+          bounds: { x: 200, y: 180, width: 200, height: 140 },
+        },
+      ],
+    ])
+
+    rebalanceSubgraphs(childNodes, overlappingGroups, new Map())
+
+    expect(childNodes.get('service')?.position).toEqual({ x: 300, y: 250 })
   })
 })
 

@@ -14,11 +14,12 @@
   } from '@shumoku/core'
   import {
     addPort,
-    collectObstacles,
+    collectPeerObstacles,
     createEngine,
     linkExists,
     moveNode,
     moveSubgraph,
+    placeNode,
     rebalanceSubgraphs,
     resolvePosition,
     routeEdges,
@@ -595,9 +596,18 @@
   }
 
   function finalizeAdd(id: string) {
-    // rebalanceSubgraphs mutates the subgraphs map's entries in place; since
-    // we now use a SvelteMap the mutations are picked up without any reassign.
-    rebalanceSubgraphs(nodes, subgraphs, ports)
+    // Adding a block may grow its own containers, but must not rearrange or
+    // recompute unrelated branches of an operator's layout.
+    const affectedGroupIds = new Set<string>()
+    let current = subgraphs.has(id) ? id : nodes.get(id)?.parent
+    while (current && !affectedGroupIds.has(current)) {
+      affectedGroupIds.add(current)
+      current = subgraphs.get(current)?.parent
+    }
+    rebalanceSubgraphs(nodes, subgraphs, ports, {
+      preservePositions: true,
+      affectedGroupIds,
+    })
     selection = new SvelteSet([id])
     emitSelection()
   }
@@ -617,19 +627,18 @@
       : opts.type
         ? ({ kind: 'hardware' as const, type: opts.type } satisfies NodeSpec)
         : undefined
-    const { width: w, height: h } = computeNodeBodySize({ label, spec })
+    const { width: w } = computeNodeBodySize({ label, spec })
     const { parent, initial } = resolveParentAndPosition(opts.position, w)
-    const obstacles = collectObstacles(id, parent, nodes, subgraphs)
-    const pos = resolvePosition({ x: initial.x, y: initial.y, w, h }, obstacles)
-
-    nodes.set(id, {
+    const node: Node = {
       id,
       label,
       spec,
       shape: opts.shape ?? 'rounded',
       parent,
-      position: pos,
-    })
+    }
+    const pos = placeNode(node, { nodes, subgraphs }, initial)
+
+    nodes.set(id, { ...node, position: pos })
     finalizeAdd(id)
     onnodeadd?.(id)
     return id
@@ -644,7 +653,7 @@
     const w = 200
     const h = 120
     const { parent, initial } = resolveParentAndPosition(opts.position, w)
-    const obstacles = collectObstacles(id, parent, nodes, subgraphs)
+    const obstacles = collectPeerObstacles(id, parent, nodes, subgraphs)
     const pos = resolvePosition({ x: initial.x, y: initial.y, w, h }, obstacles)
 
     subgraphs.set(id, {
