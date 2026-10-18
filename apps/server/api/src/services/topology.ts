@@ -295,7 +295,7 @@ interface StoredLinkMapping {
 // previously cached v23 layouts could still contain the obstructed curve.
 // v25: keep parallel detours into one gateway on separate trunks instead of
 // stacking them into an unreadable single line.
-const RESOLVER_VERSION = 27
+const RESOLVER_VERSION = 28
 
 /** Persisted resolved-graph artifact row (Phase 3 materialization). */
 interface ResolvedGraphRow {

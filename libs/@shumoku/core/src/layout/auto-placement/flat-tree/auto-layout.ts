@@ -303,9 +303,21 @@ export function autoLayoutFlatTree(
     nodes.set(n.id, folded)
   }
   const subgraphs = new Map<string, Subgraph>()
+  const allNodesPositioned = opts.fixed.size === graph.nodes.length
+  const populatedGroups = new Set<string>()
+  for (const node of graph.nodes) if (node.parent) populatedGroups.add(node.parent)
+  for (const group of graph.subgraphs ?? []) if (group.parent) populatedGroups.add(group.parent)
   for (const s of graph.subgraphs ?? []) {
     const bounds = result.subgraphBounds.get(s.id)
-    subgraphs.set(s.id, bounds ? { ...s, bounds } : s)
+    // A fully positioned graph uses the authored node coordinates. The
+    // provisional auto-layout can put its groups arbitrarily far away; those
+    // hulls must not become minimum sizes when rebalance preserves positions.
+    // Empty leaf groups have no children from which to rebuild a hull, so keep
+    // their provisional size until an operator supplies explicit bounds.
+    subgraphs.set(
+      s.id,
+      bounds && (!allNodesPositioned || !populatedGroups.has(s.id)) ? { ...s, bounds } : s,
+    )
   }
 
   // 5. Port positions via the existing direction-aware placer.

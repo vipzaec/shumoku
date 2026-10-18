@@ -17,6 +17,39 @@ const link = (from: string, to: string) => ({
 })
 
 describe('authored spacing survives automatic layout', () => {
+  test('nested groups follow positioned children rather than provisional auto hulls', async () => {
+    const children = Array.from({ length: 8 }, (_, index) => ({
+      ...node(`vm-${index}`, `vm-group-${index}`),
+      position: { x: 600, y: index * 250 },
+    }))
+    const graph: NetworkGraph = {
+      version: '1.0',
+      name: 'positioned tenant network',
+      nodes: [{ ...node('lan', 'tenant-lan'), position: { x: 100, y: 900 } }, ...children],
+      links: children.map((child) => link('lan', child.id)),
+      subgraphs: [
+        { id: 'tenant-lan', label: 'Tenant LAN' },
+        ...children.map((child) => ({
+          id: `vm-group-${child.id.slice(3)}`,
+          label: child.id,
+          parent: 'tenant-lan',
+        })),
+      ],
+      settings: { direction: 'LR', nodeSpacing: 220, rankSpacing: 410, subgraphPadding: 112 },
+    }
+    const { resolved } = await computeNetworkLayout(graph, { composite: false })
+    for (const child of children) {
+      expect(resolved.nodes.get(child.id)?.position).toEqual(child.position)
+      const hull = resolved.subgraphs.get(`vm-group-${child.id.slice(3)}`)?.bounds
+      expect(hull).toBeDefined()
+      expect(hull?.width).toBeLessThan(300)
+      expect(hull?.height).toBeLessThan(250)
+    }
+    const tenantHull = resolved.subgraphs.get('tenant-lan')?.bounds
+    expect(tenantHull?.width).toBeLessThan(800)
+    expect(tenantHull?.height).toBeLessThan(2300)
+  })
+
   test('spacing settings do not inflate a fully positioned nested plan', async () => {
     const base: NetworkGraph = {
       version: '1.0',
