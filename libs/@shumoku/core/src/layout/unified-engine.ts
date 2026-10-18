@@ -251,8 +251,13 @@ export async function computeNetworkLayout(
   // keep the small defaults).
   let maxLinkWidth = 0
   for (const l of graph.links) maxLinkWidth = Math.max(maxLinkWidth, getLinkWidth(l))
-  const configuredNodeGap = graph.settings?.nodeSpacing
-  const configuredLayerGap = graph.settings?.rankSpacing
+  // The authored coordinates win when every node is positioned. Large source
+  // spacing must not inflate the provisional auto-layout's group hulls before
+  // those coordinates are restored. It applies when there are free nodes to
+  // place (including a Reset layout that removes their positions).
+  const hasFreeNodes = fixed.size < graph.nodes.length
+  const configuredNodeGap = hasFreeNodes ? graph.settings?.nodeSpacing : undefined
+  const configuredLayerGap = hasFreeNodes ? graph.settings?.rankSpacing : undefined
   const nodeGap = Math.max(
     30,
     Math.round(maxLinkWidth) + 16,
