@@ -132,7 +132,7 @@
       .map(Number)
       .filter((value) => value > 0)
     if (!lengths.length) return 'solid'
-    if (lengths[0] <= 2.5) return 'dotted'
+    if ((lengths[0] ?? Infinity) <= 2.5) return 'dotted'
     return lengths.length >= 4 ? 'dash-dot' : 'dashed'
   })
   const strokeColor = $derived(
@@ -337,11 +337,14 @@
     stroke-width={Math.max(edge.width + 12, 16)}
     stroke-linecap="round"
     class="link-hit"
-    title={routeEdit && !continuation ? 'Double-click to add a bend' : undefined}
     {onclick}
     ondblclick={addPoint}
     oncontextmenu={handleContextMenu}
-  />
+  >
+    {#if routeEdit && !continuation}
+      <title>Double-click to add a bend</title>
+    {/if}
+  </path>
 
   {#if continuation}
     {#each continuation.ends as terminal, index}
@@ -368,7 +371,6 @@
         onpointerup={finishTerminal}
         onpointercancel={() => { draggedTerminal = null; terminalPreview = null; terminalDragStart = null }}
         style={routeEdit ? 'cursor: grab; touch-action: none' : 'cursor: pointer'}
-        title={routeEdit ? 'Drag to move this continuation marker' : undefined}
       >
         <rect
           x={terminal.badgeX - 34}
@@ -392,7 +394,8 @@
           {continuation.label}
         </text>
         <title>
-          One logical connection: {continuation.label}. Double-click to jump to the other end.
+          One logical connection: {continuation.label}.
+          {routeEdit ? 'Drag to move the marker; ' : ''}double-click to jump to the other end.
         </title>
       </g>
     {/each}
@@ -408,7 +411,6 @@
         stroke={colors.selection}
         stroke-width="2"
         style="cursor: grab; touch-action: none"
-        title="Drag to move; double-click to remove"
         onpointerdown={(e) => {
     e.stopPropagation()
     draggedPoint = index
@@ -421,7 +423,9 @@
     e.stopPropagation()
     onrouteremove?.(edge.id, index)
   }}
-      />
+      >
+        <title>Drag to move; double-click to remove</title>
+      </circle>
     {/each}
   {/if}
 

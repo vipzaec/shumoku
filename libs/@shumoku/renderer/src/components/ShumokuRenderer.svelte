@@ -996,7 +996,7 @@
     {onlabeledit}
     onrouteadd={(id, x, y) => {
       const p = screenToSvg(x, y)
-      const edge = layout.edges.get(id)
+      const edge = edges.get(id)
       const points = edge?.route?.kind === 'polyline'
         ? edge.route.points
         : edge ? [edge.fromPort.absolutePosition, edge.toPort.absolutePosition] : []
