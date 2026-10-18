@@ -20,6 +20,9 @@ export interface CompositeLayoutOptions {
   zoneGap?: number
   bandGap?: number
   rowGap?: number
+  /** Authored minimums must survive the sparse-channel compaction rule. */
+  minBandGap?: number
+  minRowGap?: number
   cellGapX?: number
   zonePad?: number
   pairFlips?: ReadonlySet<string>
@@ -396,7 +399,7 @@ function placeLocalUnits(
       if (!item) continue
       placed.push({ ...unit, x: item.x, y: y + rowHeight / 2 })
     }
-    y += rowHeight + channelGap(index, crossings, rowGapForMode(problem, rowGap))
+    y += rowHeight + channelGap(index, crossings, rowGapForMode(problem, rowGap), options.minRowGap)
   }
   return placed
 }
@@ -435,10 +438,19 @@ function countChannelCrossings(
 /**
  * Gap below row `index`: the full allowance when the channel has lateral
  * traffic to absorb, port-label clearance when a single link crosses it.
- * `min` so an explicitly-tightened caller gap is never widened back up.
+ * `min` so a compact search variant stays compact. An authored minimum
+ * overrides that optimization when the plan explicitly requests more space.
  */
-function channelGap(index: number, crossings: ReadonlyMap<number, number>, full: number): number {
-  return (crossings.get(index) ?? 0) <= 1 ? Math.min(full, SPARSE_BAND_GAP) : full
+function channelGap(
+  index: number,
+  crossings: ReadonlyMap<number, number>,
+  full: number,
+  authoredMinimum = 0,
+): number {
+  return Math.max(
+    authoredMinimum,
+    (crossings.get(index) ?? 0) <= 1 ? Math.min(full, SPARSE_BAND_GAP) : full,
+  )
 }
 
 function buildGlobalItems(
@@ -555,7 +567,7 @@ function packGlobalItems(
       if (!projectedItem) continue
       placed.push({ ...item, x: projectedItem.x, y: y + rowHeight / 2 })
     }
-    y += rowHeight + channelGap(index, crossingsAfterRow, bandGap)
+    y += rowHeight + channelGap(index, crossingsAfterRow, bandGap, options.minBandGap)
   }
 
   return centerRows(placed)

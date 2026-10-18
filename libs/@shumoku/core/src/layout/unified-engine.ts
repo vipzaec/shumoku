@@ -251,8 +251,18 @@ export async function computeNetworkLayout(
   // keep the small defaults).
   let maxLinkWidth = 0
   for (const l of graph.links) maxLinkWidth = Math.max(maxLinkWidth, getLinkWidth(l))
-  const nodeGap = Math.max(30, Math.round(maxLinkWidth) + 16)
-  const layerGap = Math.max(80, Math.round(maxLinkWidth) + 24)
+  const configuredNodeGap = graph.settings?.nodeSpacing
+  const configuredLayerGap = graph.settings?.rankSpacing
+  const nodeGap = Math.max(
+    30,
+    Math.round(maxLinkWidth) + 16,
+    Number.isFinite(configuredNodeGap) ? (configuredNodeGap ?? 0) : 0,
+  )
+  const layerGap = Math.max(
+    80,
+    Math.round(maxLinkWidth) + 24,
+    Number.isFinite(configuredLayerGap) ? (configuredLayerGap ?? 0) : 0,
+  )
 
   const layoutFn = options.compound && fixed.size === 0 ? layoutCompound : autoLayoutFlatTree
   const { nodes, ports, subgraphs, bounds } = layoutFn(graph, engine, {

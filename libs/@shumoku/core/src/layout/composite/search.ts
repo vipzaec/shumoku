@@ -321,17 +321,45 @@ export async function searchCompositeLayout(
   options: CompositeSearchOptions = {},
 ): Promise<CompositeSearchResult> {
   const maxEvaluations = options.maxEvaluations ?? 160
+  // Authored spacing is a floor, not a single search candidate. Otherwise
+  // the optimizer can choose a compact variant that erases the plan's
+  // intended clearance as soon as the operator resets its layout.
+  const nodeSpacing = graph.settings?.nodeSpacing
+  const rankSpacing = graph.settings?.rankSpacing
+  const nodeFloor =
+    typeof nodeSpacing === 'number' && Number.isFinite(nodeSpacing) && nodeSpacing > 0
+      ? nodeSpacing
+      : 0
+  const rankFloor =
+    typeof rankSpacing === 'number' && Number.isFinite(rankSpacing) && rankSpacing > 0
+      ? rankSpacing
+      : 0
+  const evaluateWithSpacing = (layoutOptions: CompositeLayoutOptions) =>
+    evaluate(graph, {
+      ...layoutOptions,
+      ...(nodeFloor > 0
+        ? {
+            cellGapX: Math.max(layoutOptions.cellGapX ?? 0, nodeFloor),
+            rowGap: Math.max(layoutOptions.rowGap ?? 0, nodeFloor),
+            zoneGap: Math.max(layoutOptions.zoneGap ?? 0, nodeFloor),
+            minRowGap: nodeFloor,
+          }
+        : {}),
+      ...(rankFloor > 0
+        ? { bandGap: Math.max(layoutOptions.bandGap ?? 0, rankFloor), minBandGap: rankFloor }
+        : {}),
+    })
   let evaluations = 0
   const budgeted = async (
     layoutOptions: CompositeLayoutOptions,
   ): Promise<CompositeSearchResult | undefined> => {
     if (evaluations >= maxEvaluations) return undefined
     evaluations++
-    return evaluate(graph, layoutOptions)
+    return evaluateWithSpacing(layoutOptions)
   }
 
   let bestOptions: CompositeLayoutOptions = {}
-  let best = await evaluate(graph, bestOptions)
+  let best = await evaluateWithSpacing(bestOptions)
   evaluations++
   let accepted = 0
   const initialCost = best.score.cost
@@ -514,7 +542,7 @@ export async function searchCompositeLayout(
       bandGap: (bestOptions.bandGap ?? 150) + widen,
     }
     evaluations++
-    const candidate = await evaluate(graph, trial)
+    const candidate = await evaluateWithSpacing(trial)
     const candidateOverlaps = candidate.constraints.violations.containerOverlaps
     const candWorst =
       candidateOverlaps.length === 0 ? 0 : Math.max(...candidateOverlaps.map((o) => o.penetration))
