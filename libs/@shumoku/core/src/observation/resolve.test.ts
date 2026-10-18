@@ -40,6 +40,66 @@ describe('resolve()', () => {
     })
   })
 
+  describe('graph settings', () => {
+    it('keeps source layout spacing while honoring explicit project settings', () => {
+      const older: SnapshotEntry = {
+        sourceId: 'older',
+        priority: 1,
+        capturedAt: 100,
+        status: 'ok',
+        graph: { ...emptyGraph(), settings: { direction: 'TB', nodeSpacing: 90 } },
+      }
+      const newer: SnapshotEntry = {
+        sourceId: 'newer',
+        priority: 5,
+        capturedAt: 200,
+        status: 'ok',
+        graph: {
+          ...emptyGraph(),
+          settings: { direction: 'RL', nodeSpacing: 220, rankSpacing: 410, legend: true },
+        },
+      }
+      const failed: SnapshotEntry = {
+        sourceId: 'failed',
+        priority: 100,
+        capturedAt: 300,
+        status: 'failed',
+        graph: { ...emptyGraph(), settings: { nodeSpacing: 1 } },
+      }
+      const authored = { ...emptyGraph(), settings: { direction: 'LR' as const, legend: false } }
+
+      const out = resolve(authored, [newer, failed, older])
+      expect(out.settings).toEqual({
+        direction: 'LR',
+        nodeSpacing: 220,
+        rankSpacing: 410,
+        legend: false,
+      })
+      expect(authored.settings).toEqual({ direction: 'LR', legend: false })
+    })
+
+    it('uses the latest observation for equal-priority settings and skips missing values', () => {
+      const first: SnapshotEntry = {
+        sourceId: 'first',
+        priority: 5,
+        capturedAt: 100,
+        status: 'ok',
+        graph: { ...emptyGraph(), settings: { nodeSpacing: 180, rankSpacing: 320 } },
+      }
+      const latest: SnapshotEntry = {
+        sourceId: 'latest',
+        priority: 5,
+        capturedAt: 200,
+        status: 'ok',
+        graph: { ...emptyGraph(), settings: { rankSpacing: 400 } },
+      }
+      expect(resolve(emptyGraph(), [latest, first]).settings).toEqual({
+        nodeSpacing: 180,
+        rankSpacing: 400,
+      })
+    })
+  })
+
   describe('intrinsic-only', () => {
     it('node present only in intrinsic → state = intrinsic-only', () => {
       const intrinsic: NetworkGraph = {

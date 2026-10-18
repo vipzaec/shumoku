@@ -5,6 +5,7 @@
 import {
   type Attachment,
   attachmentKey,
+  type GraphSettings,
   type Identity,
   type Link,
   type LinkEndpoint,
@@ -230,7 +231,7 @@ export function resolve(
     links: resolvedLinks,
     subgraphs: resolvedSubgraphs,
     terminations: authored.terminations,
-    settings: authored.settings,
+    settings: foldGraphSettings(contributions),
     pins: authored.pins,
   }
 }
@@ -253,6 +254,23 @@ interface Contribution {
     nodes: Record<string, string>
     ports: Record<string, string>
   }
+}
+
+/** Apply graph-level preferences with the same field-wise priority as entities. */
+function foldGraphSettings(contributions: Contribution[]): GraphSettings | undefined {
+  const settings: Record<string, unknown> = {}
+  const ranked = [...contributions].sort(
+    (a, b) =>
+      a.priority - b.priority ||
+      a.capturedAt - b.capturedAt ||
+      a.sourceId.localeCompare(b.sourceId),
+  )
+  for (const contribution of ranked) {
+    for (const [key, value] of Object.entries(contribution.graph.settings ?? {})) {
+      if (hasValue(value)) settings[key] = value
+    }
+  }
+  return Object.keys(settings).length > 0 ? (settings as GraphSettings) : undefined
 }
 
 interface ClusterMember {
