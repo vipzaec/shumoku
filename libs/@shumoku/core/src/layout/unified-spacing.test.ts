@@ -34,7 +34,10 @@ describe('authored spacing survives automatic layout', () => {
     }
     const normal = await computeNetworkLayout(base, { composite: false })
     const spaced = await computeNetworkLayout(
-      { ...base, settings: { direction: 'LR', nodeSpacing: 220, rankSpacing: 410 } },
+      {
+        ...base,
+        settings: { direction: 'LR', nodeSpacing: 220, rankSpacing: 410, subgraphPadding: 112 },
+      },
       { composite: false },
     )
     expect(spaced.resolved.nodes.get('service-a')?.position).toEqual({ x: 100, y: 100 })

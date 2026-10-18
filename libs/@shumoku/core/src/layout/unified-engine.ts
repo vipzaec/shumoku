@@ -274,7 +274,7 @@ export async function computeNetworkLayout(
     direction,
     nodeGap,
     layerGap,
-    subgraphPadding: graph.settings?.subgraphPadding,
+    subgraphPadding: hasFreeNodes ? graph.settings?.subgraphPadding : undefined,
     fixed,
   })
   applyOperatorGroupBounds(graph, nodes, ports, subgraphs)
