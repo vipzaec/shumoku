@@ -7,6 +7,7 @@
     type Subgraph,
     type Theme,
   } from '@shumoku/core'
+  import { boundaryPortOffsets } from '../../lib/boundary-port-placement'
   import { continuationBoundsFromEdges } from '../../lib/continuation'
   import type { RendererOverlaySnippets } from '../../lib/overlays'
   import type { RenderColors } from '../../lib/render-colors'
@@ -122,13 +123,7 @@
   function portGuideFractions(guide: NonNullable<typeof portDragGuide>): number[] {
     const length =
       guide.side === 'top' || guide.side === 'bottom' ? guide.bounds.width : guide.bounds.height
-    // Keep roughly one visible reference every 20 px. Each reference is
-    // aligned to the same 1% grid used when the port is dropped.
-    const count = Math.max(3, Math.min(81, Math.round(length / 22)))
-    return Array.from(
-      { length: count },
-      (_, index) => Math.round((0.1 + (index * 0.8) / (count - 1)) * 100) / 100,
-    )
+    return boundaryPortOffsets(length)
   }
 
   const viewBox = $derived.by(() => {

@@ -3,6 +3,20 @@ type Side = 'top' | 'bottom' | 'left' | 'right'
 type Bounds = { x: number; y: number; width: number; height: number }
 type Point = { x: number; y: number }
 
+const ANCHOR_SPACING = 20
+const CORNER_CLEARANCE = 16
+
+/** Attachment locations spaced by diagram units, independent of side length. */
+export function boundaryPortOffsets(length: number): number[] {
+  if (!Number.isFinite(length) || length <= CORNER_CLEARANCE * 2) return [0.5]
+  const usable = length - CORNER_CLEARANCE * 2
+  const intervals = Math.max(1, Math.round(usable / ANCHOR_SPACING))
+  return Array.from(
+    { length: intervals + 1 },
+    (_, index) => (CORNER_CLEARANCE + (usable * index) / intervals) / length,
+  )
+}
+
 export function projectBoundaryPort(
   bounds: Bounds,
   pointer: Point,
@@ -24,10 +38,18 @@ export function projectBoundaryPort(
   const horizontal = side === 'top' || side === 'bottom'
   const position = horizontal ? pointer.x - bounds.x : pointer.y - bounds.y
   const length = horizontal ? bounds.width : bounds.height
-  const continuous = Math.max(0.1, Math.min(0.9, position / Math.max(length, 1)))
-  // A one-percent landing grid avoids visible jumps on large blocks while
-  // still producing stable, repeatable saved positions.
-  const offset = snap ? Math.round(continuous * 100) / 100 : continuous
+  const anchors = boundaryPortOffsets(length)
+  const continuous = Math.max(
+    anchors[0] ?? 0.5,
+    Math.min(anchors[anchors.length - 1] ?? 0.5, position / Math.max(length, 1)),
+  )
+  // Keep the drag preview continuous; commit to the same fixed-distance
+  // anchors that the canvas shows, on every block regardless of its size.
+  const offset = snap
+    ? anchors.reduce((nearest, candidate) =>
+        Math.abs(candidate - continuous) < Math.abs(nearest - continuous) ? candidate : nearest,
+      )
+    : continuous
   return {
     side,
     offset,
