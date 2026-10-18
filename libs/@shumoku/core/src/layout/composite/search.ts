@@ -562,7 +562,10 @@ export async function searchCompositeLayout(
   return best
 }
 
-function isBetterResult(candidate: CompositeSearchResult, current: CompositeSearchResult): boolean {
+export function isBetterResult(
+  candidate: CompositeSearchResult,
+  current: CompositeSearchResult,
+): boolean {
   const candidateHard = hardRank(candidate.constraints)
   const currentHard = hardRank(current.constraints)
   if (candidateHard.blocking !== currentHard.blocking) {
@@ -575,6 +578,15 @@ function isBetterResult(candidate: CompositeSearchResult, current: CompositeSear
   if (candidateRank.errors !== currentRank.errors) return candidateRank.errors < currentRank.errors
   if (candidateRank.warnings !== currentRank.warnings) {
     return candidateRank.warnings < currentRank.warnings
+  }
+  // Crossing-free wiring is the primary visual goal once geometry and
+  // semantic constraints are satisfied. The weighted cost below includes
+  // route length and bends; using it first could prefer a shorter tangle.
+  if (candidate.score.crossings !== current.score.crossings) {
+    return candidate.score.crossings < current.score.crossings
+  }
+  if (candidate.score.collinear !== current.score.collinear) {
+    return candidate.score.collinear < current.score.collinear
   }
   return candidate.score.cost < current.score.cost
 }
