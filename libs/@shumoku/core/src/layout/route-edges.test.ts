@@ -8,7 +8,7 @@ import { describe, expect, test } from 'vitest'
 import type { Link, Node } from '../models/types.js'
 import { bezierEdgePath } from './bezier-path.js'
 import type { ResolvedPort } from './resolved-types.js'
-import { routeEdges } from './route-edges.js'
+import { routeEdges, separateCoincidentDetours } from './route-edges.js'
 
 function port(
   id: string,
@@ -301,6 +301,40 @@ describe('routeEdges — obstacle avoidance', () => {
       expect(crosses).toBe(false)
     }
   })
+})
+
+test('separates long shared corridors even when both endpoints use distinct ports', async () => {
+  const ports = makePorts([
+    ['s1:p', port('s1:p', 's1', 0, 300, 'right')],
+    ['s2:p', port('s2:p', 's2', 0, 340, 'right')],
+    ['s3:p', port('s3:p', 's3', 0, 380, 'right')],
+    ['t1:p', port('t1:p', 't1', 500, 0, 'left')],
+    ['t2:p', port('t2:p', 't2', 500, 80, 'left')],
+    ['t3:p', port('t3:p', 't3', 500, 160, 'left')],
+  ])
+  const edges = await routeEdges(NOOP_NODES, ports, [
+    link('s1:p', 't1:p'),
+    link('s2:p', 't2:p'),
+    link('s3:p', 't3:p'),
+  ])
+  for (const edge of edges.values()) {
+    const source = edge.fromPort.absolutePosition
+    const target = edge.toPort.absolutePosition
+    const points = [source, { x: 200, y: source.y }, { x: 200, y: target.y }, target]
+    edge.route = { kind: 'polyline', points, cornerRadius: 12 }
+    edge.points = points
+  }
+
+  separateCoincidentDetours(edges, NOOP_NODES, new Map())
+
+  const corridors = [...edges.values()].map((edge) => {
+    const points = edge.route?.points
+    expect(points?.[0]).toEqual(edge.fromPort.absolutePosition)
+    expect(points?.[3]).toEqual(edge.toPort.absolutePosition)
+    expect(edge.route?.cornerRadius).toBe(12)
+    return points?.[1]?.x
+  })
+  expect(new Set(corridors).size).toBe(3)
 })
 
 describe('routeEdges — lane offset', () => {

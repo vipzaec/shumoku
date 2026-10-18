@@ -171,6 +171,9 @@ export async function routeEdges(
   detourAroundObstacles(edges, nodes, subgraphs ?? new Map())
   separateCoincidentDetours(edges, nodes, subgraphs ?? new Map())
   reduceLineCrossings(edges, nodes, subgraphs ?? new Map())
+  // Crossing repair can replace smooth paths with detours in an already used
+  // corridor, so fan those newly created tracks apart as well.
+  separateCoincidentDetours(edges, nodes, subgraphs ?? new Map())
   return edges
 }
 
@@ -632,13 +635,13 @@ function visibleObstacleRects(
   return obstacles
 }
 
-/** Fan parallel detours apart without moving their shared port attachment. */
-function separateCoincidentDetours(
+/** Fan coincident detours apart without moving their port attachments. */
+export function separateCoincidentDetours(
   edges: Map<string, ResolvedEdge>,
   nodes: Map<string, Node>,
   subgraphs: Map<string, Subgraph>,
 ): void {
-  const byTarget = new Map<string, ResolvedEdge[]>()
+  const byCorridor = new Map<string, ResolvedEdge[]>()
   for (const edge of edges.values()) {
     const points = edge.route?.kind === 'polyline' ? edge.route.points : undefined
     if (
@@ -648,11 +651,18 @@ function separateCoincidentDetours(
       points[2]?.y !== points[3]?.y
     )
       continue
-    const group = byTarget.get(edge.toPortId) ?? []
+    const turn = points[1]
+    const target = points[3]
+    if (!turn || !target) continue
+    // Distinct source and destination ports can still be routed through the
+    // same long vertical track. Group by the actual occupied corridor rather
+    // than by a shared destination port.
+    const key = `${turn.x}:${target.x >= turn.x ? 'right' : 'left'}`
+    const group = byCorridor.get(key) ?? []
     group.push(edge)
-    byTarget.set(edge.toPortId, group)
+    byCorridor.set(key, group)
   }
-  for (const group of byTarget.values()) {
+  for (const group of byCorridor.values()) {
     if (group.length < 2) continue
     const occupied: Array<{ x: number; top: number; bottom: number }> = []
     group.sort((a, b) => a.fromPort.absolutePosition.y - b.fromPort.absolutePosition.y)
@@ -667,12 +677,17 @@ function separateCoincidentDetours(
       const clear = (a: RoutePoint, b: RoutePoint) =>
         obstacles.every((obstacle) => !segmentHitsRect(a, b, obstacle))
       const direction = target.x >= turn.x ? 1 : -1
-      for (let lane = 0; lane <= group.length + 1; lane++) {
-        const x = turn.x + lane * 6 * direction
+      for (let lane = 0; lane <= group.length * 2 + 2; lane++) {
+        // Try the source-side lane first: the target side of an avoiding
+        // corridor is often bounded by the very card we route around.
+        const step = lane === 0 ? 0 : Math.ceil(lane / 2) * (lane % 2 ? -1 : 1)
+        const x = turn.x + step * 12 * direction
+        if (direction > 0 && x <= source.x + 8) continue
+        if (direction < 0 && x >= source.x - 8) continue
         if (
           occupied.some(
             (other) =>
-              Math.abs(other.x - x) < 6 &&
+              Math.abs(other.x - x) < 12 &&
               Math.max(other.top, top) < Math.min(other.bottom, bottom),
           )
         )
