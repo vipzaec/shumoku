@@ -1,6 +1,7 @@
 <script lang="ts">
   import { type NetworkGraph, specDeviceType } from '@shumoku/core'
   import * as Command from '$lib/components/ui/command'
+  import { nodeLabel } from '$lib/utils/node-label'
   import { sortByName } from '$lib/utils/sort'
 
   interface NodeEntry {
@@ -36,15 +37,13 @@
     if (!graph) return []
     return sortByName(
       graph.nodes.map<NodeEntry>((node) => {
-        const label = Array.isArray(node.label)
-          ? node.label.join(' ').trim() || node.id
-          : node.label?.trim() || node.id
+        const label = nodeLabel(node)
         const type = specDeviceType(node.spec)
         const hardware = node.spec?.kind === 'hardware' ? node.spec : undefined
         const displayName =
-          typeof node.metadata?.displayName === 'string' ? node.metadata.displayName : ''
+          typeof node.metadata?.['displayName'] === 'string' ? node.metadata['displayName'] : ''
         const context =
-          typeof node.metadata?.searchContext === 'string' ? node.metadata.searchContext : ''
+          typeof node.metadata?.['searchContext'] === 'string' ? node.metadata['searchContext'] : ''
         return {
           id: node.id,
           label,
@@ -96,7 +95,7 @@
     <Command.Group heading="Nodes">
       {#each allNodes as node (node.id)}
         <Command.Item
-          value={[node.label, node.id, ...node.searchAliases].join(' ')}
+          value={[node.label, ...node.searchAliases].join(' ')}
           keywords={[
             node.id,
             node.spec?.type ?? '',
