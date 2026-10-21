@@ -337,6 +337,47 @@ test('separates long shared corridors even when both endpoints use distinct port
   expect(new Set(corridors).size).toBe(3)
 })
 
+test('separates an internal corridor of a multi-turn detour', async () => {
+  const ports = makePorts([
+    ['s1:p', port('s1:p', 's1', 0, 300, 'right')],
+    ['s2:p', port('s2:p', 's2', 0, 340, 'right')],
+    ['t1:p', port('t1:p', 't1', 500, 0, 'left')],
+    ['t2:p', port('t2:p', 't2', 500, 100, 'left')],
+  ])
+  const edges = await routeEdges(NOOP_NODES, ports, [link('s1:p', 't1:p'), link('s2:p', 't2:p')])
+  const first = [...edges.values()][0]
+  const second = [...edges.values()][1]
+  expect(first).toBeDefined()
+  expect(second).toBeDefined()
+  if (!first || !second) return
+  const firstPoints = [
+    first.fromPort.absolutePosition,
+    { x: 200, y: 300 },
+    { x: 200, y: 0 },
+    first.toPort.absolutePosition,
+  ]
+  const secondPoints = [
+    second.fromPort.absolutePosition,
+    { x: 200, y: 340 },
+    { x: 200, y: 180 },
+    { x: 320, y: 180 },
+    { x: 320, y: 100 },
+    second.toPort.absolutePosition,
+  ]
+  first.route = { kind: 'polyline', points: firstPoints, cornerRadius: 12 }
+  first.points = firstPoints
+  second.route = { kind: 'polyline', points: secondPoints, cornerRadius: 12 }
+  second.points = secondPoints
+
+  separateCoincidentDetours(edges, NOOP_NODES, new Map())
+
+  expect(first.route?.points[1]?.x).not.toBe(second.route?.points[1]?.x)
+  expect(second.route?.points).toHaveLength(6)
+  expect(second.route?.points[0]).toEqual(second.fromPort.absolutePosition)
+  expect(second.route?.points.at(-1)).toEqual(second.toPort.absolutePosition)
+  expect(second.route?.cornerRadius).toBe(12)
+})
+
 describe('routeEdges — lane offset', () => {
   test('single edge per port has no lateral offset', async () => {
     const ports = makePorts([

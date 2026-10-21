@@ -641,42 +641,48 @@ export function separateCoincidentDetours(
   nodes: Map<string, Node>,
   subgraphs: Map<string, Subgraph>,
 ): void {
-  const byCorridor = new Map<string, ResolvedEdge[]>()
+  type Corridor = { edge: ResolvedEdge; index: number; top: number; bottom: number }
+  const byCorridor = new Map<string, Corridor[]>()
   for (const edge of edges.values()) {
     const points = edge.route?.kind === 'polyline' ? edge.route.points : undefined
-    if (
-      points?.length !== 4 ||
-      points[0]?.y !== points[1]?.y ||
-      points[1]?.x !== points[2]?.x ||
-      points[2]?.y !== points[3]?.y
-    )
-      continue
-    const turn = points[1]
-    const target = points[3]
-    if (!turn || !target) continue
-    // Distinct source and destination ports can still be routed through the
-    // same long vertical track. Group by the actual occupied corridor rather
-    // than by a shared destination port.
-    const key = `${turn.x}:${target.x >= turn.x ? 'right' : 'left'}`
-    const group = byCorridor.get(key) ?? []
-    group.push(edge)
-    byCorridor.set(key, group)
+    if (!points || points.length < 4) continue
+    for (const [index, turn] of points.entries()) {
+      const before = points[index - 1]
+      const rise = points[index + 1]
+      const after = points[index + 2]
+      if (
+        !before ||
+        !rise ||
+        !after ||
+        before.y !== turn.y ||
+        turn.x !== rise.x ||
+        rise.y !== after.y
+      )
+        continue
+      // A detour may contain several turns. Each internal vertical track can
+      // coincide with another link even when the whole route has >4 points.
+      const key = `${turn.x}:${after.x >= turn.x ? 'right' : 'left'}`
+      const group = byCorridor.get(key) ?? []
+      group.push({ edge, index, top: Math.min(turn.y, rise.y), bottom: Math.max(turn.y, rise.y) })
+      byCorridor.set(key, group)
+    }
   }
   for (const group of byCorridor.values()) {
     if (group.length < 2) continue
     const occupied: Array<{ x: number; top: number; bottom: number }> = []
-    group.sort((a, b) => a.fromPort.absolutePosition.y - b.fromPort.absolutePosition.y)
-    for (const edge of group) {
+    group.sort((a, b) => a.edge.fromPort.absolutePosition.y - b.edge.fromPort.absolutePosition.y)
+    for (const { edge, index, top, bottom } of group) {
       const points = edge.route?.kind === 'polyline' ? edge.route.points : undefined
-      if (points?.length !== 4) continue
-      const [source, turn, rise, target] = points
-      if (!source || !turn || !rise || !target) continue
-      const top = Math.min(turn.y, rise.y)
-      const bottom = Math.max(turn.y, rise.y)
+      if (!points) continue
+      const source = points[index - 1]
+      const turn = points[index]
+      const rise = points[index + 1]
+      const after = points[index + 2]
+      if (!source || !turn || !rise || !after) continue
       const obstacles = obstacleRects(edge, nodes, subgraphs)
       const clear = (a: RoutePoint, b: RoutePoint) =>
         obstacles.every((obstacle) => !segmentHitsRect(a, b, obstacle))
-      const direction = target.x >= turn.x ? 1 : -1
+      const direction = after.x >= turn.x ? 1 : -1
       for (let lane = 0; lane <= group.length * 2 + 2; lane++) {
         // Try the source-side lane first: the target side of an avoiding
         // corridor is often bounded by the very card we route around.
@@ -684,6 +690,8 @@ export function separateCoincidentDetours(
         const x = turn.x + step * 12 * direction
         if (direction > 0 && x <= source.x + 8) continue
         if (direction < 0 && x >= source.x - 8) continue
+        if (points.length > 4 && direction > 0 && x >= after.x - 8) continue
+        if (points.length > 4 && direction < 0 && x <= after.x + 8) continue
         if (
           occupied.some(
             (other) =>
@@ -692,7 +700,9 @@ export function separateCoincidentDetours(
           )
         )
           continue
-        const candidate: RoutePoint[] = [source, { x, y: turn.y }, { x, y: rise.y }, target]
+        const candidate: RoutePoint[] = points.map((point, pointIndex) =>
+          pointIndex === index || pointIndex === index + 1 ? { ...point, x } : point,
+        )
         if (
           !candidate.every((point, index) => {
             const previous = candidate[index - 1]
