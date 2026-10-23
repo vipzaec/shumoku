@@ -257,7 +257,11 @@
       Math.hypot(e.clientX - terminalDragStart.x, e.clientY - terminalDragStart.y) > 4
     ) {
       suppressNextBadgeClick = true
-      oncontinuationmove?.(edge.id, draggedTerminal, e.clientX, e.clientY)
+      const svg = (e.currentTarget as SVGElement).ownerSVGElement
+      if (svg) {
+        const point = screenToWorld(svg, e.clientX, e.clientY)
+        oncontinuationmove?.(edge.id, draggedTerminal, point.x, point.y)
+      }
     }
     draggedTerminal = null
     terminalPreview = null
