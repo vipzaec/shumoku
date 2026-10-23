@@ -246,18 +246,16 @@
     y: number
     badgeX: number
     badgeY: number
-    a: number
-    b: number
-    c: number
-    d: number
+    worldPerPixelX: number
+    worldPerPixelY: number
   } | null = null
   function terminalDragPosition(e: PointerEvent): { x: number; y: number } | null {
     if (!terminalDragStart) return null
     const dx = e.clientX - terminalDragStart.x
     const dy = e.clientY - terminalDragStart.y
     return {
-      x: terminalDragStart.badgeX + terminalDragStart.a * dx + terminalDragStart.c * dy,
-      y: terminalDragStart.badgeY + terminalDragStart.b * dx + terminalDragStart.d * dy,
+      x: terminalDragStart.badgeX + terminalDragStart.worldPerPixelX * dx,
+      y: terminalDragStart.badgeY + terminalDragStart.worldPerPixelY * dy,
     }
   }
   function previewTerminal(e: PointerEvent) {
@@ -388,18 +386,19 @@
           if (badgeClickTimer) clearTimeout(badgeClickTimer)
           badgeClickTimer = null
           draggedTerminal = index
-          const svg = e.currentTarget.ownerSVGElement
-          const viewport = svg?.querySelector('.viewport') as SVGGraphicsElement | null
-          const inverse = (viewport ?? svg)?.getScreenCTM()?.inverse()
+          // Measure the rendered badge at drag start: the camera may use a CSS
+          // transform that is not reflected in the SVG screen CTM.
+          const badge = e.currentTarget.querySelector('rect')
+          const screenBounds = badge?.getBoundingClientRect()
+          const badgeWidth = Number(badge?.getAttribute('width')) || 68
+          const badgeHeight = Number(badge?.getAttribute('height')) || 20
           terminalDragStart = {
             x: e.clientX,
             y: e.clientY,
             badgeX: terminal.badgeX,
             badgeY: terminal.badgeY,
-            a: inverse?.a ?? 1,
-            b: inverse?.b ?? 0,
-            c: inverse?.c ?? 0,
-            d: inverse?.d ?? 1,
+            worldPerPixelX: screenBounds?.width ? badgeWidth / screenBounds.width : 1,
+            worldPerPixelY: screenBounds?.height ? badgeHeight / screenBounds.height : 1,
           }
           e.currentTarget.setPointerCapture(e.pointerId)
         }}
