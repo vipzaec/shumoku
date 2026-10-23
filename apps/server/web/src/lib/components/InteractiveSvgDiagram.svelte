@@ -2797,8 +2797,8 @@
     if (appearanceDraft) appearanceDraft.continuationEnabled = enabled
   }
 
-  function moveContinuationMarker(id: string, index: number, x: number, y: number) {
-    if (!layoutEdit || !graph || !Number.isFinite(x) || !Number.isFinite(y)) return
+  function moveContinuationMarker(id: string, index: number, relativeX: number, relativeY: number) {
+    if (!layoutEdit || !graph || !Number.isFinite(relativeX) || !Number.isFinite(relativeY)) return
     const source = baseGraph ?? graph
     const link = source.links.find((candidate) => candidate.id === id)
     if (!link) return
@@ -2806,24 +2806,21 @@
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return
     const continuation = raw as Partial<LinkContinuation>
     if (continuation.enabled !== true || !continuation.label?.trim()) return
-    const port =
-      index === 0 ? latestLayout?.edges.get(id)?.fromPort : latestLayout?.edges.get(id)?.toPort
     const key = index === 0 ? 'source' : 'destination'
     const relativeKey = index === 0 ? 'sourceRelative' : 'destinationRelative'
     const updated: LinkContinuation = {
       ...continuation,
       enabled: true,
       label: continuation.label,
-      ...(port
-        ? { [relativeKey]: { x: x - port.absolutePosition.x, y: y - port.absolutePosition.y } }
-        : { [key]: { x, y } }),
+      [relativeKey]: { x: relativeX, y: relativeY },
     }
-    if (port) delete updated[key]
+    delete updated[key]
     const next = {
       ...linkContinuationOverrides,
       [id]: updated,
     }
     linkContinuationOverrides = next
+    stagePins(renderedNodePositions())
     void persistOperatorLayout(pinnedPositions, portSides, portOrders, portOffsets, edgeRoutes)
     graph = applyLayoutOverrides(source, pinnedPositions, portSides, portOrders, portOffsets)
     serverLayout = undefined

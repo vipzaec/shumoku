@@ -9,7 +9,6 @@
     computePortLabelPosition,
     getVlanStroke,
     polylinePath,
-    screenToWorld,
   } from '../../lib/svg-coords'
 
   let {
@@ -242,12 +241,29 @@
   let draggedPoint = $state<number | null>(null)
   let pointDragStart: { x: number; y: number } | null = null
   let draggedTerminal = $state<number | null>(null)
-  let terminalDragStart: { x: number; y: number } | null = null
+  let terminalDragStart: {
+    x: number
+    y: number
+    badgeX: number
+    badgeY: number
+    a: number
+    b: number
+    c: number
+    d: number
+  } | null = null
+  function terminalDragPosition(e: PointerEvent): { x: number; y: number } | null {
+    if (!terminalDragStart) return null
+    const dx = e.clientX - terminalDragStart.x
+    const dy = e.clientY - terminalDragStart.y
+    return {
+      x: terminalDragStart.badgeX + terminalDragStart.a * dx + terminalDragStart.c * dy,
+      y: terminalDragStart.badgeY + terminalDragStart.b * dx + terminalDragStart.d * dy,
+    }
+  }
   function previewTerminal(e: PointerEvent) {
     if (draggedTerminal === null) return
-    const svg = (e.currentTarget as SVGElement).ownerSVGElement
-    if (!svg) return
-    terminalPreview = { index: draggedTerminal, ...screenToWorld(svg, e.clientX, e.clientY) }
+    const point = terminalDragPosition(e)
+    if (point) terminalPreview = { index: draggedTerminal, ...point }
   }
   function finishTerminal(e: PointerEvent) {
     if (draggedTerminal === null) return
@@ -257,11 +273,15 @@
       Math.hypot(e.clientX - terminalDragStart.x, e.clientY - terminalDragStart.y) > 4
     ) {
       suppressNextBadgeClick = true
-      const svg = (e.currentTarget as SVGElement).ownerSVGElement
-      if (svg) {
-        const point = screenToWorld(svg, e.clientX, e.clientY)
-        oncontinuationmove?.(edge.id, draggedTerminal, point.x, point.y)
-      }
+      const point = terminalDragPosition(e)
+      const port = draggedTerminal === 0 ? edge.fromPort : edge.toPort
+      if (point && port)
+        oncontinuationmove?.(
+          edge.id,
+          draggedTerminal,
+          point.x - port.absolutePosition.x,
+          point.y - port.absolutePosition.y,
+        )
     }
     draggedTerminal = null
     terminalPreview = null
@@ -368,7 +388,19 @@
           if (badgeClickTimer) clearTimeout(badgeClickTimer)
           badgeClickTimer = null
           draggedTerminal = index
-          terminalDragStart = { x: e.clientX, y: e.clientY }
+          const svg = e.currentTarget.ownerSVGElement
+          const viewport = svg?.querySelector('.viewport') as SVGGraphicsElement | null
+          const inverse = (viewport ?? svg)?.getScreenCTM()?.inverse()
+          terminalDragStart = {
+            x: e.clientX,
+            y: e.clientY,
+            badgeX: terminal.badgeX,
+            badgeY: terminal.badgeY,
+            a: inverse?.a ?? 1,
+            b: inverse?.b ?? 0,
+            c: inverse?.c ?? 0,
+            d: inverse?.d ?? 1,
+          }
           e.currentTarget.setPointerCapture(e.pointerId)
         }}
         onpointermove={previewTerminal}
