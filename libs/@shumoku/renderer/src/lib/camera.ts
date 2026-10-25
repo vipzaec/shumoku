@@ -70,6 +70,8 @@ export interface CameraOptions {
 export interface Camera {
   /** The current transform applied to the viewport. */
   getTransform(): { x: number; y: number; k: number }
+  /** Restore a saved viewport exactly, even while the new layout is still measuring. */
+  restoreTransform(transform: { x: number; y: number; k: number }): void
   /** Scale by a factor, centred on the viewBox. */
   zoomBy(factor: number): void
   /** Set the absolute scale, optionally focused on a screen-space point. */
@@ -390,6 +392,13 @@ export function attachCamera(svg: SVGSVGElement, options: CameraOptions = {}): C
     getTransform() {
       const t = zoomTransform(svg)
       return { x: t.x, y: t.y, k: t.k }
+    },
+
+    restoreTransform(transform: { x: number; y: number; k: number }) {
+      zoomBehavior.transform(
+        svgSel,
+        zoomIdentity.translate(transform.x, transform.y).scale(transform.k),
+      )
     },
 
     zoomBy(factor: number) {

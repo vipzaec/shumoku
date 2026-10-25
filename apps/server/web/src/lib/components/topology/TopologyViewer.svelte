@@ -366,8 +366,7 @@
       detachedCameraResetKey === attachedResetKey &&
       (detachedCameraSheetId === attachedSheetId || !resetCameraOnSheetChange)
     ) {
-      c.zoomTo(detachedCameraTransform.k)
-      c.panTo(detachedCameraTransform.x, detachedCameraTransform.y)
+      c.restoreTransform(detachedCameraTransform)
     }
     camera = c
     return () => {
@@ -476,8 +475,7 @@
   /** Restore a previously snapshotted transform (pan + zoom level). */
   export function setCameraTransform(t: { x: number; y: number; k: number }): void {
     if (!camera) return
-    camera.zoomTo(t.k)
-    camera.panTo(t.x, t.y)
+    camera.restoreTransform(t)
   }
 
   // Only constructed when the template branch below has already
