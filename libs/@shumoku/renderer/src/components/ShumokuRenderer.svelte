@@ -1014,10 +1014,7 @@
     }}
     onroutemove={(id, index, x, y) => { const p = screenToSvg(x, y); onroutemove?.(id, index, p.x, p.y) }}
     {onrouteremove}
-    oncontinuationmove={(id, index, x, y) => {
-      const p = screenToSvg(x, y)
-      oncontinuationmove?.(id, index, p.x, p.y)
-    }}
+    {oncontinuationmove}
     {oncontinuationnavigate}
     oncontextmenu={handleContextMenu}
     onbackgroundclick={handleBackgroundClick}
