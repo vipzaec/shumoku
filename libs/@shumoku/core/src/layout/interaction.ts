@@ -13,7 +13,7 @@
 import { newId } from '../ids.js'
 import type { BlockSpacing, Link, NetworkGraph, Node, NodePort, Subgraph } from '../models/types.js'
 import { createEngine, resolveNodeSize } from './engine/index.js'
-import { portLabelBox } from './port-geometry.js'
+import { portBox, portLabelBox } from './port-geometry.js'
 import type { ResolvedEdge, ResolvedPort } from './resolved-types.js'
 import { routeEdges } from './route-edges.js'
 
@@ -244,6 +244,88 @@ function isChildOf(
 /** Padding inside subgraph bounds around child nodes */
 const SUBGRAPH_PADDING = 20
 const SUBGRAPH_LABEL_HEIGHT = 28
+
+/**
+ * A port on a nested container's outline is outside that container by design,
+ * but its label still needs room inside every enclosing container. Grow only
+ * those ancestor hulls; moving their child blocks would discard manual layout.
+ */
+export function protectNestedBoundaryPortLabels(
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+  ports: Map<string, ResolvedPort>,
+  affectedGroupIds?: ReadonlySet<string>,
+): void {
+  const depth = (id: string): number => {
+    let count = 0
+    let current = subgraphs.get(id)?.parent
+    const seen = new Set([id])
+    while (current && !seen.has(current)) {
+      seen.add(current)
+      count++
+      current = subgraphs.get(current)?.parent
+    }
+    return count
+  }
+  const groups = [...subgraphs.keys()].sort((a, b) => depth(b) - depth(a))
+  for (const groupId of groups) {
+    if (affectedGroupIds && !affectedGroupIds.has(groupId)) continue
+    const group = subgraphs.get(groupId)
+    if (!group?.bounds) continue
+    let x = group.bounds.x
+    let y = group.bounds.y
+    let right = x + group.bounds.width
+    let bottom = y + group.bounds.height
+    for (const port of ports.values()) {
+      const owner = nodes.get(port.nodeId)
+      if (owner?.metadata?.['presentationRole'] !== 'subgraph-boundary-port') continue
+      let current = owner.parent
+      const seen = new Set<string>()
+      while (current && current !== groupId && !seen.has(current)) {
+        seen.add(current)
+        current = subgraphs.get(current)?.parent
+      }
+      if (current !== groupId || owner.parent === groupId) continue
+      for (const box of [portBox(port), portLabelBox(port)]) {
+        if (!box) continue
+        x = Math.min(x, box.x - SUBGRAPH_PADDING)
+        y = Math.min(y, box.y - SUBGRAPH_PADDING - SUBGRAPH_LABEL_HEIGHT)
+        right = Math.max(right, box.x + box.width + SUBGRAPH_PADDING)
+        bottom = Math.max(bottom, box.y + box.height + SUBGRAPH_PADDING)
+      }
+    }
+    if (
+      x === group.bounds.x &&
+      y === group.bounds.y &&
+      right === group.bounds.x + group.bounds.width &&
+      bottom === group.bounds.y + group.bounds.height
+    )
+      continue
+    subgraphs.set(groupId, { ...group, bounds: { x, y, width: right - x, height: bottom - y } })
+    // Its own interface markers must follow the newly enlarged outline.
+    for (const [nodeId, node] of nodes) {
+      if (
+        node.parent !== groupId ||
+        node.metadata?.['presentationRole'] !== 'subgraph-boundary-port'
+      )
+        continue
+      let firstPoint: { x: number; y: number } | undefined
+      for (const [portId, port] of ports) {
+        if (port.nodeId !== nodeId) continue
+        const modelPort = node.ports?.find((candidate) => `${nodeId}:${candidate.id}` === portId)
+        const side = modelPort?.placement?.side ?? port.side
+        const offset = Math.max(0.08, Math.min(0.92, modelPort?.placement?.offset ?? 0.5))
+        const point = {
+          x: side === 'left' ? x : side === 'right' ? right : x + (right - x) * offset,
+          y: side === 'top' ? y : side === 'bottom' ? bottom : y + (bottom - y) * offset,
+        }
+        firstPoint ??= point
+        ports.set(portId, { ...port, absolutePosition: point, side })
+      }
+      if (firstPoint) nodes.set(nodeId, { ...node, position: firstPoint })
+    }
+  }
+}
 
 /** Convert bounds (top-left based) to center-based rect for collision detection */
 function boundsToRect(b: { x: number; y: number; width: number; height: number }) {
@@ -529,6 +611,7 @@ export function rebalanceSubgraphs(
       ports.set(portId, { ...port, absolutePosition: point, side })
     }
   }
+  protectNestedBoundaryPortLabels(nodes, subgraphs, ports, opts.affectedGroupIds)
 }
 
 function groupAndAncestors(id: string | undefined, subgraphs: Map<string, Subgraph>): Set<string> {

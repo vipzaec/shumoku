@@ -26,6 +26,7 @@ import { shouldUseComposite } from './composite/index.js'
 import { searchCompositeLayout } from './composite/search.js'
 import { assertLayoutConstraints } from './constraints.js'
 import { createEngine, resolveNodeSize } from './engine/index.js'
+import { protectNestedBoundaryPortLabels } from './interaction.js'
 import { getLinkWidth } from './link-utils.js'
 import type { ResolvedLayout, ResolvedPort } from './resolved-types.js'
 import { routeEdges } from './route-edges.js'
@@ -147,6 +148,7 @@ function applyOperatorGroupBounds(
     }
     if (firstPoint) nodes.set(nodeId, { ...node, position: firstPoint })
   }
+  protectNestedBoundaryPortLabels(nodes, subgraphs, ports)
 }
 
 function includeGroupBounds(

@@ -1,8 +1,63 @@
 import { describe, expect, it } from 'vitest'
 import type { NetworkGraph } from '../models/types.js'
+import { portLabelBox } from './port-geometry.js'
 import { computeNetworkLayout } from './unified-engine.js'
 
 describe('operator-sized blocks', () => {
+  it('keeps nested interface labels clear of every enclosing container', async () => {
+    const graph: NetworkGraph = {
+      version: '1',
+      name: 'nested interface clearance',
+      nodes: [
+        {
+          id: 'service',
+          label: 'Service',
+          parent: 'vm',
+          position: { x: 200, y: 200 },
+          size: { width: 100, height: 60 },
+        },
+        {
+          id: 'wan-interface',
+          label: '',
+          parent: 'vm',
+          position: { x: 100, y: 200 },
+          metadata: { presentationRole: 'subgraph-boundary-port' },
+          ports: [
+            { id: 'wan', label: 'WAN', connectors: [], placement: { side: 'left', offset: 0.5 } },
+          ],
+        },
+      ],
+      links: [],
+      subgraphs: [
+        {
+          id: 'host',
+          label: 'Host',
+          metadata: { operatorBounds: { x: 80, y: 60, width: 250, height: 280 } },
+        },
+        {
+          id: 'vm',
+          label: 'VM',
+          parent: 'host',
+          metadata: { operatorBounds: { x: 100, y: 100, width: 200, height: 200 } },
+        },
+      ],
+    }
+    const { resolved } = await computeNetworkLayout(graph)
+    const host = resolved.subgraphs.get('host')?.bounds
+    const vm = resolved.subgraphs.get('vm')?.bounds
+    const port = resolved.ports.get('wan-interface:wan')
+    expect(host).toBeDefined()
+    expect(vm).toBeDefined()
+    expect(port).toBeDefined()
+    if (!host || !vm || !port) return
+    const label = portLabelBox(port)
+    expect(label).toBeDefined()
+    if (!label) return
+    expect(port.absolutePosition.x).toBe(vm.x)
+    expect(host.x).toBeLessThanOrEqual(label.x - 20)
+    expect(resolved.nodes.get('service')?.position).toEqual({ x: 200, y: 200 })
+  })
+
   it('keeps an enlarged container around its child and includes it in the canvas', async () => {
     const graph: NetworkGraph = {
       version: '1',
