@@ -391,6 +391,7 @@
   let pathSourceId = $state('')
   let pathDestinationId = $state('')
   let pathFlowId = $state('')
+  let pathSelectionMode = $state<'endpoints' | 'flow'>('endpoints')
   let flowEditorOpen = $state(false)
   let customTrafficFlows = $state<TrafficFlowProfile[]>([])
   let flowDraft = $state<TrafficFlowProfile | null>(null)
@@ -463,7 +464,10 @@
 
   async function deleteCustomFlow(id: string) {
     await saveCustomTrafficFlows(customTrafficFlows.filter((flow) => flow.id !== id))
-    if (pathFlowId === id) pathFlowId = ''
+    if (pathFlowId === id) {
+      pathFlowId = ''
+      pathSelectionMode = 'endpoints'
+    }
     if (flowDraft?.id === id) flowDraft = null
   }
 
@@ -617,18 +621,23 @@
   $effect(() => {
     if (!pathFlowId) return
     const selected = availableTrafficFlows.find((flow) => flow.id === pathFlowId)
-    if (!selected) pathFlowId = ''
+    if (!selected) {
+      pathFlowId = ''
+      pathSelectionMode = 'endpoints'
+    }
   })
 
   function selectTrafficFlow(flowId: string) {
     const selected = availableTrafficFlows.find((flow) => flow.id === flowId)
     if (!selected) {
       pathFlowId = ''
+      pathSelectionMode = 'endpoints'
       return
     }
     pathSourceId = selected.source
     pathDestinationId = selected.destination
     pathFlowId = flowId
+    pathSelectionMode = 'flow'
   }
 
   function flowLinkLabel(link: (typeof graph.links)[number]) {
@@ -639,8 +648,9 @@
   }
 
   const selectedTrafficFlow = $derived(availableTrafficFlows.find((flow) => flow.id === pathFlowId))
+  const activeTrafficFlow = $derived(pathSelectionMode === 'flow' ? selectedTrafficFlow : undefined)
   const trafficPath = $derived.by<TrafficPath | null>(() => {
-    const explicitIds = selectedTrafficFlow?.primaryLinkIds ?? []
+    const explicitIds = activeTrafficFlow?.primaryLinkIds ?? []
     if (!graph || explicitIds.length === 0) return findTrafficPath()
     const nodeIds = new Set<string>()
     const hops: PathHop[] = []
@@ -665,8 +675,8 @@
   const controlPlanePath = $derived.by(() => {
     const nodeIds = new Set<string>()
     const linkIds = new Set<string>()
-    if (selectedTrafficFlow?.controlLinkIds?.length) {
-      for (const id of selectedTrafficFlow.controlLinkIds) {
+    if (activeTrafficFlow?.controlLinkIds?.length) {
+      for (const id of activeTrafficFlow.controlLinkIds) {
         const link = graph?.links.find((item) => item.id === id)
         if (!link) continue
         linkIds.add(id)
@@ -3607,10 +3617,10 @@
     : controlPlanePath.nodeIds}
           secondaryHighlightedLinkIds={controlPlanePath.linkIds}
           dimOthers={pathExplorerOpen && highlightedPathNodes.size > 0 && !editorSourceId}
-          highlightColor={editorSourceId ? '#2563eb' : (selectedTrafficFlow?.primaryColor ?? '#2563eb')}
+          highlightColor={editorSourceId ? '#2563eb' : (activeTrafficFlow?.primaryColor ?? '#2563eb')}
           secondaryHighlightColor={editorDestinationId
     ? '#f97316'
-    : (selectedTrafficFlow?.controlColor ?? '#8b5cf6')}
+    : (activeTrafficFlow?.controlColor ?? '#8b5cf6')}
           pulseAnimation={false}
         />
         <TooltipOverlay {svgElement} graph={activeGraph} contentBuilder={buildTooltip} />
@@ -4864,7 +4874,7 @@
       <div class="layers-title">Traffic path</div>
       <label
         >Source
-        <select bind:value={pathSourceId}>
+        <select bind:value={pathSourceId} onchange={() => (pathSelectionMode = 'endpoints')}>
           <option value="">Select source</option>
           {#each pathNodes as item}
             <option value={item.id}>{item.label}</option>
@@ -4873,7 +4883,7 @@
       </label>
       <label
         >Destination
-        <select bind:value={pathDestinationId}>
+        <select bind:value={pathDestinationId} onchange={() => (pathSelectionMode = 'endpoints')}>
           <option value="">Select destination</option>
           {#each pathNodes as item}
             <option value={item.id}>{item.label}</option>
@@ -4892,6 +4902,11 @@
           {/each}
         </select>
       </label>
+      {#if pathFlowId && pathSelectionMode === 'endpoints'}
+        <button class="flow-editor-toggle" onclick={() => selectTrafficFlow(pathFlowId)}>
+          Show selected flow
+        </button>
+      {/if}
       {#if !readOnly}
         <button class="flow-editor-toggle" onclick={() => (flowEditorOpen = !flowEditorOpen)}>
           {flowEditorOpen ? 'Close flow editor' : 'Edit flows'}
