@@ -133,6 +133,10 @@
   } from '$lib/components/topology/route-edit'
   import { semanticLayers } from '$lib/components/topology/semantic-layers'
   import { createSerialLayoutWriter } from '$lib/components/topology/serial-layout-writer'
+  import {
+    type EndpointGraph,
+    resolveTrafficFlowEndpoints,
+  } from '$lib/components/topology/traffic-flow-endpoints'
   import { serviceIcons } from '$lib/service-icons'
   import {
     displaySettings,
@@ -579,32 +583,23 @@
   }
 
   const trafficFlowProfiles = $derived.by<TrafficFlowProfile[]>(() => {
+    if (!graph) return []
     const metadata = (graph as unknown as { metadata?: { trafficFlows?: unknown[] } })?.metadata
-    const resolvedIds = new Map(
-      (graph?.nodes ?? []).map((node) => [
-        String(
-          (node as unknown as { metadata?: { logicalId?: string } }).metadata?.logicalId ?? node.id,
-        ),
-        node.id,
-      ]),
-    )
-    const nodeFlows = (graph?.nodes ?? []).flatMap((node) => {
+    const nodeFlows = graph.nodes.flatMap((node) => {
       const nodeMetadata = (node as unknown as { metadata?: { trafficFlows?: unknown[] } }).metadata
-      return (nodeMetadata?.trafficFlows ?? []).map((item) => {
-        const flow = item as TrafficFlowProfile
-        return {
-          ...flow,
-          source: resolvedIds.get(flow.source) ?? node.id,
-          destination: resolvedIds.get(flow.destination) ?? flow.destination,
-        }
-      })
+      return (nodeMetadata?.trafficFlows ?? []).map((flow) => ({ flow, containingNodeId: node.id }))
     })
-    const profiles = [...(metadata?.trafficFlows ?? []), ...nodeFlows].filter(
-      (item): item is TrafficFlowProfile => {
-        const flow = item as Partial<TrafficFlowProfile>
+    const profiles = [
+      ...(metadata?.trafficFlows ?? []).map((flow) => ({ flow, containingNodeId: undefined })),
+      ...nodeFlows,
+    ]
+      .filter((entry): entry is { flow: TrafficFlowProfile; containingNodeId?: string } => {
+        const flow = entry.flow as Partial<TrafficFlowProfile>
         return Boolean(flow.id && flow.label && flow.source && flow.destination)
-      },
-    )
+      })
+      .map(({ flow, containingNodeId }) =>
+        resolveTrafficFlowEndpoints(flow, graph as unknown as EndpointGraph, containingNodeId),
+      )
     return [...new Map(profiles.map((flow) => [flow.id, flow])).values()]
   })
   const editableTrafficFlows = $derived.by(() => {
