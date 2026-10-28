@@ -80,6 +80,22 @@ describe('routeEdges — obstacle avoidance', () => {
     }
   })
 
+  test('routes around a block close to an outgoing port when full clearance does not fit', async () => {
+    const nodes = new Map([['near', obstacle('near', 55, 0)]])
+    const edges = await routeEdges(nodes, ports, [link('source:out', 'target:in')])
+    const points = [...edges.values()][0]?.route?.points
+    expect(points?.length).toBeGreaterThan(2)
+    for (const [index, a] of (points ?? []).entries()) {
+      const b = points?.[index + 1]
+      if (!b) continue
+      const enters =
+        a.x === b.x
+          ? a.x > 15 && a.x < 95 && Math.max(a.y, b.y) > -40 && Math.min(a.y, b.y) < 40
+          : a.y > -40 && a.y < 40 && Math.max(a.x, b.x) > 15 && Math.min(a.x, b.x) < 95
+      expect(enters).toBe(false)
+    }
+  })
+
   test('keeps the smooth route when no node blocks it', async () => {
     const nodes = new Map([['far', obstacle('far', 600, 600)]])
     const edges = await routeEdges(nodes, ports, [link('source:out', 'target:in')])

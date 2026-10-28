@@ -394,11 +394,29 @@ function routeViaGrid(
   subgraphs: Map<string, Subgraph>,
   extraObstacles: RouteRect[] = [],
 ): RoutePoint[] | null {
+  // A port can sit just outside a neighboring block while the preferred
+  // clearance overlaps the port itself. Reduce only the clearance that does
+  // not fit, rather than leaving the original curve through the block. Keep
+  // at least 4 units so a 12-unit rounded corner cannot cut into the block.
+  for (const clearance of [DETOUR_CLEARANCE, 8, 4]) {
+    const points = routeViaGridWithClearance(edge, nodes, subgraphs, extraObstacles, clearance)
+    if (points) return points
+  }
+  return null
+}
+
+function routeViaGridWithClearance(
+  edge: ResolvedEdge,
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+  extraObstacles: RouteRect[],
+  clearance: number,
+): RoutePoint[] | null {
   const src = edge.fromPort.absolutePosition
   const tgt = edge.toPort.absolutePosition
   const sn = portNormal(edge.fromPort.side)
   const tn = portNormal(edge.toPort.side)
-  const obstacles = [...obstacleRects(edge, nodes, subgraphs), ...extraObstacles]
+  const obstacles = [...visibleObstacleRects(edge, nodes, subgraphs, clearance), ...extraObstacles]
   const clear = (a: RoutePoint, b: RoutePoint) => obstacles.every((r) => !segmentHitsRect(a, b, r))
   // A neighboring group may be closer than the usual port stalk. Shorten
   // that stalk before giving up; otherwise a perfectly routable wire keeps
