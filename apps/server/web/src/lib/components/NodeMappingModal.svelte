@@ -776,6 +776,9 @@
                             <span class="text-danger">{String(comparison.onlyInObserved)}</span>
                           {/if}
                         </div>
+                        {#if typeof comparison.note === 'string' && comparison.note.trim()}
+                          <p class="text-muted-foreground">{comparison.note}</p>
+                        {/if}
                       </div>
                     {/each}
                   </div>
@@ -789,7 +792,8 @@
                     <div class="flex flex-wrap gap-1.5">
                       {#each nodeData.node.ports as port}
                         <span class="bg-background px-2 py-1 rounded text-xs font-mono">
-                          {port.label?.trim() ? port.label : port.id}{port.side ? ` · ${port.side}` : ''}
+                          {port.label?.trim() ? port.label : port.id}
+                          {port.side ? ` · ${port.side}` : ''}
                         </span>
                       {/each}
                     </div>
