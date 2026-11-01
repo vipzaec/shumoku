@@ -295,7 +295,9 @@ interface StoredLinkMapping {
 // previously cached v23 layouts could still contain the obstructed curve.
 // v25: keep parallel detours into one gateway on separate trunks instead of
 // stacking them into an unreadable single line.
-const RESOLVER_VERSION = 28
+// v29: route a line outward from its endpoint card when it doubles back;
+// persisted edge routes need to be rebuilt with the rendered card bounds.
+const RESOLVER_VERSION = 29
 
 /** Persisted resolved-graph artifact row (Phase 3 materialization). */
 interface ResolvedGraphRow {

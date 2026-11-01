@@ -790,6 +790,9 @@ function endpointNodeRects(edge: ResolvedEdge, nodes: Map<string, Node>): RouteR
     const bounds = nodeBounds(node)
     if (!bounds) continue
     const point = port.absolutePosition
+    // Layout and renderer can measure text differently. Treat a port within
+    // two port widths of the expected outline as the actual outline, on
+    // either side of it. A port truly inside the card must remain routable.
     const boundary =
       port.side === 'left'
         ? bounds.x
@@ -799,9 +802,20 @@ function endpointNodeRects(edge: ResolvedEdge, nodes: Map<string, Node>): RouteR
             ? bounds.y
             : bounds.y + bounds.height
     const coordinate = port.side === 'left' || port.side === 'right' ? point.x : point.y
-    // Imported layouts may put a port inside its node. That geometry cannot
-    // be treated as a closed obstacle without trapping the path at its start.
-    if (Math.abs(coordinate - boundary) <= 1) rects.push(bounds)
+    if (Math.abs(coordinate - boundary) > 16) continue
+    const rect = { ...bounds }
+    if (port.side === 'left') {
+      rect.width += rect.x - point.x
+      rect.x = point.x
+    } else if (port.side === 'right') {
+      rect.width = point.x - rect.x
+    } else if (port.side === 'top') {
+      rect.height += rect.y - point.y
+      rect.y = point.y
+    } else {
+      rect.height = point.y - rect.y
+    }
+    rects.push(rect)
   }
   return rects
 }
