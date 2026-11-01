@@ -168,6 +168,11 @@
   let consistency = $derived(
     typeof nodeMetadata.consistency === 'string' ? nodeMetadata.consistency : undefined,
   )
+  let operationalState = $derived(
+    typeof nodeMetadata['operationalState'] === 'string'
+      ? nodeMetadata['operationalState']
+      : undefined,
+  )
   let sourceLinks = $derived.by(() => {
     if (!Array.isArray(nodeMetadata.sourceLinks)) return []
     return nodeMetadata.sourceLinks.filter((value): value is Record<string, unknown> =>
@@ -619,7 +624,8 @@
 
             <!-- Compact operational data from topology sources. Large raw API
                  payloads stay in metadata but are intentionally summarized. -->
-            {#if metadataSource ||
+            {#if operationalState ||
+    metadataSource ||
     metadataRole ||
     metadataCluster ||
     metadataTenant ||
@@ -650,6 +656,20 @@
                       class:text-warning={consistency === 'unverified'}
                       class="font-semibold uppercase"
                       >{consistency}</span
+                    >
+                  </div>
+                {/if}
+
+                {#if operationalState}
+                  <div
+                    class="flex items-center justify-between gap-3 rounded-md bg-background px-2.5 py-2 text-xs"
+                  >
+                    <span class="text-muted-foreground">OPNsense tunnel</span>
+                    <span
+                      class:text-success={operationalState === 'CONNECTED'}
+                      class:text-danger={operationalState === 'DISCONNECTED'}
+                      class="font-semibold uppercase"
+                      >{operationalState}</span
                     >
                   </div>
                 {/if}
