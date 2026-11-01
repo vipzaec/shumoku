@@ -705,7 +705,10 @@ export function separateCoincidentDetours(
       const rise = points[index + 1]
       const after = points[index + 2]
       if (!source || !turn || !rise || !after) continue
-      const obstacles = obstacleRects(edge, nodes, subgraphs)
+      const obstacles = [
+        ...obstacleRects(edge, nodes, subgraphs),
+        ...endpointNodeRects(edge, nodes),
+      ]
       const clear = (a: RoutePoint, b: RoutePoint) =>
         obstacles.every((obstacle) => !segmentHitsRect(a, b, obstacle))
       const direction = after.x >= turn.x ? 1 : -1

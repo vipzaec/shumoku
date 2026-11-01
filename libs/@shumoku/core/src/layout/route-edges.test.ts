@@ -413,6 +413,54 @@ test('separates long shared corridors even when both endpoints use distinct port
   expect(new Set(corridors).size).toBe(3)
 })
 
+test('corridor separation never pushes an outward stalk back through its source card', async () => {
+  const entries: Array<[string, ResolvedPort]> = []
+  const links: Link[] = []
+  for (let index = 0; index < 3; index++) {
+    entries.push([
+      `service:p${index}`,
+      port(`service:p${index}`, 'service', 0, 40 + index * 30, 'left'),
+    ])
+    entries.push([
+      `target${index}:in`,
+      port(`target${index}:in`, `target${index}`, 300, 300 + index * 30, 'left'),
+    ])
+    links.push(link(`service:p${index}`, `target${index}:in`))
+  }
+  const nodes = new Map<string, Node>([
+    [
+      'service',
+      {
+        id: 'service',
+        label: 'Service',
+        position: { x: 100, y: 80 },
+        size: { width: 200, height: 160 },
+      },
+    ],
+  ])
+  const edges = await routeEdges(nodes, makePorts(entries), links)
+  for (const edge of edges.values()) {
+    const source = edge.fromPort.absolutePosition
+    const target = edge.toPort.absolutePosition
+    const points = [
+      source,
+      { x: -28, y: source.y },
+      { x: -28, y: 250 },
+      { x: 270, y: 250 },
+      { x: 270, y: target.y },
+      target,
+    ]
+    edge.route = { kind: 'polyline', points, cornerRadius: 12 }
+    edge.points = points
+  }
+
+  separateCoincidentDetours(edges, nodes, new Map())
+
+  for (const edge of edges.values()) {
+    expect(edge.route?.points[1]?.x).toBeLessThan(0)
+  }
+})
+
 test('separates an internal corridor of a multi-turn detour', async () => {
   const ports = makePorts([
     ['s1:p', port('s1:p', 's1', 0, 300, 'right')],
