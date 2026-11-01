@@ -746,6 +746,12 @@
     }
     return sortByName(issues, (issue) => `${issue.node} · ${issue.field}`)
   })
+  const reconciliationMismatchCount = $derived(
+    reconciliationIssues.filter((issue) => issue.status === 'mismatch').length,
+  )
+  const reconciliationUnverifiedCount = $derived(
+    reconciliationIssues.length - reconciliationMismatchCount,
+  )
 
   function inspectReconciliationIssue(nodeId: string) {
     dataHealthOpen = false
@@ -4831,10 +4837,15 @@
           class:warning={reconciliationIssues.length > 0}
         >
           {reconciliationIssues.length === 0
-    ? 'Sources agree'
-    : reconciliationIssues.length === 1
-      ? '1 discrepancy'
-      : `${reconciliationIssues.length} discrepancies`}
+    ? 'No source issues reported'
+    : [
+        reconciliationMismatchCount > 0
+          ? `${reconciliationMismatchCount} ${reconciliationMismatchCount === 1 ? 'mismatch' : 'mismatches'}`
+          : '',
+        reconciliationUnverifiedCount > 0
+          ? `${reconciliationUnverifiedCount} unverified`
+          : '',
+      ].filter(Boolean).join(' · ')}
         </span>
       </div>
       {#each dataFreshness as item}
@@ -4854,7 +4865,13 @@
               title={`Inspect ${issue.node}`}
             >
               <strong>{issue.node}</strong>
-              <span>{issue.field} · {issue.status.toUpperCase()}</span>
+              <span
+                >{issue.field}
+                ·
+                {issue.status === 'unknown'
+                  ? 'UNVERIFIED'
+                  : issue.status.toUpperCase()}</span
+              >
               <span>NetBox: {issue.netbox}</span>
               <span>Observed: {issue.observed}</span>
             </button>

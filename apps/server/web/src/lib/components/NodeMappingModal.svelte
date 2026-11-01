@@ -781,7 +781,9 @@
                             class:text-danger={comparison.status === 'mismatch'}
                             class:text-warning={comparison.status === 'unknown'}
                             class="font-semibold uppercase"
-                            >{String(comparison.status ?? 'unknown')}</span
+                            >{comparison.status === 'unknown'
+                              ? 'UNVERIFIED'
+                              : String(comparison.status ?? 'unverified').toUpperCase()}</span
                           >
                         </div>
                         <div class="grid grid-cols-[72px_1fr] gap-x-2 text-muted-foreground">
