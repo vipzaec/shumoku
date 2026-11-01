@@ -96,6 +96,39 @@ describe('routeEdges — obstacle avoidance', () => {
     }
   })
 
+  test('leaves a shared left port before turning around its own card', async () => {
+    const sharedPorts = makePorts([
+      ['service:wt0', port('service:wt0', 'service', 0, 80, 'left')],
+      ['lan:in', port('lan:in', 'lan', 300, 600, 'left')],
+    ])
+    const nodes = new Map<string, Node>([
+      [
+        'service',
+        {
+          id: 'service',
+          label: 'NetBird service',
+          position: { x: 100, y: 80 },
+          size: { width: 200, height: 160 },
+        },
+      ],
+    ])
+    const edges = await routeEdges(nodes, sharedPorts, [link('service:wt0', 'lan:in')])
+    const points = [...edges.values()][0]?.route?.points
+    expect(points?.length).toBeGreaterThan(2)
+    expect(points?.[0]).toEqual({ x: 0, y: 80 })
+    expect(points?.[1]?.x).toBeLessThan(0)
+    for (const [index, a] of (points ?? []).entries()) {
+      const b = points?.[index + 1]
+      if (!b) continue
+      expect(a.x === b.x || a.y === b.y).toBe(true)
+      const cutsCard =
+        a.x === b.x
+          ? a.x > 0 && a.x < 200 && Math.max(a.y, b.y) > 0 && Math.min(a.y, b.y) < 160
+          : a.y > 0 && a.y < 160 && Math.max(a.x, b.x) > 0 && Math.min(a.x, b.x) < 200
+      expect(cutsCard).toBe(false)
+    }
+  })
+
   test('keeps the smooth route when no node blocks it', async () => {
     const nodes = new Map([['far', obstacle('far', 600, 600)]])
     const edges = await routeEdges(nodes, ports, [link('source:out', 'target:in')])

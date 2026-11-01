@@ -349,7 +349,10 @@ function detourAroundObstacles(
     if (edge.link.metadata?.['routePolicy'] === 'under') continue
     const blocked =
       edge.link.metadata?.['routeShape'] === 'straight'
-        ? visibleObstacleRects(edge, nodes, subgraphs, 0).some((rect) =>
+        ? [
+            ...visibleObstacleRects(edge, nodes, subgraphs, 0),
+            ...endpointNodeRects(edge, nodes),
+          ].some((rect) =>
             segmentCrossesRect(edge.fromPort.absolutePosition, edge.toPort.absolutePosition, rect),
           )
         : findBezierObstacle(edge, nodes, subgraphs) !== null
@@ -416,7 +419,11 @@ function routeViaGridWithClearance(
   const tgt = edge.toPort.absolutePosition
   const sn = portNormal(edge.fromPort.side)
   const tn = portNormal(edge.toPort.side)
-  const obstacles = [...visibleObstacleRects(edge, nodes, subgraphs, clearance), ...extraObstacles]
+  const obstacles = [
+    ...visibleObstacleRects(edge, nodes, subgraphs, clearance),
+    ...endpointNodeRects(edge, nodes),
+    ...extraObstacles,
+  ]
   const clear = (a: RoutePoint, b: RoutePoint) => obstacles.every((r) => !segmentHitsRect(a, b, r))
   // A neighboring group may be closer than the usual port stalk. Shorten
   // that stalk before giving up; otherwise a perfectly routable wire keeps
@@ -756,7 +763,10 @@ function findBezierObstacle(
   subgraphs: Map<string, Subgraph>,
 ): { x: number; y: number; width: number; height: number } | null {
   const samples = sampleBezier(edge)
-  for (const bbox of visibleObstacleRects(edge, nodes, subgraphs, 0)) {
+  for (const bbox of [
+    ...visibleObstacleRects(edge, nodes, subgraphs, 0),
+    ...endpointNodeRects(edge, nodes),
+  ]) {
     if (samples.some((sample) => pointInRect(sample.x, sample.y, bbox))) return bbox
     for (let i = 1; i < samples.length; i++) {
       const previous = samples[i - 1]
@@ -765,6 +775,34 @@ function findBezierObstacle(
     }
   }
   return null
+}
+
+/** Endpoint cards also block a wire that doubles back through their interior. */
+function endpointNodeRects(edge: ResolvedEdge, nodes: Map<string, Node>): RouteRect[] {
+  const rects: RouteRect[] = []
+  for (const [id, port] of [
+    [edge.fromNodeId, edge.fromPort],
+    [edge.toNodeId, edge.toPort],
+  ] as const) {
+    const node = nodes.get(id)
+    if (!node || node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
+    const bounds = nodeBounds(node)
+    if (!bounds) continue
+    const point = port.absolutePosition
+    const boundary =
+      port.side === 'left'
+        ? bounds.x
+        : port.side === 'right'
+          ? bounds.x + bounds.width
+          : port.side === 'top'
+            ? bounds.y
+            : bounds.y + bounds.height
+    const coordinate = port.side === 'left' || port.side === 'right' ? point.x : point.y
+    // Imported layouts may put a port inside its node. That geometry cannot
+    // be treated as a closed obstacle without trapping the path at its start.
+    if (Math.abs(coordinate - boundary) <= 1) rects.push(bounds)
+  }
+  return rects
 }
 
 /** Strict interior intersection for a short sampled Bezier segment. */
