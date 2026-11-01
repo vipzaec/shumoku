@@ -7,6 +7,7 @@
 import { describe, expect, test } from 'vitest'
 import type { Link, Node } from '../models/types.js'
 import { bezierEdgePath } from './bezier-path.js'
+import { resolveNodeSize } from './engine/index.js'
 import type { ResolvedPort } from './resolved-types.js'
 import { routeEdges, separateCoincidentDetours } from './route-edges.js'
 
@@ -127,6 +128,26 @@ describe('routeEdges — obstacle avoidance', () => {
           : a.y > 0 && a.y < 160 && Math.max(a.x, b.x) > 0 && Math.min(a.x, b.x) < 200
       expect(cutsCard).toBe(false)
     }
+  })
+
+  test('uses the rendered size when an endpoint has no authored size', async () => {
+    const service: Node = { id: 'service', label: 'OPNsense NetBird', position: { x: 0, y: 0 } }
+    const size = resolveNodeSize(service)
+    service.position = { x: size.width / 2, y: size.height / 2 }
+    const source = { x: 0, y: size.height * 0.75 }
+    const target = { x: size.width + 100, y: size.height + 400 }
+    const edges = await routeEdges(
+      new Map([['service', service]]),
+      makePorts([
+        ['service:wt0', port('service:wt0', 'service', source.x, source.y, 'left')],
+        ['lan:in', port('lan:in', 'lan', target.x, target.y, 'left')],
+      ]),
+      [link('service:wt0', 'lan:in')],
+    )
+    const points = [...edges.values()][0]?.route?.points
+    expect(points?.length).toBeGreaterThan(2)
+    expect(points?.[0]).toEqual(source)
+    expect(points?.[1]?.x).toBeLessThan(source.x)
   })
 
   test('keeps the smooth route when no node blocks it', async () => {

@@ -43,6 +43,7 @@
 
 import type { Bounds, Link, Node, Position, Subgraph } from '../models/types.js'
 import { bezierCurvePoints } from './bezier-path.js'
+import { resolveNodeSize } from './engine/index.js'
 import { getLinkWidth } from './link-utils.js'
 import type { ResolvedEdge, ResolvedPort } from './resolved-types.js'
 
@@ -868,12 +869,13 @@ function pointInRect(
 
 /** Bounding box of a positioned node, or null if it has no position/size. */
 function nodeBounds(node: Node): { x: number; y: number; width: number; height: number } | null {
-  if (!node.position || !node.size) return null
+  if (!node.position) return null
+  const size = resolveNodeSize(node)
   return {
-    x: node.position.x - node.size.width / 2,
-    y: node.position.y - node.size.height / 2,
-    width: node.size.width,
-    height: node.size.height,
+    x: node.position.x - size.width / 2,
+    y: node.position.y - size.height / 2,
+    width: size.width,
+    height: size.height,
   }
 }
 
