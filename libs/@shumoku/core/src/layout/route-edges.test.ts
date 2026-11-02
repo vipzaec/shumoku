@@ -121,13 +121,59 @@ describe('routeEdges — obstacle avoidance', () => {
     for (const [index, a] of (points ?? []).entries()) {
       const b = points?.[index + 1]
       if (!b) continue
-      expect(a.x === b.x || a.y === b.y).toBe(true)
-      const cutsCard =
-        a.x === b.x
-          ? a.x > 0 && a.x < 200 && Math.max(a.y, b.y) > 0 && Math.min(a.y, b.y) < 160
-          : a.y > 0 && a.y < 160 && Math.max(a.x, b.x) > 0 && Math.min(a.x, b.x) < 200
-      expect(cutsCard).toBe(false)
+      expect(a.x > 0 && a.x < 200 && a.y > 0 && a.y < 160).toBe(false)
+      expect(b.x > 0 && b.x < 200 && b.y > 0 && b.y < 160).toBe(false)
     }
+  })
+
+  test('escapes only the source card, then curves past a neighboring service without crossing its link', async () => {
+    const nodes = new Map<string, Node>([
+      [
+        'service',
+        {
+          id: 'service',
+          label: 'NetBird',
+          position: { x: 1400.92, y: 601.64 },
+          size: { width: 237.96, height: 160 },
+        },
+      ],
+      [
+        'proxy',
+        {
+          id: 'proxy',
+          label: 'HAProxy',
+          position: { x: 1434.79, y: 1106.82 },
+          size: { width: 270, height: 120 },
+        },
+      ],
+    ])
+    const ports = makePorts([
+      ['service:wt0', port('service:wt0', 'service', 1281.94, 644.31, 'left')],
+      ['lan:in', port('lan:in', 'lan', 1617.74, 1222.94, 'left')],
+      ['wan:out', port('wan:out', 'wan', 1197.34, 1287.04, 'right')],
+      ['proxy:in', port('proxy:in', 'proxy', 1299.79, 1106.82, 'left')],
+    ])
+    const edges = await routeEdges(nodes, ports, [
+      { ...link('service:wt0', 'lan:in'), id: 'overlay' },
+      {
+        ...link('wan:out', 'proxy:in'),
+        id: 'proxy-uplink',
+        metadata: { routePolicy: 'under' },
+      },
+    ])
+    const route = edges.get('overlay')?.route
+    expect(route?.kind).toBe('smooth-detour')
+    if (route?.kind !== 'smooth-detour') return
+    expect(route.path).toContain(' C ')
+    expect(route.points[0]).toEqual({ x: 1281.94, y: 644.31 })
+    expect(route.points.at(-1)).toEqual({ x: 1617.74, y: 1222.94 })
+    // The curve moves to the right before it reaches HAProxy's top edge.
+    expect(
+      route.points.some(
+        (point) => point.x > 1299.79 && point.x < 1569.79 && point.y > 1046.82 && point.y < 1166.82,
+      ),
+    ).toBe(false)
+    expect(route.points.some((point) => point.x > 1569.79 && point.y < 1046.82)).toBe(true)
   })
 
   test('uses the rendered size when an endpoint has no authored size', async () => {

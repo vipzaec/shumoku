@@ -175,6 +175,7 @@ export async function routeEdges(
   // Crossing repair can replace smooth paths with detours in an already used
   // corridor, so fan those newly created tracks apart as well.
   separateCoincidentDetours(edges, nodes, subgraphs ?? new Map())
+  smoothEndpointDetours(edges, nodes, subgraphs ?? new Map())
   return edges
 }
 
@@ -193,8 +194,7 @@ function reduceLineCrossings(
 ): void {
   if (edges.size > 120) return // bounded layout cost for very large diagrams
   const list = [...edges.values()]
-  const points = (edge: ResolvedEdge): RoutePoint[] =>
-    edge.route?.kind === 'polyline' ? edge.route.points : sampleBezier(edge)
+  const points = (edge: ResolvedEdge): RoutePoint[] => edge.route?.points ?? sampleBezier(edge)
   const intersection = (a: RoutePoint, b: RoutePoint, c: RoutePoint, d: RoutePoint) => {
     const denominator = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y)
     if (Math.abs(denominator) < 1e-8) return null
@@ -753,6 +753,195 @@ export function separateCoincidentDetours(
 }
 
 /**
+ * A left-facing port can connect to a target below and to its right. The
+ * ordinary Bezier then doubles back through its own card. A grid detour is
+ * safe, but it follows the card for the entire link and can cross an unrelated
+ * connection. Escape just one corner of the card, then resume a smooth curve.
+ * The same construction works after rotating the port to any of four sides.
+ */
+function smoothEndpointDetours(
+  edges: Map<string, ResolvedEdge>,
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+): void {
+  const pointAt = (a: RoutePoint, b: RoutePoint, c: RoutePoint, t: number): RoutePoint => {
+    const s = 1 - t
+    return {
+      x: s * s * a.x + 2 * s * t * b.x + t * t * c.x,
+      y: s * s * a.y + 2 * s * t * b.y + t * t * c.y,
+    }
+  }
+  const cubicAt = (
+    a: RoutePoint,
+    b: RoutePoint,
+    c: RoutePoint,
+    d: RoutePoint,
+    t: number,
+  ): RoutePoint => {
+    const s = 1 - t
+    return {
+      x: s ** 3 * a.x + 3 * s * s * t * b.x + 3 * s * t * t * c.x + t ** 3 * d.x,
+      y: s ** 3 * a.y + 3 * s * s * t * b.y + 3 * s * t * t * c.y + t ** 3 * d.y,
+    }
+  }
+  const length = (points: RoutePoint[]): number =>
+    points.reduce((sum, point, index) => {
+      const previous = points[index - 1]
+      return sum + (previous ? Math.hypot(point.x - previous.x, point.y - previous.y) : 0)
+    }, 0)
+  const crossing = (a: RoutePoint, b: RoutePoint, c: RoutePoint, d: RoutePoint) => {
+    const denominator = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y)
+    if (Math.abs(denominator) < 1e-8) return null
+    const u = ((d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)) / denominator
+    const v = ((b.x - a.x) * (a.y - c.y) - (b.y - a.y) * (a.x - c.x)) / denominator
+    return u > 0 && u < 1 && v > 0 && v < 1
+      ? { x: a.x + u * (b.x - a.x), y: a.y + u * (b.y - a.y) }
+      : null
+  }
+  const crossings = (edge: ResolvedEdge, candidate: RoutePoint[]): number => {
+    let count = 0
+    for (const other of edges.values()) {
+      if (other === edge) continue
+      const otherPoints =
+        other.route?.points ??
+        (other.link.metadata?.['routeShape'] === 'straight'
+          ? [other.fromPort.absolutePosition, other.toPort.absolutePosition]
+          : sampleBezier(other))
+      for (const [index, end] of candidate.entries()) {
+        const start = candidate[index - 1]
+        if (!start) continue
+        for (const [otherIndex, otherEnd] of otherPoints.entries()) {
+          const otherStart = otherPoints[otherIndex - 1]
+          if (!otherStart) continue
+          const hit = crossing(start, end, otherStart, otherEnd)
+          if (!hit) continue
+          if (
+            [candidate[0], candidate.at(-1), otherPoints[0], otherPoints.at(-1)].some(
+              (terminal) => terminal && Math.hypot(hit.x - terminal.x, hit.y - terminal.y) < 20,
+            )
+          )
+            continue
+          count++
+        }
+      }
+    }
+    return count
+  }
+  for (const edge of edges.values()) {
+    if (edge.route?.kind !== 'polyline') continue
+    if (
+      edge.link.metadata?.['routeShape'] === 'straight' ||
+      edge.link.metadata?.['routePolicy'] === 'under'
+    )
+      continue
+    const sourceNode = nodes.get(edge.fromNodeId)
+    const sourceRect = sourceNode ? endpointNodeRect(sourceNode, edge.fromPort) : null
+    if (!sourceRect) continue
+    const original = sampleBezier(edge)
+    if (
+      !original.some((point, index) => {
+        const previous = original[index - 1]
+        return previous && segmentCrossesRect(previous, point, sourceRect)
+      })
+    )
+      continue
+    const source = edge.fromPort.absolutePosition
+    const target = edge.toPort.absolutePosition
+    const normal = portNormal(edge.fromPort.side)
+    const inward = { x: -normal.x, y: -normal.y }
+    const forward = (target.x - source.x) * inward.x + (target.y - source.y) * inward.y
+    if (forward < 48) continue
+    const lateral = normal.x
+      ? { x: 0, y: Math.sign(target.y - source.y) }
+      : { x: Math.sign(target.x - source.x), y: 0 }
+    if (!lateral.x && !lateral.y) continue
+    const corner = normal.x
+      ? lateral.y > 0
+        ? sourceRect.y + sourceRect.height
+        : sourceRect.y
+      : lateral.x > 0
+        ? sourceRect.x + sourceRect.width
+        : sourceRect.x
+    const lateralDistance =
+      Math.abs(corner - (normal.x ? source.y : source.x)) + DETOUR_CLEARANCE + 8
+    if (lateralDistance < 40) continue
+    const add = (a: RoutePoint, b: RoutePoint, scale: number): RoutePoint => ({
+      x: a.x + b.x * scale,
+      y: a.y + b.y * scale,
+    })
+    const radius = 18
+    const first = add(source, normal, DETOUR_STALK - radius)
+    const firstControl = add(source, normal, DETOUR_STALK)
+    const firstEnd = add(firstControl, lateral, radius)
+    const second = add(firstControl, lateral, lateralDistance - radius)
+    const secondControl = add(firstControl, lateral, lateralDistance)
+    const exitPoint = add(secondControl, inward, radius)
+    const tailForward = (target.x - exitPoint.x) * inward.x + (target.y - exitPoint.y) * inward.y
+    const tailLateral = (target.x - exitPoint.x) * lateral.x + (target.y - exitPoint.y) * lateral.y
+    if (tailForward < 24 || tailLateral < 24) continue
+    const obstacles = [
+      ...visibleObstacleRects(edge, nodes, subgraphs, 8),
+      ...endpointNodeRects(edge, nodes),
+    ]
+    const baselinePoints = edge.route.points
+    const baselineCrossings = crossings(edge, baselinePoints)
+    const baselineLength = length(baselinePoints)
+    let best: { path: string; points: RoutePoint[]; cost: number; crossings: number } | null = null
+    for (const reach of [0.6, 0.85, 1.1, 1.3]) {
+      for (const drift of [0, 0.1, 0.2]) {
+        for (const arrival of [0.06, 0.12, 0.24]) {
+          const control1 = add(
+            add(exitPoint, inward, tailForward * reach),
+            lateral,
+            tailLateral * drift,
+          )
+          const control2 = add(
+            target,
+            portNormal(edge.toPort.side),
+            length([exitPoint, target]) * arrival,
+          )
+          const points = [source, first]
+          for (const step of Array.from({ length: 12 }, (_, index) => (index + 1) / 12))
+            points.push(pointAt(first, firstControl, firstEnd, step))
+          points.push(second)
+          for (const step of Array.from({ length: 12 }, (_, index) => (index + 1) / 12))
+            points.push(pointAt(second, secondControl, exitPoint, step))
+          for (const step of Array.from({ length: 48 }, (_, index) => (index + 1) / 48))
+            points.push(cubicAt(exitPoint, control1, control2, target, step))
+          if (
+            points.some((point, index) => {
+              const previous = points[index - 1]
+              return previous && obstacles.some((rect) => segmentCrossesRect(previous, point, rect))
+            })
+          )
+            continue
+          const candidateCrossings = crossings(edge, points)
+          const candidateLength = length(points)
+          if (
+            candidateCrossings > baselineCrossings ||
+            (candidateCrossings === baselineCrossings && candidateLength >= baselineLength * 0.9)
+          )
+            continue
+          const cost = candidateCrossings * 10000 + candidateLength
+          if (best && cost >= best.cost) continue
+          best = {
+            path: `M ${source.x} ${source.y} L ${first.x} ${first.y} Q ${firstControl.x} ${firstControl.y} ${firstEnd.x} ${firstEnd.y} L ${second.x} ${second.y} Q ${secondControl.x} ${secondControl.y} ${exitPoint.x} ${exitPoint.y} C ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${target.x} ${target.y}`,
+            points,
+            cost,
+            crossings: candidateCrossings,
+          }
+        }
+      }
+    }
+    if (!best) continue
+    edge.route = { kind: 'smooth-detour', path: best.path, points: best.points }
+    edge.points = best.points
+    edge.fromLateralOffset = undefined
+    edge.toLateralOffset = undefined
+  }
+}
+
+/**
  * Sample the bezier the renderer would draw for `edge` and find a
  * visible blocker. Segment checks catch a narrow block even when no
  * sampled point happens to land inside it.
@@ -790,37 +979,43 @@ function endpointNodeRects(edge: ResolvedEdge, nodes: Map<string, Node>): RouteR
   ] as const) {
     const node = nodes.get(id)
     if (!node || node.metadata?.['presentationRole'] === 'subgraph-boundary-port') continue
-    const bounds = nodeBounds(node)
-    if (!bounds) continue
-    const point = port.absolutePosition
-    // Layout and renderer can measure text differently. Treat a port within
-    // two port widths of the expected outline as the actual outline, on
-    // either side of it. A port truly inside the card must remain routable.
-    const boundary =
-      port.side === 'left'
-        ? bounds.x
-        : port.side === 'right'
-          ? bounds.x + bounds.width
-          : port.side === 'top'
-            ? bounds.y
-            : bounds.y + bounds.height
-    const coordinate = port.side === 'left' || port.side === 'right' ? point.x : point.y
-    if (Math.abs(coordinate - boundary) > 16) continue
-    const rect = { ...bounds }
-    if (port.side === 'left') {
-      rect.width += rect.x - point.x
-      rect.x = point.x
-    } else if (port.side === 'right') {
-      rect.width = point.x - rect.x
-    } else if (port.side === 'top') {
-      rect.height += rect.y - point.y
-      rect.y = point.y
-    } else {
-      rect.height = point.y - rect.y
-    }
-    rects.push(rect)
+    const rect = endpointNodeRect(node, port)
+    if (rect) rects.push(rect)
   }
   return rects
+}
+
+function endpointNodeRect(node: Node, port: ResolvedPort): RouteRect | null {
+  if (node.metadata?.['presentationRole'] === 'subgraph-boundary-port') return null
+  const bounds = nodeBounds(node)
+  if (!bounds) return null
+  const point = port.absolutePosition
+  // Layout and renderer can measure text differently. Treat a port within
+  // two port widths of the expected outline as the actual outline, on
+  // either side of it. A port truly inside the card must remain routable.
+  const boundary =
+    port.side === 'left'
+      ? bounds.x
+      : port.side === 'right'
+        ? bounds.x + bounds.width
+        : port.side === 'top'
+          ? bounds.y
+          : bounds.y + bounds.height
+  const coordinate = port.side === 'left' || port.side === 'right' ? point.x : point.y
+  if (Math.abs(coordinate - boundary) > 16) return null
+  const rect = { ...bounds }
+  if (port.side === 'left') {
+    rect.width += rect.x - point.x
+    rect.x = point.x
+  } else if (port.side === 'right') {
+    rect.width = point.x - rect.x
+  } else if (port.side === 'top') {
+    rect.height += rect.y - point.y
+    rect.y = point.y
+  } else {
+    rect.height = point.y - rect.y
+  }
+  return rect
 }
 
 /** Strict interior intersection for a short sampled Bezier segment. */

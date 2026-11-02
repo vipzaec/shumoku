@@ -81,6 +81,7 @@ export interface ResolvedPort {
 export type EdgeRoute =
   | { kind: 'bus'; points: Position[]; busId: string; branchIndex: number; branchCount: number }
   | { kind: 'polyline'; points: Position[]; cornerRadius?: number }
+  | { kind: 'smooth-detour'; points: Position[]; path: string }
 
 /**
  * A routed edge connecting two existing ports. Points are absolute coordinates;
