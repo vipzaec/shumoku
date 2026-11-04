@@ -948,6 +948,51 @@ function smoothEndpointDetours(
  * crossing passes. Keep the grid route whenever a curve enters a card or
  * creates another crossing; nearby blocks also retain compact grid turns.
  */
+function rounded(corners: RoutePoint[], radius: number): { path: string; points: RoutePoint[] } {
+  const first = corners[0]
+  if (!first) return { path: '', points: [] }
+  let path = `M ${first.x} ${first.y}`
+  const points = [first]
+  for (let index = 1; index < corners.length - 1; index++) {
+    const previous = corners[index - 1]
+    const corner = corners[index]
+    const next = corners[index + 1]
+    if (!previous || !corner || !next) continue
+    const incoming = Math.hypot(corner.x - previous.x, corner.y - previous.y)
+    const outgoing = Math.hypot(next.x - corner.x, next.y - corner.y)
+    if (incoming < 1 || outgoing < 1) {
+      path += ` L ${corner.x} ${corner.y}`
+      points.push(corner)
+      continue
+    }
+    const reach = Math.min(radius, incoming / 2, outgoing / 2)
+    const enter = {
+      x: corner.x - ((corner.x - previous.x) / incoming) * reach,
+      y: corner.y - ((corner.y - previous.y) / incoming) * reach,
+    }
+    const exit = {
+      x: corner.x + ((next.x - corner.x) / outgoing) * reach,
+      y: corner.y + ((next.y - corner.y) / outgoing) * reach,
+    }
+    path += ` L ${enter.x} ${enter.y} Q ${corner.x} ${corner.y} ${exit.x} ${exit.y}`
+    points.push(enter)
+    for (let step = 1; step <= 12; step++) {
+      const t = step / 12
+      const s = 1 - t
+      points.push({
+        x: s * s * enter.x + 2 * s * t * corner.x + t * t * exit.x,
+        y: s * s * enter.y + 2 * s * t * corner.y + t * t * exit.y,
+      })
+    }
+  }
+  const last = corners.at(-1)
+  if (last) {
+    path += ` L ${last.x} ${last.y}`
+    points.push(last)
+  }
+  return { path, points }
+}
+
 function restoreClearCurves(
   edges: Map<string, ResolvedEdge>,
   nodes: Map<string, Node>,
@@ -1020,7 +1065,8 @@ function restoreClearCurves(
       continue
     const from = edge.fromPort.absolutePosition
     const to = edge.toPort.absolutePosition
-    if (Math.hypot(to.x - from.x, to.y - from.y) < 240) continue
+    const distance = Math.hypot(to.x - from.x, to.y - from.y)
+    if (distance < 240) continue
     const obstacles = [
       ...visibleObstacleRects(edge, nodes, subgraphs, 8),
       ...endpointNodeRects(edge, nodes),
@@ -1050,6 +1096,21 @@ function restoreClearCurves(
       const path = `M ${from.x} ${from.y} C ${controlFrom.x} ${controlFrom.y} ${controlTo.x} ${controlTo.y} ${to.x} ${to.y}`
       edge.route = { kind: 'smooth-detour', path, points }
       edge.points = points
+      break
+    }
+    if (edge.route?.kind !== 'polyline' || distance < 600) continue
+    for (const radius of [96, 72, 48, 32]) {
+      const candidate = rounded(edge.route.points, radius)
+      if (
+        candidate.points.some((point, index) => {
+          const previous = candidate.points[index - 1]
+          return previous && obstacles.some((rect) => segmentCrossesRect(previous, point, rect))
+        })
+      )
+        continue
+      if (crossingCount(edge, candidate.points) > baselineCrossings) continue
+      edge.route = { kind: 'smooth-detour', path: candidate.path, points: candidate.points }
+      edge.points = candidate.points
       break
     }
   }

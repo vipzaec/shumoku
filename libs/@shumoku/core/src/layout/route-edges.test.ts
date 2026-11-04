@@ -231,6 +231,26 @@ describe('routeEdges — obstacle avoidance', () => {
     ).toBe(false)
   })
 
+  test('a long unavoidable detour uses broad safe rounded turns', async () => {
+    const widePorts = makePorts([
+      ['source:out', port('source:out', 'source', 0, 0, 'right')],
+      ['target:in', port('target:in', 'target', 1000, 600, 'left')],
+    ])
+    const nodes = new Map([['middle', obstacle('middle', 500, 300)]])
+    const edges = await routeEdges(nodes, widePorts, [link('source:out', 'target:in')])
+    const route = [...edges.values()][0]?.route
+    expect(route?.kind).toBe('smooth-detour')
+    if (route?.kind !== 'smooth-detour') return
+    expect(route.path).toContain(' Q ')
+    expect(route.points[0]).toEqual({ x: 0, y: 0 })
+    expect(route.points.at(-1)).toEqual({ x: 1000, y: 600 })
+    expect(
+      route.points.some(
+        (point) => point.x > 460 && point.x < 540 && point.y > 260 && point.y < 340,
+      ),
+    ).toBe(false)
+  })
+
   test('lets each link choose whether to pass under or avoid a blocking node', async () => {
     const nodes = new Map([['middle', obstacle('middle', 200, 100)]])
     const passing = {
