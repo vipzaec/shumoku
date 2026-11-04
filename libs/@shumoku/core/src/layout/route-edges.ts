@@ -1073,30 +1073,45 @@ function restoreClearCurves(
     ]
     const baselineCrossings = crossingCount(edge, edge.route.points)
     const [_, defaultFrom, defaultTo] = bezierCurvePoints(edge.fromPort, edge.toPort)
-    for (const factor of [1, 0.75, 0.5, 0.35]) {
-      const controlFrom = {
-        x: from.x + (defaultFrom.x - from.x) * factor,
-        y: from.y + (defaultFrom.y - from.y) * factor,
+    // When an endpoint faces away from its peer, the standard Bezier gives
+    // that endpoint zero tangent. A curve then cuts through its own card.
+    // Try a modest outward tangent so the wire enters from outside instead
+    // of committing to a long rectangular grid route.
+    const boost = Math.min(320, Math.max(64, distance * 0.16))
+    const needsDeparture = Math.hypot(defaultFrom.x - from.x, defaultFrom.y - from.y) < 8
+    const needsArrival = Math.hypot(defaultTo.x - to.x, defaultTo.y - to.y) < 8
+    const departures = needsDeparture ? [0, boost, Math.min(320, boost * 1.5)] : [0]
+    const arrivals = needsArrival ? [0, boost, Math.min(320, boost * 1.5)] : [0]
+    const fromNormal = portNormal(edge.fromPort.side)
+    const toNormal = portNormal(edge.toPort.side)
+    curveSearch: for (const factor of [1, 0.75, 0.5, 0.35]) {
+      for (const departure of departures) {
+        for (const arrival of arrivals) {
+          const controlFrom = {
+            x: from.x + (defaultFrom.x - from.x) * factor + fromNormal.x * departure,
+            y: from.y + (defaultFrom.y - from.y) * factor + fromNormal.y * departure,
+          }
+          const controlTo = {
+            x: to.x + (defaultTo.x - to.x) * factor + toNormal.x * arrival,
+            y: to.y + (defaultTo.y - to.y) * factor + toNormal.y * arrival,
+          }
+          const points = Array.from({ length: 65 }, (_, index) =>
+            cubicAt(from, controlFrom, controlTo, to, index / 64),
+          )
+          if (
+            points.some((point, index) => {
+              const previous = points[index - 1]
+              return previous && obstacles.some((rect) => segmentCrossesRect(previous, point, rect))
+            })
+          )
+            continue
+          if (crossingCount(edge, points) > baselineCrossings) continue
+          const path = `M ${from.x} ${from.y} C ${controlFrom.x} ${controlFrom.y} ${controlTo.x} ${controlTo.y} ${to.x} ${to.y}`
+          edge.route = { kind: 'smooth-detour', path, points }
+          edge.points = points
+          break curveSearch
+        }
       }
-      const controlTo = {
-        x: to.x + (defaultTo.x - to.x) * factor,
-        y: to.y + (defaultTo.y - to.y) * factor,
-      }
-      const points = Array.from({ length: 65 }, (_, index) =>
-        cubicAt(from, controlFrom, controlTo, to, index / 64),
-      )
-      if (
-        points.some((point, index) => {
-          const previous = points[index - 1]
-          return previous && obstacles.some((rect) => segmentCrossesRect(previous, point, rect))
-        })
-      )
-        continue
-      if (crossingCount(edge, points) > baselineCrossings) continue
-      const path = `M ${from.x} ${from.y} C ${controlFrom.x} ${controlFrom.y} ${controlTo.x} ${controlTo.y} ${to.x} ${to.y}`
-      edge.route = { kind: 'smooth-detour', path, points }
-      edge.points = points
-      break
     }
     if (edge.route?.kind !== 'polyline' || distance < 600) continue
     for (const radius of [96, 72, 48, 32]) {

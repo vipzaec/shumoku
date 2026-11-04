@@ -231,6 +231,45 @@ describe('routeEdges — obstacle avoidance', () => {
     ).toBe(false)
   })
 
+  test('a distant link curves into a bottom port from outside its card', async () => {
+    const nodes = new Map<string, Node>([
+      [
+        'peers',
+        {
+          id: 'peers',
+          label: 'NetBird peers',
+          position: { x: -149.26, y: 119.51 },
+          size: { width: 186, height: 112 },
+        },
+      ],
+      [
+        'service',
+        {
+          id: 'service',
+          label: 'OPNsense NetBird',
+          position: { x: 1226.17, y: 547.29 },
+          size: { width: 255.3, height: 160 },
+        },
+      ],
+    ])
+    const ports = makePorts([
+      ['peers:wg', port('peers:wg', 'peers', -64.38, 119.51, 'right')],
+      ['service:wt0', port('service:wt0', 'service', 1226.17, 627.29, 'bottom')],
+    ])
+    const route = [
+      ...(await routeEdges(nodes, ports, [link('peers:wg', 'service:wt0')])).values(),
+    ][0]?.route
+    expect(route?.kind).toBe('smooth-detour')
+    if (route?.kind !== 'smooth-detour') return
+    expect(route.path).toContain(' C ')
+    expect(route.path).not.toContain(' Q ')
+    expect(
+      route.points.some(
+        (point) => point.x > 1098.52 && point.x < 1353.82 && point.y > 467.29 && point.y < 627.29,
+      ),
+    ).toBe(false)
+  })
+
   test('a long unavoidable detour uses broad safe rounded turns', async () => {
     const widePorts = makePorts([
       ['source:out', port('source:out', 'source', 0, 0, 'right')],

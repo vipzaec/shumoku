@@ -298,7 +298,7 @@ interface StoredLinkMapping {
 // v29: route a line outward from its endpoint card when it doubles back;
 // persisted edge routes need to be rebuilt with the rendered card bounds.
 // v30: corridor fan-out must not move an already-safe exit back through its card.
-const RESOLVER_VERSION = 33
+const RESOLVER_VERSION = 34
 
 /** Persisted resolved-graph artifact row (Phase 3 materialization). */
 interface ResolvedGraphRow {
