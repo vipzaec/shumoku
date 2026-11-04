@@ -279,16 +279,24 @@ describe('routeEdges — obstacle avoidance', () => {
                 t ** 3 * curve[3].y,
             }
           })
+        const checkedPoints = samples.flatMap((start, index) => {
+          const end = samples[index + 1]
+          if (!end) return [start]
+          return Array.from({ length: 9 }, (_unused, step) => ({
+            x: start.x + ((end.x - start.x) * step) / 8,
+            y: start.y + ((end.y - start.y) * step) / 8,
+          }))
+        })
         expect(
-          samples.some((point) => inside(point, 0, 0)),
+          checkedPoints.some((point) => inside(point, 0, 0)),
           `${fromSide} → ${toSide} enters source`,
         ).toBe(false)
         expect(
-          samples.some((point) => inside(point, 400, 300)),
+          checkedPoints.some((point) => inside(point, 400, 300)),
           `${fromSide} → ${toSide} enters target`,
         ).toBe(false)
         expect(
-          samples.some((point) => inside(point, 200, 150)),
+          checkedPoints.some((point) => inside(point, 200, 150)),
           `${fromSide} → ${toSide} enters middle`,
         ).toBe(false)
       }
