@@ -176,6 +176,7 @@ export async function routeEdges(
   // corridor, so fan those newly created tracks apart as well.
   separateCoincidentDetours(edges, nodes, subgraphs ?? new Map())
   smoothEndpointDetours(edges, nodes, subgraphs ?? new Map())
+  restoreClearCurves(edges, nodes, subgraphs ?? new Map())
   return edges
 }
 
@@ -938,6 +939,119 @@ function smoothEndpointDetours(
     edge.points = best.points
     edge.fromLateralOffset = undefined
     edge.toLateralOffset = undefined
+  }
+}
+
+/**
+ * Grid routing is a safe fallback, but a moved port can make a direct curve
+ * possible again. Try a few port-tangent lengths after all obstacle and line
+ * crossing passes. Keep the grid route whenever a curve enters a card or
+ * creates another crossing; nearby blocks also retain compact grid turns.
+ */
+function restoreClearCurves(
+  edges: Map<string, ResolvedEdge>,
+  nodes: Map<string, Node>,
+  subgraphs: Map<string, Subgraph>,
+): void {
+  const intersects = (
+    a: RoutePoint,
+    b: RoutePoint,
+    c: RoutePoint,
+    d: RoutePoint,
+  ): RoutePoint | null => {
+    const denominator = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y)
+    if (Math.abs(denominator) < 1e-8) return null
+    const u = ((d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)) / denominator
+    const v = ((b.x - a.x) * (a.y - c.y) - (b.y - a.y) * (a.x - c.x)) / denominator
+    return u > 0 && u < 1 && v > 0 && v < 1
+      ? { x: a.x + u * (b.x - a.x), y: a.y + u * (b.y - a.y) }
+      : null
+  }
+  const crossingCount = (edge: ResolvedEdge, candidate: RoutePoint[]): number => {
+    let count = 0
+    for (const other of edges.values()) {
+      if (other === edge) continue
+      const path =
+        other.route?.points ??
+        (other.link.metadata?.['routeShape'] === 'straight'
+          ? [other.fromPort.absolutePosition, other.toPort.absolutePosition]
+          : sampleBezier(other))
+      for (let i = 1; i < candidate.length; i++) {
+        const start = candidate[i - 1]
+        const end = candidate[i]
+        if (!start || !end) continue
+        for (let j = 1; j < path.length; j++) {
+          const otherStart = path[j - 1]
+          const otherEnd = path[j]
+          if (!otherStart || !otherEnd) continue
+          const hit = intersects(start, end, otherStart, otherEnd)
+          if (!hit) continue
+          if (
+            [candidate[0], candidate.at(-1), path[0], path.at(-1)].some(
+              (terminal) => terminal && Math.hypot(hit.x - terminal.x, hit.y - terminal.y) < 20,
+            )
+          )
+            continue
+          count++
+        }
+      }
+    }
+    return count
+  }
+  const cubicAt = (
+    a: RoutePoint,
+    b: RoutePoint,
+    c: RoutePoint,
+    d: RoutePoint,
+    t: number,
+  ): RoutePoint => {
+    const s = 1 - t
+    return {
+      x: s ** 3 * a.x + 3 * s * s * t * b.x + 3 * s * t * t * c.x + t ** 3 * d.x,
+      y: s ** 3 * a.y + 3 * s * s * t * b.y + 3 * s * t * t * c.y + t ** 3 * d.y,
+    }
+  }
+  for (const edge of edges.values()) {
+    if (edge.route?.kind !== 'polyline') continue
+    if (
+      edge.link.metadata?.['routeShape'] === 'straight' ||
+      edge.link.metadata?.['routePolicy'] === 'under'
+    )
+      continue
+    const from = edge.fromPort.absolutePosition
+    const to = edge.toPort.absolutePosition
+    if (Math.hypot(to.x - from.x, to.y - from.y) < 240) continue
+    const obstacles = [
+      ...visibleObstacleRects(edge, nodes, subgraphs, 8),
+      ...endpointNodeRects(edge, nodes),
+    ]
+    const baselineCrossings = crossingCount(edge, edge.route.points)
+    const [_, defaultFrom, defaultTo] = bezierCurvePoints(edge.fromPort, edge.toPort)
+    for (const factor of [1, 0.75, 0.5, 0.35]) {
+      const controlFrom = {
+        x: from.x + (defaultFrom.x - from.x) * factor,
+        y: from.y + (defaultFrom.y - from.y) * factor,
+      }
+      const controlTo = {
+        x: to.x + (defaultTo.x - to.x) * factor,
+        y: to.y + (defaultTo.y - to.y) * factor,
+      }
+      const points = Array.from({ length: 65 }, (_, index) =>
+        cubicAt(from, controlFrom, controlTo, to, index / 64),
+      )
+      if (
+        points.some((point, index) => {
+          const previous = points[index - 1]
+          return previous && obstacles.some((rect) => segmentCrossesRect(previous, point, rect))
+        })
+      )
+        continue
+      if (crossingCount(edge, points) > baselineCrossings) continue
+      const path = `M ${from.x} ${from.y} C ${controlFrom.x} ${controlFrom.y} ${controlTo.x} ${controlTo.y} ${to.x} ${to.y}`
+      edge.route = { kind: 'smooth-detour', path, points }
+      edge.points = points
+      break
+    }
   }
 }
 

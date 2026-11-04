@@ -208,6 +208,29 @@ describe('routeEdges — obstacle avoidance', () => {
     expect([...edges.values()][0]?.route).toBeUndefined()
   })
 
+  test('a long detour becomes a clear smooth curve after a port moves', async () => {
+    const shifted = makePorts([
+      ['service:wt0', port('service:wt0', 'service', 0, 0, 'bottom')],
+      ['lan:in', port('lan:in', 'lan', 160, 500, 'left')],
+    ])
+    const nodes = new Map([
+      [
+        'near-default-curve',
+        { ...obstacle('near-default-curve', 30, 390), label: 'x', size: { width: 50, height: 30 } },
+      ],
+    ])
+    const edges = await routeEdges(nodes, shifted, [link('service:wt0', 'lan:in')])
+    const route = [...edges.values()][0]?.route
+    expect(route?.kind).toBe('smooth-detour')
+    if (route?.kind !== 'smooth-detour') return
+    expect(route.path).toContain(' C ')
+    expect(route.points[0]).toEqual({ x: 0, y: 0 })
+    expect(route.points.at(-1)).toEqual({ x: 160, y: 500 })
+    expect(
+      route.points.some((point) => point.x > 5 && point.x < 55 && point.y > 375 && point.y < 405),
+    ).toBe(false)
+  })
+
   test('lets each link choose whether to pass under or avoid a blocking node', async () => {
     const nodes = new Map([['middle', obstacle('middle', 200, 100)]])
     const passing = {
