@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'vitest'
 import type { Link, Node } from '../models/types.js'
-import { bezierEdgePath } from './bezier-path.js'
+import { bezierCurvePoints, bezierEdgePath } from './bezier-path.js'
 import { resolveNodeSize } from './engine/index.js'
 import type { ResolvedPort } from './resolved-types.js'
 import { routeEdges, separateCoincidentDetours } from './route-edges.js'
@@ -206,6 +206,93 @@ describe('routeEdges — obstacle avoidance', () => {
     const nodes = new Map([['far', obstacle('far', 600, 600)]])
     const edges = await routeEdges(nodes, ports, [link('source:out', 'target:in')])
     expect([...edges.values()][0]?.route).toBeUndefined()
+  })
+
+  test('all port-side pairs keep a free connection outside both endpoint cards', async () => {
+    const sides = ['top', 'right', 'bottom', 'left'] as const
+    const cards = new Map<string, Node>([
+      [
+        'source',
+        {
+          id: 'source',
+          label: 'Source',
+          position: { x: 60, y: 40 },
+          size: { width: 120, height: 80 },
+        },
+      ],
+      [
+        'target',
+        {
+          id: 'target',
+          label: 'Target',
+          position: { x: 460, y: 340 },
+          size: { width: 120, height: 80 },
+        },
+      ],
+      [
+        'middle',
+        {
+          id: 'middle',
+          label: 'Middle',
+          position: { x: 260, y: 190 },
+          size: { width: 120, height: 80 },
+        },
+      ],
+    ])
+    const pointOnSide = (side: (typeof sides)[number], x: number, y: number) => {
+      if (side === 'top') return { x, y: y - 40 }
+      if (side === 'right') return { x: x + 60, y }
+      if (side === 'bottom') return { x, y: y + 40 }
+      return { x: x - 60, y }
+    }
+    const inside = (point: { x: number; y: number }, left: number, top: number) =>
+      point.x > left + 1 && point.x < left + 119 && point.y > top + 1 && point.y < top + 79
+    for (const fromSide of sides) {
+      for (const toSide of sides) {
+        const from = pointOnSide(fromSide, 60, 40)
+        const to = pointOnSide(toSide, 460, 340)
+        const sidePorts = makePorts([
+          ['source:p', port('source:p', 'source', from.x, from.y, fromSide)],
+          ['target:p', port('target:p', 'target', to.x, to.y, toSide)],
+        ])
+        const edge = [
+          ...(await routeEdges(cards, sidePorts, [link('source:p', 'target:p')])).values(),
+        ][0]
+        expect(edge).toBeDefined()
+        if (!edge) continue
+        const curve = bezierCurvePoints(edge.fromPort, edge.toPort)
+        const samples =
+          edge.route?.points ??
+          Array.from({ length: 33 }, (_unused, index) => {
+            const t = index / 32
+            const u = 1 - t
+            return {
+              x:
+                u ** 3 * curve[0].x +
+                3 * u ** 2 * t * curve[1].x +
+                3 * u * t ** 2 * curve[2].x +
+                t ** 3 * curve[3].x,
+              y:
+                u ** 3 * curve[0].y +
+                3 * u ** 2 * t * curve[1].y +
+                3 * u * t ** 2 * curve[2].y +
+                t ** 3 * curve[3].y,
+            }
+          })
+        expect(
+          samples.some((point) => inside(point, 0, 0)),
+          `${fromSide} → ${toSide} enters source`,
+        ).toBe(false)
+        expect(
+          samples.some((point) => inside(point, 400, 300)),
+          `${fromSide} → ${toSide} enters target`,
+        ).toBe(false)
+        expect(
+          samples.some((point) => inside(point, 200, 150)),
+          `${fromSide} → ${toSide} enters middle`,
+        ).toBe(false)
+      }
+    }
   })
 
   test('a long detour becomes a clear smooth curve after a port moves', async () => {
