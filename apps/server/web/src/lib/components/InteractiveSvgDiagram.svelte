@@ -412,6 +412,7 @@
     controlColor?: string
     primaryLinkIds?: string[]
     controlLinkIds?: string[]
+    evidence?: string
   }
 
   const flowSettingsKey = $derived(`topology-flow-profiles-${topologyId}`)
@@ -5031,6 +5032,9 @@
       {/if}
       {#if pathSourceId && pathDestinationId}
         {#if trafficPath}
+          {#if activeTrafficFlow?.evidence}
+            <div class="path-verdict-note">Evidence: {activeTrafficFlow.evidence}</div>
+          {/if}
           <div class="path-result">
             {#each trafficPath.hops as hop, index}
               <div class="path-hop">

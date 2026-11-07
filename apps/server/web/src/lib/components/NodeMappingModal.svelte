@@ -145,6 +145,7 @@
           protocol: String(target?.protocol ?? 'TCP').toUpperCase(),
           match: String(match?.status ?? 'UNVERIFIED'),
           condition: String(publication.routeCondition ?? ''),
+          runtimeSummary: String(publication['runtimeSummary'] ?? ''),
         }
       })
   })
@@ -742,6 +743,9 @@
                         </div>
                         {#if publication.condition}
                           <div class="text-muted-foreground">{publication.condition}</div>
+                        {/if}
+                        {#if publication.runtimeSummary}
+                          <div class="text-muted-foreground">{publication.runtimeSummary}</div>
                         {/if}
                         {#if publication.match !== 'MATCHED'}
                           <div class="text-warning">NetBox VM: {publication.match}</div>
